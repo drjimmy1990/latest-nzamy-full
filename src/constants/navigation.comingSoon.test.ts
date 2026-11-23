@@ -24,7 +24,8 @@ test("the transform only moves rows: same hrefs, labels and badges, nothing adde
 
 test("the lawyer menu: every «قريباً» row sits in one last, closed section", () => {
   for (const country of [null, "SA"]) {
-    for (const practiceKind of [null, "advocate", "consultant"] as const) {
+    // The independent consultant (library only, 22-23 Nov 2026) has no «قريباً» row at all: see navigation.consultant.test.ts.
+    for (const practiceKind of [null, "advocate"] as const) {
       const groups = getSidebarByUserType("lawyer", "full", null, [], null, null, null, false, country, practiceKind);
       const last = groups[groups.length - 1];
       assert.equal(last.title, COMING_SOON_GROUP_TITLE, `${country} ${practiceKind}`);

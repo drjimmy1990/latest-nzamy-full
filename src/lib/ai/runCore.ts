@@ -46,6 +46,7 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { CONSULTANT_BLOCKED_MESSAGE, CONSULTANT_RESERVED_MESSAGE, type PracticeKind } from "../auth/practiceKind.ts";
+import { CONSULTANT_PLEADING_TOOL_IDS } from "../auth/consultantScope.ts";
 import { resolveToolRuntime, toolAvailability, toolRoleRefusal } from "./aiToolsConfig.ts";
 import type { N8nCall, N8nOutcome } from "./n8nClient.ts";
 import {
@@ -130,8 +131,8 @@ export interface RunActor {
    * for an individual, the library assistant for everyone else).
    */
   freeQuestionTool?: string;
-  /** Owner ١٤٦: a consultant's paid term already running at the cut-off (consultantTerm.ts). */
-  consultantPaidTerm?: boolean;
+  /** True for a consultant who is an active member of a firm (see ToolCaller.firmMember). */
+  firmMember?: boolean;
 }
 
 export interface StartRunDeps {
@@ -598,8 +599,8 @@ export async function startRunWith(
   const refused = toolRoleRefusal(spec, actor);
   if (refused === "role") return { status: 403, body: { error: AI_COPY.role, code: "role" } };
   if (refused === "consultant_blocked") {
-    // Owner ١٤٦: a reserved tool that is not pleading names the reservation, not Art. 18.
-    const message = spec.consultantPaidTerm === true ? CONSULTANT_RESERVED_MESSAGE : CONSULTANT_BLOCKED_MESSAGE;
+    // Only the four pleading tools cite Art. 18; every other closed tool names the reservation.
+    const message = CONSULTANT_PLEADING_TOOL_IDS.includes(spec.id) ? CONSULTANT_BLOCKED_MESSAGE : CONSULTANT_RESERVED_MESSAGE;
     return { status: 403, body: { error: message, code: "consultant_blocked" } };
   }
 

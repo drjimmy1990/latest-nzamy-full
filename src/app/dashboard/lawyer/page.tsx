@@ -50,6 +50,7 @@ import PendingInvitationsBanner from "@/components/dashboard/PendingInvitationsB
 // and there is no payment path to upgrade through. Git history keeps the old UI.
 
 // Local imports
+import ConsultantHome from "./_components/ConsultantHome";
 import AddCaseModal from "./_components/AddCaseModal";
 import AddTaskModal from "./_components/AddTaskModal";
 import QuickToolsCustomizer, { QUICK_TOOL_ICONS } from "./_components/QuickToolsCustomizer";
@@ -220,7 +221,19 @@ function shortRequestRef(requestId: string | undefined): string {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
+/**
+ * Owner decision (22-23 Nov 2026): the independent consultant's dashboard is
+ * the library home, not the lawyer's. The proxy already keeps him off every
+ * other page of this workspace; this is what /dashboard/lawyer itself shows.
+ */
 export default function LawyerDashboardPage() {
+  const { practiceKind, loading } = useUser();
+  if (loading) return <LawyerDashboardSkeleton />;
+  if (practiceKind === "consultant") return <ConsultantHome />;
+  return <LawyerDashboardContent />;
+}
+
+function LawyerDashboardContent() {
   const { name, tier: userTier, userId, userType, practiceKind, loading: userLoading } = useUser();
   // Art. 18 (owner ١٧٣ / ٢١٩): a consultant may not plead or manage hearings,
   // so his dashboard drops the hearings banner, the «المواعيد القادمة» and

@@ -78,8 +78,8 @@ test("the cards in data.ts are exactly the ids this module knows, in both langua
   const known = [...PROVIDER_TYPE_IDS].sort();
   assert.deepEqual(ids(ar), known);
   assert.deepEqual(ids(en), known);
-  assert.match(ar, /id: "consultant" as ProviderType, icon: \w+, label: "مستشار قانوني", desc: "الاستشارات والعقود والدراسات — دون ترافع \(المادة ١٨\)"/);
-  assert.match(en, /id: "consultant" as ProviderType, icon: \w+, label: "Legal Consultant", desc: "Consultations, contracts and studies — no court pleading \(Art\. 18\)"/);
+  assert.match(ar, /id: "consultant" as ProviderType, icon: \w+, label: "مستشار قانوني", desc: "المكتبة القانونية — دون ترافع \(المادة ١٨\)، وأدوات العمل بتفويض من مكتب أو محامٍ"/);
+  assert.match(en, /id: "consultant" as ProviderType, icon: \w+, label: "Legal Consultant", desc: "Legal library — no court pleading \(Art\. 18\); work tools by delegation from a firm or lawyer"/);
 });
 
 test("the page builds user_type / sub_role / practice_kind from this module, not from its own ternaries", () => {

@@ -373,7 +373,7 @@ function S1({
           options={(["advocate", "consultant"] as const).map((id) => ({
             id,
             label: isAr ? PRACTICE_KIND_OPTIONS_AR[id].label : id === "advocate" ? "Lawyer" : "Legal consultant",
-            desc: isAr ? PRACTICE_KIND_OPTIONS_AR[id].desc : id === "advocate" ? "Licensed to plead before the courts" : "Consultations, contracts and studies — no pleading (Art. 18)",
+            desc: isAr ? PRACTICE_KIND_OPTIONS_AR[id].desc : id === "advocate" ? "Licensed to plead before the courts" : "Legal library — no pleading (Art. 18); work tools by delegation from a firm or lawyer",
           }))}
           value={practiceKind}
           onChange={onPracticeKind}

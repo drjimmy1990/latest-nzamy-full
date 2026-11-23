@@ -82,7 +82,7 @@ export const CLAIM_KIND_REFUSAL_AR: Readonly<Record<ClaimKindRefusal, string>> =
 export const PRACTICE_KIND_QUESTION_AR = "هل أنت محامٍ أم مستشار قانوني؟";
 export const PRACTICE_KIND_OPTIONS_AR: Readonly<Record<PracticeKind, { label: string; desc: string }>> = Object.freeze({
   advocate: { label: "محامٍ", desc: "مرخّص بالمرافعة أمام المحاكم" },
-  consultant: { label: "مستشار قانوني", desc: "الاستشارات والعقود والدراسات — دون ترافع (المادة ١٨)" },
+  consultant: { label: "مستشار قانوني", desc: "المكتبة القانونية — دون ترافع (المادة ١٨)، وأدوات العمل بتفويض من مكتب أو محامٍ" },
 });
 export const FIRM_KIND_OPTIONS_AR: Readonly<Record<FirmKind, { label: string; desc: string }>> = Object.freeze({
   law_firm: { label: "شركة / مكتب محاماة", desc: "مكتب أو شركة محاماة" },

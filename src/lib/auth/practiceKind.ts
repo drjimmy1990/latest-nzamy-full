@@ -42,10 +42,11 @@ export const CONSULTANT_BLOCKED_MESSAGE =
   "هذه الأداة للمحامي المرخّص بالترافع؛ المستشار القانوني لا يترافع ولا يدير الجلسات (المادة ١٨ من نظام المحاماة).";
 
 /**
- * Owner ١٤٦ (register 14 #19, batch l12): the legal opinion and contract
- * drafting are not pleading, so their refusal does not cite Art. 18. They are
- * reserved for the licensed advocate and the law firm until the consultant's
- * account type opens.
+ * Owner decision (22-23 Nov 2026): the independent consultant's account is the
+ * library; the legal drafter, contracts pro and the legal opinion belong to the
+ * licensed advocate and the law firm. This is the refusal text of every AI tool
+ * a consultant may not run that is not one of the Art. 18 pleading tools. The
+ * delegation that would open them (a lawyer's or a firm's) is a later phase.
  */
 export const CONSULTANT_RESERVED_MESSAGE =
-  "هذه الأداة مقصورة حالياً على المحامي المرخّص بالترافع ومكتب المحاماة، وتُفتح للمستشار القانوني حين يُفتح نوع حسابه.";
+  "حساب المستشار القانوني المستقل مخصّص للمكتبة القانونية. هذه الأداة للمحامي السعودي المرخّص، وتُفتح لك حين تنضم إلى مكتب أو محامٍ سعودي يفوّضك بها.";

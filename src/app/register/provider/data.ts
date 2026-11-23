@@ -12,7 +12,7 @@ export const providerTypes = {
     // Owner answer ٢١٩: a lawyer account with practice_kind 'consultant' — no
     // pleading or hearings (Art. 18). Licensed in Saudi Arabia only; see
     // signupMetadata.ts for what the signup sends.
-    { id: "consultant" as ProviderType, icon: Briefcase, label: "مستشار قانوني", desc: "الاستشارات والعقود والدراسات — دون ترافع (المادة ١٨)", color: "bg-teal-50 dark:bg-teal-500/10 text-teal-600 dark:text-teal-400", borderActive: "border-teal-200 dark:border-teal-500/20 bg-teal-50 dark:bg-teal-500/10" },
+    { id: "consultant" as ProviderType, icon: Briefcase, label: "مستشار قانوني", desc: "المكتبة القانونية — دون ترافع (المادة ١٨)، وأدوات العمل بتفويض من مكتب أو محامٍ", color: "bg-teal-50 dark:bg-teal-500/10 text-teal-600 dark:text-teal-400", borderActive: "border-teal-200 dark:border-teal-500/20 bg-teal-50 dark:bg-teal-500/10" },
   ],
   en: [
     { id: "lawyer" as ProviderType, icon: Gavel, label: "Lawyer", desc: "Practice law and provide consultations", color: "bg-royal/5 text-royal", borderActive: "border-royal/30 bg-royal/5" },
@@ -20,7 +20,7 @@ export const providerTypes = {
     { id: "notary" as ProviderType, icon: Stamp, label: "Notary", desc: "Contract and document notarization", color: "bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400", borderActive: "border-blue-200 dark:border-blue-500/20 bg-blue-50 dark:bg-blue-500/10" },
     { id: "tracker" as ProviderType, icon: Shield, label: "Gov. Agent", desc: "Complete government transactions", color: "bg-orange-50 dark:bg-orange-500/10 text-orange-600 dark:text-orange-400", borderActive: "border-orange-200 dark:border-orange-500/20 bg-orange-50 dark:bg-orange-500/10" },
     { id: "arbitrator" as ProviderType, icon: Scales, label: "Arbitrator", desc: "Arbitration and dispute resolution", color: "bg-purple-50 dark:bg-purple-500/10 text-purple-600 dark:text-purple-400", borderActive: "border-purple-200 dark:border-purple-500/20 bg-purple-50 dark:bg-purple-500/10" },
-    { id: "consultant" as ProviderType, icon: Briefcase, label: "Legal Consultant", desc: "Consultations, contracts and studies — no court pleading (Art. 18)", color: "bg-teal-50 dark:bg-teal-500/10 text-teal-600 dark:text-teal-400", borderActive: "border-teal-200 dark:border-teal-500/20 bg-teal-50 dark:bg-teal-500/10" },
+    { id: "consultant" as ProviderType, icon: Briefcase, label: "Legal Consultant", desc: "Legal library — no court pleading (Art. 18); work tools by delegation from a firm or lawyer", color: "bg-teal-50 dark:bg-teal-500/10 text-teal-600 dark:text-teal-400", borderActive: "border-teal-200 dark:border-teal-500/20 bg-teal-50 dark:bg-teal-500/10" },
   ],
 };
 

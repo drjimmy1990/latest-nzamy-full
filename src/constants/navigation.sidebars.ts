@@ -3,6 +3,8 @@ import type { SidebarGroup, SidebarItem } from "./navigation.types";
 // Relative with `.ts` (and the primary chain below too) so `node --test` can
 // load this module — navigation.consultant.test.ts runs getSidebarByUserType.
 import { isConsultantBlockedPath, type PracticeKind } from "../lib/auth/practiceKind.ts";
+import { isConsultantAllowedPath } from "../lib/auth/consultantScope.ts";
+import { CONSULTANT_SIDEBAR } from "./navigation.sidebars.consultant.ts";
 import type { StaffRole } from "../lib/auth/staffRoles.ts";
 import { withComingSoonLast, withLiveToolBadges } from "./navigation.comingSoon.ts";
 import {
@@ -376,6 +378,22 @@ export function withoutConsultantBlockedItems(groups: SidebarGroup[]): SidebarGr
   });
 }
 
+/**
+ * Owner decision (22-23 Nov 2026): the independent consultant's sidebar keeps
+ * only rows on the consultant allowlist (consultantScope.ts), whatever the
+ * pipeline above added, then any group this emptied.
+ */
+export function onlyConsultantAllowedItems(groups: SidebarGroup[]): SidebarGroup[] {
+  const keep = (items: SidebarItem[]): SidebarItem[] =>
+    items
+      .filter((item) => isConsultantAllowedPath(item.href))
+      .map((item) => (item.children ? { ...item, children: keep(item.children) } : item));
+  return groups.flatMap((group) => {
+    const items = keep(group.items);
+    return items.length === 0 ? [] : [{ ...group, items }];
+  });
+}
+
 export function getSidebarByUserType(
   userType: UserType,
   /**
@@ -421,6 +439,9 @@ export function getSidebarByUserType(
   switch (userType) {
     case "admin":      base = adminSidebarForRole(staffRole); break;
     case "lawyer": {
+      // Owner decision (22-23 Nov 2026): an independent consultant sees the
+      // library only; the lawyer's list below never reaches him.
+      if (isConsultant) { base = CONSULTANT_SIDEBAR; break; }
       base = LAWYER_SIDEBAR;
       if (country === "SA") {
         base = base.map(group => {
@@ -489,7 +510,7 @@ export function getSidebarByUserType(
   // ── Multi-Role Merge ──────────────────────────────────────────────────────
   // لو المستخدم عنده active_roles، ندمج الأقسام الفريدة من كل دور إضافي
   // K1 Fix: Prevent Lawyer roles from bleeding into Corporate UI
-  if (activeRoles && activeRoles.length > 0 && userType !== "corporate") {
+  if (activeRoles && activeRoles.length > 0 && userType !== "corporate" && !isConsultant) {
     const addons: SidebarGroup[] = [];
     if (activeRoles.includes("notary"))      addons.push(...NOTARY_ADDON_SECTIONS);
     if (activeRoles.includes("bailiff"))     addons.push(...BAILIFF_ADDON_SECTIONS);
@@ -535,7 +556,7 @@ export function getSidebarByUserType(
 
   // ── Art. 18: the consultant's sidebar has no pleading or hearings tools ───
   // Last, so it also covers anything the multi-role merge above added.
-  if (isConsultant) base = withoutConsultantBlockedItems(base);
+  if (isConsultant) base = onlyConsultantAllowedItems(withoutConsultantBlockedItems(base));
 
   return base;
 }
