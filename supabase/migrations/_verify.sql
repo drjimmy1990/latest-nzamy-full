@@ -8219,3 +8219,91 @@ select 'l12 test kinds (owner 109): test_accounts.kind present, caps and mail si
        and coalesce(pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.demo_guard_sandbox_row()')), 'test_account_kind(v_u)') > 0, false)
        and coalesce(pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.test_mail_sink_check(text,uuid[],text,text,text)')), 'u is distinct from v_own') > 0, false) as ok;
 -- <<< verify:l12_access
+-- >>> verify:l13_vault — supabase/tests/rls/vault_document_session_columns.test.sql
+-- 2026-11-23 — batch l13 vault (owner Q167). Read-only. (1) 20261203_80: a
+-- session changes only the bin and the legal hold of a document row. (2) The
+-- office's uploaded stationery (20261030_14, which had no block here): read by
+-- the vault's managers only, written by the server only, its bucket private
+-- and reached by no session Storage policy.
+do $$
+declare c text; n int;
+begin
+  -- (1) attachments: the session column guard
+  if to_regclass('public.attachments') is not null then
+    if to_regprocedure('public.guard_attachment_session_columns()') is null then
+      raise notice '_verify: 20261203_80 is not applied yet — a session can still rename / retype a document row it may update. Run 20261203_80_vault_document_session_columns.sql (any time, before or after the deploy)';
+    else
+      if not exists (select 1 from pg_trigger
+                      where tgrelid = 'public.attachments'::regclass
+                        and tgname = 'trg_02_attachments_session_columns' and tgenabled <> 'D'
+                        and tgfoid = 'public.guard_attachment_session_columns()'::regprocedure) then
+        raise exception '_verify: 20261203_80 — the session column guard on attachments is missing or disabled (re-run 20261203_80)';
+      end if;
+      if coalesce((select prosecdef from pg_proc where oid = 'public.guard_attachment_session_columns()'::regprocedure), true) then
+        raise exception '_verify: 20261203_80 — guard_attachment_session_columns is SECURITY DEFINER; it would let every session through (re-run 20261203_80)';
+      end if;
+      if coalesce(pg_catalog.strpos(pg_catalog.pg_get_functiondef('public.guard_attachment_session_columns()'::regprocedure),
+                                    'deleted_at'', ''deleted_by'', ''legal_hold'', ''hold_reason'''), 0) = 0 then
+        raise exception '_verify: 20261203_80 — guard_attachment_session_columns no longer lists the four session columns (re-run 20261203_80)';
+      end if;
+    end if;
+  end if;
+
+  -- (2) branding_assets + bucket branding-files (20261030_14)
+  if to_regclass('public.branding_assets') is null then
+    raise notice '_verify: 20261030_14 is not applied — the vault''s stationery upload says «يتطلب تحديث قاعدة البيانات»; nothing to check';
+  else
+    if not coalesce((select relrowsecurity from pg_class where oid = 'public.branding_assets'::regclass), false) then
+      raise exception '_verify: RLS is off on branding_assets (re-run 20261030_14)';
+    end if;
+    select count(*) into n from pg_policy where polrelid = 'public.branding_assets'::regclass;
+    if coalesce(n, 0) <> 1
+       or exists (select 1 from pg_policy where polrelid = 'public.branding_assets'::regclass and polcmd <> 'r') then
+      raise exception '_verify: branding_assets must carry exactly the one SELECT policy of 20261030_14 (found %)', n;
+    end if;
+    foreach c in array array['INSERT', 'UPDATE', 'DELETE', 'TRUNCATE'] loop
+      if exists (select 1 from pg_roles where rolname = 'authenticated')
+         and has_table_privilege('authenticated', 'public.branding_assets', c) then
+        raise exception '_verify: sessions hold % on branding_assets — its rows are the server''s only (re-run 20261030_14)', c;
+      end if;
+    end loop;
+    foreach c in array array['SELECT', 'INSERT', 'UPDATE', 'DELETE'] loop
+      if exists (select 1 from pg_roles where rolname = 'anon')
+         and has_table_privilege('anon', 'public.branding_assets', c) then
+        raise exception '_verify: guests hold % on branding_assets (re-run 20261030_14)', c;
+      end if;
+    end loop;
+    if not exists (select 1 from pg_trigger where tgrelid = 'public.branding_assets'::regclass
+                    and tgname = 'trg_branding_assets_guard' and tgenabled <> 'D') then
+      raise exception '_verify: the folder guard of branding_assets is missing or disabled (re-run 20261030_14)';
+    end if;
+    if to_regclass('storage.buckets') is not null then
+      if not exists (select 1 from storage.buckets where id = 'branding-files') then
+        raise warning '_verify: 20261030_14 — the bucket «branding-files» is missing; stationery uploads fail. Create it private (5 MB; pdf, docx, png, webp) as supabase_admin';
+      elsif exists (select 1 from storage.buckets where id = 'branding-files'
+                      and (coalesce(public, true) or coalesce(file_size_limit, 0) = 0 or file_size_limit > 5242880
+                           or allowed_mime_types is null
+                           or not (allowed_mime_types <@ array['application/pdf',
+                                     'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                                     'image/png', 'image/webp']))) then
+        raise exception '_verify: bucket «branding-files» is public, has no 5 MB limit, or accepts more than pdf/docx/png/webp (re-run 20261030_14)';
+      end if;
+    end if;
+    if to_regclass('storage.objects') is not null then
+      if exists (select 1 from pg_policy
+                  where polrelid = 'storage.objects'::regclass
+                    and pg_catalog.strpos(coalesce(pg_get_expr(polqual, polrelid), '') || ' ' ||
+                                          coalesce(pg_get_expr(polwithcheck, polrelid), ''), 'branding-files') > 0) then
+        raise exception '_verify: a Storage policy names bucket «branding-files» — only the server (service role) may reach the vault''s stationery; drop it';
+      end if;
+      if exists (select 1 from pg_policy
+                  where polrelid = 'storage.objects'::regclass
+                    and pg_catalog.strpos(coalesce(pg_get_expr(polqual, polrelid), '') || ' ' ||
+                                          coalesce(pg_get_expr(polwithcheck, polrelid), ''), 'bucket_id') = 0) then
+        raise warning '_verify: a Storage policy names no bucket — it also reaches «branding-files». Run supabase/storage_policies_branding.sql as supabase_admin (it drops such policies)';
+      end if;
+    end if;
+  end if;
+  raise notice '_verify: l13_vault OK — document rows: sessions change only the bin and the legal hold (if 20261203_80 ran); stationery rows server-written, bucket branding-files private and session-free';
+end $$;
+-- <<< verify:l13_vault

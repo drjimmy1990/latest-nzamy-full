@@ -11,6 +11,7 @@ import {
   looksLikeSvg,
   sniffLogoImage,
 } from "@/lib/branding/brandingVault";
+import { BRANDING_MULTIPART_ALLOWANCE } from "@/lib/branding/brandingAssets";
 import { readOwnVault, resolveBrandingCaller } from "@/lib/branding/brandingServer";
 
 /**
@@ -60,6 +61,14 @@ async function vaultForWrite(scopeParam: string | null) {
 }
 
 export async function POST(request: NextRequest) {
+  // Refuse an oversized or undeclared body before buffering it (the same guard
+  // as /api/v1/branding/assets; batch l13 vault).
+  const rawLength = (request.headers.get("content-length") ?? "").trim();
+  if (!/^\d+$/.test(rawLength)) return NextResponse.json({ error: "حجم الطلب غير معروف" }, { status: 411 });
+  if (Number(rawLength) > BRANDING_LOGO_MAX_BYTES + BRANDING_MULTIPART_ALLOWANCE) {
+    return NextResponse.json({ error: "حجم الشعار يتجاوز ١ ميجابايت" }, { status: 413 });
+  }
+
   const gate = await vaultForWrite(request.nextUrl.searchParams.get("scope"));
   if (!gate.ok) return gate.response;
   const { owner, row } = gate;

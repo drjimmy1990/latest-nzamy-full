@@ -2,6 +2,7 @@ import { NextResponse, NextRequest } from "next/server";
 import { assertRole } from "@/lib/auth/assertRole";
 import { createServiceClient } from "@/lib/supabase/server";
 import { fileFolderOwner, isPathInOwnerFolder } from "@/lib/storagePathOwnership";
+import { openableLink } from "@/lib/attachments/inlineSafety";
 import { clientContractVersions } from "../../../../_clientRead";
 
 /**
@@ -65,8 +66,16 @@ export async function GET(
       console.error("[client/contracts/versions/url GET] signing failed:", signError?.message);
       return NextResponse.json({ url: null });
     }
+    // Inline only for a PDF or an image the stored object really is; anything
+    // else is handed over as a download (inlineSafety.ts, batch l13 vault).
+    const url = await openableLink(signed.signedUrl, () =>
+      service.storage.from("documents").createSignedUrl(version.storage_path as string, 300, { download: true }));
+    if (!url) {
+      console.error("[client/contracts/versions/url GET] signing (download) failed");
+      return NextResponse.json({ url: null });
+    }
 
-    return NextResponse.json({ url: signed.signedUrl });
+    return NextResponse.json({ url });
   } catch (err) {
     console.error("[client/contracts/versions/url GET] Unexpected error:", err);
     return NextResponse.json({ url: null });

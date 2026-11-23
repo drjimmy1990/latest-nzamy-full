@@ -105,3 +105,14 @@ test("#48: one view counted per successful open, after the signed URL, never fai
   assert.ok(signedAt > -1 && countAt > signedAt && okAt > countAt, "counted after signing, before the 200");
   assert.equal(code.split("countShareView(").length - 1, 2, "one definition, one call");
 });
+
+test("l13 vault: the link opens inline only for a PDF or an image the stored object really is", () => {
+  const signedAt = code.indexOf("createSignedUrl(documentPath, 300)");
+  const checkAt = code.indexOf("const url = await openableLink(signed.signedUrl, () =>");
+  const downloadAt = code.indexOf('createSignedUrl(documentPath, 300, { download: true })');
+  const okAt = code.indexOf("success: true");
+  assert.ok(signedAt > -1 && checkAt > signedAt, "the signed link goes through openableLink (inlineSafety.ts)");
+  assert.ok(downloadAt > checkAt, "its fallback is the same object signed as a download");
+  assert.ok(okAt > downloadAt && /url,\n/.test(code.slice(okAt)), "the answer carries the checked link");
+  assert.ok(!/url: signed\.signedUrl/.test(code), "the unchecked link is never answered directly");
+});

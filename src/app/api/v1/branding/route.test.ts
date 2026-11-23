@@ -189,3 +189,13 @@ test("GET adds the Word template, signed only after the print read (q345)", () =
   assert.ok(read > 0 && sign > read, "signed for 600 s, after readVaultForPrint");
   assert.ok(get.includes("if (docxPath)"), "no template, no URL");
 });
+
+test("l13 vault: the logo upload refuses an undeclared or oversized body before buffering it", () => {
+  const body = handler(logo, "POST");
+  const declared = body.indexOf('request.headers.get("content-length")');
+  const tooBig = body.indexOf("BRANDING_LOGO_MAX_BYTES + BRANDING_MULTIPART_ALLOWANCE");
+  const parse = body.indexOf("request.formData()");
+  assert.ok(declared > 0 && tooBig > declared && parse > tooBig, "Content-Length is checked before the form is read");
+  assert.match(body, /status: 411/);
+  assert.match(body, /status: 413/);
+});
