@@ -3,6 +3,7 @@ import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
 import { mayDownloadRequestFiles } from "@/lib/requestFileAccess";
 import { fileFolderOwner, isPathInOwnerFolder } from "@/lib/storagePathOwnership";
+import { openableLink } from "@/lib/attachments/inlineSafety";
 
 /**
  * GET /api/v1/service-requests/[id]/deliverable
@@ -112,9 +113,16 @@ export async function GET(
   if (signErr || !signed?.signedUrl) {
     return NextResponse.json({ error: "تعذّر إنشاء رابط التحميل" }, { status: 500 });
   }
+  // Inline only for a PDF or an image the stored object really is; anything
+  // else is handed over as a download (inlineSafety.ts, batch l13 vault).
+  const url = await openableLink(signed.signedUrl, () =>
+    admin.storage.from("documents").createSignedUrl(attachment.storage_path as string, 300, { download: true }));
+  if (!url) {
+    return NextResponse.json({ error: "تعذّر إنشاء رابط التحميل" }, { status: 500 });
+  }
 
   return NextResponse.json({
-    url: signed.signedUrl,
+    url,
     fileName: deliverable.fileName ?? attachment.file_name ?? "document",
   });
 }

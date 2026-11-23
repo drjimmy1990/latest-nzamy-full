@@ -50,8 +50,10 @@ const PDF_ROW: Row = {
   folder_owner_id: OWNER,
 };
 
-function clients(row: Row | null, opts: { readError?: boolean; signError?: boolean; download?: Uint8Array | null; body?: ReadableStream<Uint8Array> } = {}) {
-  const calls = { signed: [] as Array<{ bucket: string; path: string; seconds: number }>, downloaded: [] as string[], selected: [] as string[], eq: [] as unknown[][] };
+const PDF_HEAD = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x37]);
+
+function clients(row: Row | null, opts: { readError?: boolean; signError?: boolean; download?: Uint8Array | null; body?: ReadableStream<Uint8Array>; probe?: () => Response } = {}) {
+  const calls = { signed: [] as Array<{ bucket: string; path: string; seconds: number }>, downloaded: [] as string[], probed: [] as string[], selected: [] as string[], eq: [] as unknown[][] };
   const session = {
     from(table: string) {
       assert.equal(table, "attachments");
@@ -83,7 +85,13 @@ function clients(row: Row | null, opts: { readError?: boolean; signError?: boole
     },
   };
   // The read goes through a signed link and a streaming fetch (cappedRead.ts).
-  const fetchObject = async (url: string) => {
+  // A ranged read is the inline-safety probe (inlineSafety.ts): by default the
+  // stored object is a real PDF served as one.
+  const fetchObject = async (url: string, init?: RequestInit) => {
+    if (new Headers(init?.headers).has("range")) {
+      calls.probed.push(url);
+      return opts.probe ? opts.probe() : new Response(PDF_HEAD, { headers: { "content-type": "application/pdf" } });
+    }
     calls.downloaded.push(url);
     if (opts.body) return new Response(opts.body);
     return opts.download ? new Response(opts.download as BodyInit) : new Response("x", { status: 404 });
@@ -118,7 +126,35 @@ test("no new reveal: every refusal is the same 404, and signs and downloads noth
     assert.equal(r.status, 404, what);
     assert.deepEqual(calls.signed, [], what);
     assert.deepEqual(calls.downloaded, [], what);
+    assert.deepEqual(calls.probed, [], what);
   }
+});
+
+test("a PDF or image link is handed out only when the stored object is served as that type (l13 vault)", async () => {
+  const html = () => new Response("<html><script>x</script>", { headers: { "content-type": "text/html" } });
+  const svgAsImage = () => new Response('<svg xmlns="http://www.w3.org/2000/svg"/>', { headers: { "content-type": "image/svg+xml" } });
+  const pdfBytesServedAsHtml = () => new Response(PDF_HEAD, { headers: { "content-type": "text/html; charset=utf-8" } });
+  const PNG_ROW = { ...PDF_ROW, file_name: "صورة.png", mime_type: "image/png", storage_path: `${OWNER}/1-x.png` };
+  const cases: Array<[string, Row, () => Response]> = [
+    ["a row saying PDF over an object served as HTML", PDF_ROW, html],
+    ["PDF bytes served as HTML (a polyglot)", PDF_ROW, pdfBytesServedAsHtml],
+    ["a row saying PNG over an SVG", PNG_ROW, svgAsImage],
+    ["a row saying PNG over a real PDF (the kind must match)", PNG_ROW, () => new Response(PDF_HEAD, { headers: { "content-type": "application/pdf" } })],
+  ];
+  for (const [what, row, probe] of cases) {
+    const { deps, calls } = clients(row, { probe });
+    const r = await previewAttachment(deps, "7");
+    assert.deepEqual(r, { status: 200, body: { kind: "none", name: row.file_name } }, what);
+    assert.equal(calls.probed.length, 1, what);
+  }
+  const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0]);
+  const ok = clients(PNG_ROW, { probe: () => new Response(png, { headers: { "content-type": "image/png" } }) });
+  assert.deepEqual(await previewAttachment(ok.deps, "7"), { status: 200, body: { kind: "image", name: "صورة.png", url: "https://s/signed" } });
+});
+
+test("a probe that cannot read the object is a 503, never a link", async () => {
+  const { deps } = clients(PDF_ROW, { probe: () => new Response("x", { status: 404 }) });
+  assert.deepEqual(await previewAttachment(deps, "7"), { status: 503 });
 });
 
 test("a bad id is refused before any read", async () => {
