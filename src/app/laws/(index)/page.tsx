@@ -20,7 +20,7 @@ import { realPrincipleNumber } from "../principleLink";
 import { highlightSearchHtml as highlightText } from "../highlightSearchHtml";
 import { subNameFormOf, type SubNameForm } from "../catalogueCardLabels";
 import {
-  MagnifyingGlass, Faders, CaretDown, Check,
+  MagnifyingGlass, CaretDown, Check,
 } from "@phosphor-icons/react";
 import * as PhosphorIcons from "@phosphor-icons/react";
 import Navbar from "@/components/Navbar";
@@ -1559,7 +1559,11 @@ export default function LegalLibraryPage() {
 
           {/* Search Bar */}
           <div className="mb-6 flex flex-col md:flex-row gap-3">
-            <div className="relative flex-1">
+            {/* Owner Q170 (22 Nov, batch l13): the big bar alone, and under it a
+                small «خيارات متقدمة» link that opens the advanced panel (it
+                replaces the big green «بحث متقدم» button). */}
+            <div className="flex-1 min-w-0">
+            <div className="relative">
               <div className={`absolute top-1/2 -translate-y-1/2 z-10 ${isRTL ? "right-4" : "left-4"}`}>
                 <MagnifyingGlass size={20} className={isDark ? "text-gray-500" : "text-gray-400"} />
               </div>
@@ -1687,22 +1691,26 @@ export default function LegalLibraryPage() {
                         💡 نصيحة: اكتب ({search} + عقد) للبحث عن الكلمات معاً، أو ({search} - جنائي) للاستبعاد.
                       </span>
                       <span className="font-bold cursor-pointer underline shrink-0 hover:text-white" onClick={() => setShowAdvSearch(true)}>
-                        تصفية متقدمة
+                        خيارات متقدمة
                       </span>
                     </div>
                   </motion.div>
                 )}
               </AnimatePresence>
             </div>
-            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
               <button
+                type="button"
                 onClick={() => setShowAdvSearch(true)}
-                className="shrink-0 flex items-center justify-center gap-2 px-6 py-4 bg-[#0B3D2E] text-white rounded-2xl font-bold text-sm hover:bg-[#0a3328] transition-colors shadow-md"
+                aria-haspopup="dialog"
+                data-testid="library-advanced-link"
+                className={`mt-1.5 inline-flex items-center min-h-[44px] sm:min-h-0 px-1 text-xs font-bold underline underline-offset-4 decoration-1 hover:decoration-2 transition-colors ${
+                  isDark ? "text-[#C8A762] hover:text-[#e0c27f]" : "text-[#0B3D2E] hover:text-[#0a3328]"
+                }`}
               >
-                <Faders size={20} weight="fill" />
-                <span className="hidden sm:inline">{isRTL ? "بحث متقدم" : "Advanced"}</span>
+                {isRTL ? "خيارات متقدمة" : "Advanced options"}
               </button>
-
+            </div>
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3 md:self-start">
               {/* BUG-LIB-04: what the operators do, one example each. */}
               <SearchSyntaxHelp onPick={setSearch} isDark={isDark} panelPosition="start-0 md:start-auto md:end-0" />
 
