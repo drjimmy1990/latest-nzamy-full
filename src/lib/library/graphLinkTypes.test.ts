@@ -94,7 +94,9 @@ test("Q133: SIMILAR_TO only behind the admin switch, in its own automatic sectio
   assert.ok(!readerLinkTypes(false).includes("SIMILAR_TO"), "switch off: never asked, never shown");
   assert.equal(readerLinkTypes(false).length, SHOWN_LINK_TYPES.length - 1);
   assert.deepEqual(linkTypesOfSection("similar"), ["SIMILAR_TO"]);
-  assert.match(linkLabel("SIMILAR_TO", "out"), /ربط آلي/, "named as automatic");
+  // owner Q171 (l13): no «(ربط آلي)» label
+  assert.equal(linkLabel("SIMILAR_TO", "out"), "متقاربة في المعنى");
+  assert.equal(linkLabel("SIMILAR_TO", "in"), "متقاربة في المعنى");
   assert.equal(EXPLORER_ONLY_LINK_TYPES.length, 0);
 });
 

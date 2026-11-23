@@ -68,9 +68,9 @@ export interface RefItem {
    */
   anchorMissing: boolean;
   /**
-   * «رابط آلي» (batch l12, owner library-Q4): an unreviewed «إحالة» the system
-   * extracted (graphLinkTypes.isUnreviewedAutoLink). The route clears it while
-   * the admin switch library_auto_link_tag is off.
+   * An unreviewed «إحالة» the system extracted (batch l12, owner library-Q4;
+   * graphLinkTypes.isUnreviewedAutoLink). Owner Q171 (batch l13): the reader
+   * shows no label for it, and the route always clears it (withAutoTags off).
    */
   auto: boolean;
 }
@@ -500,7 +500,7 @@ export function withHrefs(refs: ArticleRefs): { found: boolean; sections: Record
   return { found: refs.found, sections };
 }
 
-/** The «رابط آلي» tag while the admin switch library_auto_link_tag is off: no item carries it. */
+/** The unreviewed-automatic mark cleared (`on` false — always, since owner Q171): no item carries it. */
 export function withAutoTags<T extends { sections: Record<LinkSection, { total: number; items: RefItem[] }> }>(refs: T, on: boolean): T {
   if (on) return refs;
   const sections = {} as Record<LinkSection, { total: number; items: RefItem[] }>;
@@ -518,7 +518,7 @@ export type BulkItem = Pick<RefItem, "key" | "kind" | "title" | "status" | "docK
   href: string;
   docHref: string;
 };
-/** One link group of an article: [type, direction, how many there are, [node key, 1 = «رابط آلي»][≤ BULK_PER_TYPE]]. */
+/** One link group of an article: [type, direction, how many there are, [node key, 1 = unreviewed automatic (always 0 since Q171)][≤ BULK_PER_TYPE]]. */
 export type BulkGroup = [ShownLinkType, "out" | "in", number, Array<[string, 0 | 1]>];
 export interface LawLinks {
   found: boolean;
