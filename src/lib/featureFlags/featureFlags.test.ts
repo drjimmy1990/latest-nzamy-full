@@ -14,7 +14,7 @@ import {
 /** O22 (batch l11-misc): server-side feature flags in platform_settings.feature_flags. */
 
 test("the list is closed and every flag has an Arabic name and description", () => {
-  assert.deepEqual([...FEATURE_FLAG_KEYS], ["site_assistant", "library_auto_link_tag", "library_similar_links"]);
+  assert.deepEqual([...FEATURE_FLAG_KEYS], ["site_assistant", "library_similar_links"]);
   for (const k of FEATURE_FLAG_KEYS) {
     assert.ok(FEATURE_FLAGS[k].nameAr.length > 3);
     assert.ok(FEATURE_FLAGS[k].descriptionAr.length > 10);
@@ -33,11 +33,19 @@ test("parse: missing / malformed → defaults; booleans kept; unknown keys ignor
   assert.deepEqual(parseFeatureFlags({ __proto__: { site_assistant: false } }), { ...defaultFeatureFlags(), site_assistant: true }, "own keys only");
 });
 
-test("batch l12: the two library link switches ship on (owner library-Q4 default; Q133 register 14)", () => {
-  assert.equal(defaultFeatureFlags().library_auto_link_tag, true);
+test("batch l12: the similar-meaning switch ships on (Q133 register 14)", () => {
   assert.equal(defaultFeatureFlags().library_similar_links, true);
   assert.equal(parseFeatureFlags({ library_similar_links: false }).library_similar_links, false);
-  assert.equal(featureFlagsIssue({ library_auto_link_tag: false }), null);
+});
+
+test("owner Q171 (l13): no «رابط آلي» switch or label; a stored value for the old switch is ignored", () => {
+  assert.ok(!(FEATURE_FLAG_KEYS as readonly string[]).includes("library_auto_link_tag"));
+  assert.ok(!Object.hasOwn(parseFeatureFlags({ library_auto_link_tag: true, site_assistant: true }), "library_auto_link_tag"));
+  assert.deepEqual(parseFeatureFlags({ library_auto_link_tag: true }), defaultFeatureFlags());
+  assert.ok(featureFlagsIssue({ library_auto_link_tag: true }), "the admin can no longer switch it on");
+  for (const k of FEATURE_FLAG_KEYS) {
+    assert.doesNotMatch(FEATURE_FLAGS[k].nameAr + FEATURE_FLAGS[k].descriptionAr, /رابط آلي|ربط آلي/);
+  }
 });
 
 test("write validator: an object of known flags → booleans, nothing else", () => {

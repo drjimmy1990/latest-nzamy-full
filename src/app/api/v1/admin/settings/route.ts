@@ -124,8 +124,8 @@ const ALLOWED_SETTINGS_KEYS = [
   // an individual's free questions (src/lib/ai/freeQuestion.ts).
   "free_question_tool_by_account_type",
   // Batch l12 lib-a (src/lib/library/readerDisplaySettings.ts):
-  // {"decree_free_pages": 0..20 (Q101: 0), "child_name_form": "full"|"short"
-  // (library question 5: full)} — the reader's display choices still open.
+  // {"decree_free_pages": 0..20 (Q101: 0), "child_names": "auto"|"full"|"short"
+  // (owner Q172 (ب), batch l13: auto)} — the reader's display choices.
   "library_reader_display",
   // Batch l12 lib-draft (20261202_40): the library draft's caps (owner file 03
   // ل2 answer ج) and the months an AI run keeps its question and answer (ل11).

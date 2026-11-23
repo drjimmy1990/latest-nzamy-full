@@ -97,7 +97,7 @@ test("sections: legislation and judicial filled, fiqh empty; outline types dropp
   assert.equal(out.sections.fiqh.items.length, 0);
   assert.ok(!JSON.stringify(out).includes(SECRET), "no snippet, no evidence");
   assert.ok(!JSON.stringify(out).includes("NEXT_ARTICLE"), "the outline: never in the box");
-  assert.deepEqual(out.sections.similar.items.map((i) => [i.key, i.linkType, i.relation]), [["article:x1", "SIMILAR_TO", "متقاربة في المعنى (ربط آلي)"]]);
+  assert.deepEqual(out.sections.similar.items.map((i) => [i.key, i.linkType, i.relation]), [["article:x1", "SIMILAR_TO", "متقاربة في المعنى"]]);
   assert.equal(shapeArticleRefs(neighborhood, "a5", "labor", READER_LINK_TYPES.filter((t) => t !== "SIMILAR_TO")).sections.similar.total, 0, "switch off: not shown");
   for (const s of ["legislation", "judicial", "fiqh", "similar"] as const) {
     for (const i of out.sections[s].items) {
@@ -405,7 +405,7 @@ test("L1 expand: one article's box data from the bulk answer — sections, group
   assert.deepEqual(a5.groups.map((g) => [g.section, g.relation, g.total, g.keys.length]), [
     ["legislation", "تحيل إليها هذه المادة", 2, 2],
     ["judicial", "مبدأ قضائي يستند إليها", 40, 1],
-    ["similar", "متقاربة في المعنى (ربط آلي)", 1, 1],
+    ["similar", "متقاربة في المعنى", 1, 1],
   ]);
   assert.equal(a5.sections.judicial.total, 40);
   assert.equal(a5.sections.legislation.items[0].auto, true);
@@ -448,11 +448,15 @@ test("CITES_ARTICLE from the graph carries «رابط آلي» only when automat
   assert.deepEqual(out.sections.legislation.items.map((i) => [i.key, i.auto]), [["article:d", true], ["article:e", false]]);
 });
 
-test("route contract (l12): ?bulk=1 reads the two switches and calls the law function once", () => {
+test("route contract (l12): ?bulk=1 reads the similar switch and calls the law function once", () => {
   const route = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
   assert.match(route, /url\.searchParams\.get\('bulk'\) === '1'/);
   assert.match(route, /serverOnly\.rpc\('graph_rag_law_article_links', \{\s*p_law_slug: slug,\s*p_per_type: BULK_PER_TYPE,\s*p_types: types,/);
   assert.match(route, /const types = readerLinkTypes\(flags\?\.library_similar_links \?\? false\);/);
+  // owner Q171 (l13): no «رابط آلي» label — the mark is always cleared, no switch read
+  assert.match(route, /const autoTagOn = false;/);
+  assert.doesNotMatch(route, /library_auto_link_tag/);
+  assert.match(route, /shapeLawLinks\(data, slug, types, safeArticleStatus, lawStatusForDetail, autoTagOn\)/);
   assert.match(route, /withHrefs\(withAutoTags\(live, autoTagOn\)\)/);
   assert.match(route, /if \(graphFunctionMissing\(error\.code\)\) return json\(\{ available: false \}\);/, "before 20261202_30: the reader falls back to one article at a time");
 });

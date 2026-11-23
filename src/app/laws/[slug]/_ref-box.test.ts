@@ -49,10 +49,12 @@ test("L1 (batch l12): the links under every article again, from ONE request for 
   assert.match(BOX, /useArticleRefs\(ctx\.lawSlug, articleId, \{ full: true \}\)/);
 });
 
-test("Q133 / library-Q4 (batch l12): the similar-meaning section and the «رابط آلي» tag", () => {
-  assert.match(BOX, /title: "مواد متقاربة في المعنى \(ربط آلي\)"/);
-  assert.match(BOX, /\{item\.auto && \(/);
-  assert.match(BOX, />\s*رابط آلي\s*</);
+test("Q133 + owner Q171 (l13): the similar-meaning section stays, with no «رابط آلي» / «(ربط آلي)» label", () => {
+  assert.match(BOX, /title: "مواد متقاربة في المعنى",/);
+  assert.doesNotMatch(BOX, /item\.auto/, "no tag on an unreviewed automatic «إحالة»");
+  // no label in the reader's code (comments aside)
+  const code = BOX.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+  assert.doesNotMatch(code, /رابط آلي|ربط آلي/);
 });
 
 test("coloured sections, «عرض الكل (n)», every empty section hidden (file 16 §8)", () => {

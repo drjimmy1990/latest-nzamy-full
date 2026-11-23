@@ -74,7 +74,9 @@ test("report: Arabic, a row per article, a checkbox per link, totals; the script
   );
   assert.match(md, /^# فحص عيّنة «الإحالة» — 1 مادة/);
   assert.match(md, /\| 1 \| نظام أ \| المادة 5 \| 1\/0 \| 1 \| 1 \| 2 \|/);
-  assert.match(md, /- \[ \] نظام ب — المادة 3 \(تحيل إليها هذه المادة · رابط آلي\)/);
+  // owner Q171 (l13): the team's sheet says «آلي غير مراجَع»; there is no «رابط آلي» label any more
+  assert.match(md, /- \[ \] نظام ب — المادة 3 \(تحيل إليها هذه المادة · آلي غير مراجَع\)/);
+  assert.doesNotMatch(md, /رابط آلي/);
   assert.equal(tsv.split("\n")[0], "law_slug\tlaw_title\tarticle_id\tarticle\tgraph_out\tgraph_in\tshown\tautomatic\ttext_mentions");
   const script = readFileSync(new URL("../../../scripts/library-ihala-sample.mjs", import.meta.url), "utf8");
   assert.doesNotMatch(script, /\.(insert|update|upsert|delete)\(|graph_rag_owner_edges_load|graph_rag_resolve_owner_edges|mark_dirty/, "read-only");

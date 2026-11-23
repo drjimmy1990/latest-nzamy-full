@@ -6,7 +6,8 @@
  * The script picks 50 articles that carry «إحالة» links (CITES_ARTICLE),
  * spread over laws, and for each one writes: how many links the graph holds
  * (out / in), how many the reader's box shows after the library check, how
- * many are automatic and unreviewed (the «رابط آلي» tag), how many times the
+ * many are automatic and unreviewed (the reader shows them with no label —
+ * owner Q171, batch l13), how many times the
  * article's own text names another article («المادة (5)», «المادتين»…), and the
  * linked titles with a short evidence line, so his team can tick each one.
  *
@@ -149,7 +150,7 @@ export interface SampleRow {
   links: SampleLink[];
 }
 
-/** A link the reader tags «رابط آلي» (graphLinkTypes.isUnreviewedAutoLink, for CITES_ARTICLE). */
+/** An unreviewed automatic link (graphLinkTypes.isUnreviewedAutoLink, for CITES_ARTICLE); the reader shows it untagged. */
 export function isAutomatic(l: Pick<SampleLink, "origin" | "fromOwnerFile">): boolean {
   return l.origin === "auto_watchdog" && !l.fromOwnerFile;
 }
@@ -162,7 +163,7 @@ export function formatSampleReport(rows: readonly SampleRow[], meta: { date: str
   const md: string[] = [];
   md.push(`# فحص عيّنة «الإحالة» — ${rows.length} مادة (${meta.date})`, "");
   md.push(
-    "كيف تُقرأ: «في الجراف» عدد روابط «الإحالة» المسجّلة للمادة (صادرة / واردة)، و«في المربع» ما يظهر للقارئ بعد التحقق من وجود المادة الأخرى في المكتبة، و«آلي غير مراجَع» ما استخرجه النظام من النص ويظهر عليه وسم «رابط آلي»، و«ذِكر في النص» عدد المرات التي يذكر فيها نص المادة مادةً أخرى (تقدير تقريبي للمقارنة). تحت الجدول روابط كل مادة لفريق المكتبة: يُوضع ✓ أمام الصحيح و✗ أمام الخطأ.",
+    "كيف تُقرأ: «في الجراف» عدد روابط «الإحالة» المسجّلة للمادة (صادرة / واردة)، و«في المربع» ما يظهر للقارئ بعد التحقق من وجود المادة الأخرى في المكتبة، و«آلي غير مراجَع» ما استخرجه النظام من النص ولم يراجعه فريق المكتبة (يظهر للقارئ بلا وسم)، و«ذِكر في النص» عدد المرات التي يذكر فيها نص المادة مادةً أخرى (تقدير تقريبي للمقارنة). تحت الجدول روابط كل مادة لفريق المكتبة: يُوضع ✓ أمام الصحيح و✗ أمام الخطأ.",
     "",
   );
   md.push(
@@ -179,7 +180,7 @@ export function formatSampleReport(rows: readonly SampleRow[], meta: { date: str
     if (r.links.length === 0) md.push("لا روابط «إحالة» لهذه المادة.", "");
     for (const l of r.links) {
       const dir = l.direction === "out" ? "تحيل إليها هذه المادة" : "مادة تحيل إليها";
-      const tag = isAutomatic(l) ? " · رابط آلي" : "";
+      const tag = isAutomatic(l) ? " · آلي غير مراجَع" : "";
       md.push(`- [ ] ${l.title} (${dir}${tag})${l.evidence ? ` — «${l.evidence}»` : ""}`);
     }
     md.push("");

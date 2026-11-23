@@ -111,12 +111,13 @@ export async function GET(
   const serverOnly = await createServiceClient();
 
   try {
-    // Batch l12: the two admin switches (featureFlags.ts) — the similar-meaning
-    // section (Q133) and the «رابط آلي» tag (library-Q4). Same for every viewer.
+    // Batch l12: the admin switch for the similar-meaning section (Q133,
+    // featureFlags.ts). Same for every viewer. Owner Q171 (22 Nov, batch l13):
+    // no «رابط آلي» label — the unreviewed-automatic mark is always cleared.
     const wantsLinks = url.searchParams.has('article') || url.searchParams.get('bulk') === '1';
     const flags = wantsLinks ? await getFeatureFlags() : null;
     const types = readerLinkTypes(flags?.library_similar_links ?? false);
-    const autoTagOn = flags?.library_auto_link_tag ?? false;
+    const autoTagOn = false;
 
     // ── Every article of the law at once (batch l12, owner L1) ───────────────
     if (url.searchParams.get('bulk') === '1') {
