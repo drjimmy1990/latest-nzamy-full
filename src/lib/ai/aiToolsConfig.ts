@@ -5,7 +5,9 @@
  *   { "<tool>": { "mode": "off" | "staff" | "live", "daily_limit": <int ≥ 0> } }
  *
  * "staff" runs the tool for admins only (a production test before D10 and
- * before anyone else may use it).
+ * before anyone else may use it). Since owner ١٥٦ (أ) (batch l13) an admin
+ * runs an "off" tool too, so for him "off" and "staff" are the same; the
+ * switch decides only for everyone else.
  *
  * "review" (charge, store, hide until the team releases it) is no longer
  * offered: nothing releases or refunds a review run yet, so a user paid for a
@@ -55,11 +57,17 @@ export function effectiveToolMode(mode: AiToolMode): RunnableAiToolMode {
 /**
  * R5: the one rule for "does this mode let this caller run?". The run path's
  * refusal and the screen's answer both call it, so they cannot disagree, whatever
- * effectiveToolMode comes to mean. "staff" lets admins through; "off" stops everyone.
+ * effectiveToolMode comes to mean.
+ *
+ * Owner ١٥٦ (أ), batch l13: a platform admin really runs every tool, a
+ * switched-off one included — never charged (ai_start_run's p_exempt), always
+ * logged (the ai_runs row, with its tokens on the admin AI usage page). For
+ * everyone else "staff" and "off" refuse before any charge.
  */
 export function toolAvailability(mode: AiToolMode, isAdmin: boolean): "ok" | "tool_off" {
+  if (isAdmin) return "ok";
   const effective = effectiveToolMode(mode);
-  return effective === "off" || (effective === "staff" && !isAdmin) ? "tool_off" : "ok";
+  return effective === "off" || effective === "staff" ? "tool_off" : "ok";
 }
 
 type ToolAudience = Pick<AiToolSpec, "roles" | "consultantBlocked" | "consultantPaidTerm">;

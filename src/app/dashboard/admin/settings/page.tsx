@@ -32,6 +32,7 @@ import { PaymentRulesCard } from "./_components/PaymentRulesCard";
 import { PlatformLicenceCard } from "./_components/PlatformLicenceCard";
 import { FirmRulesCard } from "./_components/FirmRulesCard";
 import { SimpleContractPriceCard } from "./_components/SimpleContractPriceCard";
+import { DrafterRevisionsCard } from "./_components/DrafterRevisionsCard";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -980,6 +981,8 @@ export default function AdminSettingsPage() {
       <FirmRulesCard />
       {/* ── l12 simpledraft: the simplified contract drafter's price (owner ١٢٣, default 100) ── */}
       <SimpleContractPriceCard />
+      {/* ── l13 aiadmin: the drafter's section edits included in a memo's price (owner ١٦٦, default 5) ── */}
+      <DrafterRevisionsCard />
 
       {/* ═══════════════════════════════════════════════════════════════════════ */}
       {/* ── Section 4: Legal Library Open/Close ── */}

@@ -1,11 +1,12 @@
 /**
- * sectionEdits.test.ts — owner ٤١٠ «عدّل هذا القسم» in «الصائغ القانوني»
- * (batch 2026-11-08 B3): the free/paid rule (5 free per memo, 2 per section,
- * then 10 points), the counts read from the conversation's own runs (a failed
- * edit is not read, so it gives its free edit back), the turn order, the input
- * and output of the «section» phase, and the wiring through startRunWith:
- * ai_start_section_edit with the caps, never a founder credit, a stale
- * expectedPrice refused uncharged, the 30-edit ceiling, and the SQL's refusals.
+ * sectionEdits.test.ts — «عدّل هذا القسم» in «الصائغ القانوني» (owner ٤١٠,
+ * batch 2026-11-08 B3), under owner ١٦٦ (batch l13): the edits are included in
+ * the memo price up to the admin setting drafter_revisions_per_memo (5), and
+ * the next one is refused — no paid edit, no per-section cap. Also the counts
+ * read from the conversation's own runs (a failed edit is not read, so it
+ * gives its edit back), the turn order, the input and output of the «section»
+ * phase, and the wiring through startRunWith: ai_start_section_edit with
+ * N / N / 0 / N, never a founder credit, and the SQL's refusals.
  * The race itself is proved in Docker (supabase/tests/rls/drafter_section_edits_1108.test.sql).
  *
  * RUN: node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test src/lib/ai/sectionEdits.test.ts
@@ -19,13 +20,20 @@ import type { Retrieved } from "./retrieval.ts";
 import { AI_TOOLS, LIB_QUERIES_PATH } from "./tools.ts";
 import {
   NO_SECTION_EDITS,
+  SECTION_EDITS_INCLUDED_DEFAULT,
+  SECTION_EDITS_SETTING_KEY,
   SECTION_EDIT_COPY,
   SECTION_EDIT_MAX_PER_MEMO,
   asSectionEditCounts,
   countSectionEdits,
   sectionEditAllowanceText,
+  sectionEditLimitText,
   sectionEditPrice,
+  sectionEditPriceText,
   sectionEditQuote,
+  sectionEditsExhausted,
+  sectionEditsIncludedFrom,
+  sectionEditsIncludedIssue,
   withSectionEdit,
   type SectionEditCounts,
 } from "./sectionEdits.ts";
@@ -72,56 +80,60 @@ const memo = (...edits: Array<ReturnType<typeof editRow>>) => [
   ...edits,
 ];
 
-// ── the rule ─────────────────────────────────────────────────────────────────
+// ── the rule (owner ١٦٦) ─────────────────────────────────────────────────────
 
-test("the 5th memo edit is free, the 6th is 10 points", () => {
-  // Four free edits on four sections: the 5th (a fresh section) is free.
+test("owner ١٦٦: edits 1–5 are included in the memo price (0 points), the 6th is refused; same section or not", () => {
   let c: SectionEditCounts = NO_SECTION_EDITS;
-  for (const i of [0, 1, 2, 3]) c = withSectionEdit(c, i, sectionEditPrice(c, i));
-  assert.equal(c.freeMemo, 4);
-  assert.equal(sectionEditPrice(c, 4), 0, "5th edit of the memo is free");
-  c = withSectionEdit(c, 4, 0);
-  assert.equal(sectionEditPrice(c, 5), 10, "6th edit is paid, even on an untouched section");
-  assert.deepEqual(sectionEditQuote(c, 5), { free: false, price: 10, memoFreeLeft: 0, sectionFreeLeft: 0, limitReached: false });
+  for (const i of [0, 0, 0, 1, 2]) {
+    const q = sectionEditQuote(c, i);
+    assert.equal(q.limitReached, false);
+    assert.equal(q.price, 0);
+    assert.equal(sectionEditPrice(c, i), 0);
+    c = withSectionEdit(c, i, q.price);
+  }
+  assert.equal(c.total, 5);
+  assert.deepEqual(sectionEditQuote(c, 3), { free: false, price: 0, left: 0, included: 5, limitReached: true });
+  assert.equal(sectionEditsExhausted(c), true);
+  assert.equal(SECTION_EDITS_INCLUDED_DEFAULT, 5);
 });
 
-test("the 3rd edit of the same section is 10 points even when the memo has used fewer than 5", () => {
-  let c: SectionEditCounts = NO_SECTION_EDITS;
-  c = withSectionEdit(c, 2, sectionEditPrice(c, 2));
-  c = withSectionEdit(c, 2, sectionEditPrice(c, 2));
-  assert.equal(c.freeMemo, 2);
-  assert.equal(sectionEditPrice(c, 2), 10);
-  assert.equal(sectionEditPrice(c, 0), 0, "another section is still free");
-  // A paid edit does not use a free one: the memo still has 3.
-  c = withSectionEdit(c, 2, 10);
-  assert.deepEqual(sectionEditQuote(c, 1), { free: true, price: 0, memoFreeLeft: 3, sectionFreeLeft: 2, limitReached: false });
-});
-
-test("no hard stop per section: a section can be edited again and again at 10 points", () => {
-  let c: SectionEditCounts = NO_SECTION_EDITS;
-  for (let n = 0; n < 8; n++) c = withSectionEdit(c, 0, sectionEditPrice(c, 0));
-  assert.equal(c.total, 8);
-  assert.equal(c.freeMemo, 2);
-  assert.equal(sectionEditQuote(c, 0).limitReached, false);
-  assert.equal(sectionEditPrice(c, 0), 10);
-});
-
-test("the technical ceiling: 30 edits per memo", () => {
-  const c: SectionEditCounts = { total: SECTION_EDIT_MAX_PER_MEMO, freeMemo: 5, freeBySection: {} };
-  assert.equal(sectionEditQuote(c, 0).limitReached, true);
+test("the admin number decides: 3 → the 4th is refused; 0 → none; the technical ceiling is 30", () => {
+  const three: SectionEditCounts = { total: 3, freeMemo: 3, freeBySection: {} };
+  assert.equal(sectionEditQuote(three, 0, 3).limitReached, true);
+  assert.equal(sectionEditQuote(three, 0, 10).left, 7);
+  assert.equal(sectionEditQuote(NO_SECTION_EDITS, 0, 0).limitReached, true);
+  assert.equal(sectionEditQuote(NO_SECTION_EDITS, 0, 99).included, 5, "out of range → the default");
   assert.equal(SECTION_EDIT_MAX_PER_MEMO, 30);
+  // Paid edits from before owner ١٦٦ count toward the memo's revisions too.
+  const old = countSectionEdits(memo(editRow(0, 10), editRow(0, 10), editRow(1, 0)));
+  assert.equal(sectionEditQuote(old, 2).left, 2);
 });
 
-test("unknown counts or a bad index are paid, never free", () => {
-  assert.equal(sectionEditPrice(undefined, 0), 10);
-  assert.equal(sectionEditPrice(null, 0), 10);
-  assert.equal(sectionEditPrice(NO_SECTION_EDITS, -1), 10);
-  assert.equal(sectionEditPrice(NO_SECTION_EDITS, "1"), 10);
-  assert.equal(tool.price(section(0), { pages: null, turn: 5 }), 10, "price() without priorSectionEdits");
-  assert.equal(tool.price(section(0), { pages: null, turn: 5, priorSectionEdits: NO_SECTION_EDITS }), 0);
+test("unknown counts are refused, never an edit by mistake", () => {
+  assert.equal(sectionEditQuote(undefined, 0).limitReached, true);
+  assert.equal(sectionEditsExhausted(null), true);
+  assert.equal(tool.price(section(0), { pages: null, turn: 5 }), 0, "never a charge");
 });
 
-test("counts: from the memo's section runs only; a paid run is not a free one; an unknown price counts as free (dearer, never cheaper)", () => {
+test("the setting: {\"included\": 0..30}, 5 until saved; the validator refuses anything else", () => {
+  assert.equal(SECTION_EDITS_SETTING_KEY, "drafter_revisions_per_memo");
+  assert.equal(sectionEditsIncludedFrom(undefined), 5);
+  assert.equal(sectionEditsIncludedFrom({ included: 3 }), 3);
+  assert.equal(sectionEditsIncludedFrom({ included: 0 }), 0);
+  assert.equal(sectionEditsIncludedFrom({ included: 31 }), 5);
+  assert.equal(sectionEditsIncludedFrom({ included: "3" }), 5);
+  assert.equal(sectionEditsIncludedIssue({ included: 5 }), null);
+  assert.equal(sectionEditsIncludedIssue({ included: 0 }), null);
+  assert.equal(sectionEditsIncludedIssue({ included: 30 }), null);
+  for (const bad of [null, 5, [], {}, { included: -1 }, { included: 31 }, { included: 2.5 }, { included: 5, extra: 1 }]) {
+    assert.match(String(sectionEditsIncludedIssue(bad)), /drafter_revisions_per_memo/, JSON.stringify(bad));
+  }
+  const route = readFileSync(new URL("../../app/api/v1/admin/settings/route.ts", import.meta.url), "utf8");
+  assert.match(route, /SECTION_EDITS_SETTING_KEY,/);
+  assert.match(route, /\[SECTION_EDITS_SETTING_KEY\]: sectionEditsIncludedIssue,/);
+});
+
+test("counts: from the memo's section runs only; a failed edit is not counted", () => {
   const c = countSectionEdits([
     ...memo(editRow(0, 0), editRow(0, 0), editRow(0, 10), editRow(1, 0, "running")),
     { input: { phase: "section", section_index: 2 }, output: null, status: "succeeded" },
@@ -130,11 +142,21 @@ test("counts: from the memo's section runs only; a paid run is not a free one; a
   assert.deepEqual(c, { total: 5, freeMemo: 4, freeBySection: { 0: 2, 1: 1, 2: 1 } });
 });
 
-test("the allowance line and the counts the server sends back", () => {
+test("the screen's lines and the counts the server sends back", () => {
   const c = withSectionEdit(withSectionEdit(NO_SECTION_EDITS, 0, 0), 1, 0);
-  assert.equal(sectionEditAllowanceText(sectionEditQuote(c, 0)), "تعديلات مجانية متبقية: ٣ من ٥ — هذا القسم: ١ من ٢");
+  assert.equal(sectionEditAllowanceText(sectionEditQuote(c, 0)), "التعديلات المشمولة في سعر المذكرة: بقي ٣ من ٥");
+  assert.equal(sectionEditPriceText(sectionEditQuote(c, 0)), "هذا التعديل مشمول في سعر المذكرة، دون نقاط إضافية");
+  assert.equal(sectionEditLimitText(5), "استُخدمت التعديلات المشمولة في سعر هذه المذكرة كلها (٥) — ابدأ صياغة جديدة لمذكرة أخرى");
+  assert.doesNotMatch(sectionEditPriceText(sectionEditQuote(c, 0)) + sectionEditAllowanceText(sectionEditQuote(c, 0)), /نقاط? *[٠-٩0-9]|١٠|هذا القسم:/);
   assert.deepEqual(asSectionEditCounts(JSON.parse(JSON.stringify(c))), c);
   assert.equal(asSectionEditCounts({ total: "1" }), null);
+  // The draft screen reads the number with the prices and shows no points for an edit.
+  const screen = readFileSync(new URL("../../components/draft/steps/StepAiDraft.tsx", import.meta.url), "utf8");
+  assert.match(screen, /sectionEditQuote\(editCounts, n, revisionsIncluded\)/);
+  assert.match(screen, /revisions_included/);
+  assert.doesNotMatch(screen, /أكّد التعديل — \$\{/);
+  const prices = readFileSync(new URL("../../app/api/v1/pricing/draft-prices/route.ts", import.meta.url), "utf8");
+  assert.match(prices, /revisions_included: revisionsIncluded/);
 });
 
 // ── the founder plan ─────────────────────────────────────────────────────────
@@ -223,7 +245,7 @@ test("section output: one {heading, body}, the index from the input; anything el
   assert.equal(out({ sections: pleading.sections }, input), null, "a whole memo is not a section");
 });
 
-test("section turns: after a succeeded draft only, of a section that exists, up to 30 edits; a 2nd draft refused", () => {
+test("section turns: after a succeeded draft only, of a section that exists, up to the memo's included edits; a 2nd draft refused", () => {
   const turn = tool.checkTurn!;
   assert.equal(turn(section(0), 0, []), "ابدأ بتحليل الوقائع أولاً");
   assert.equal(turn(section(0), 1, memo().slice(0, 1)), SECTION_EDIT_COPY.needDraft);
@@ -233,8 +255,11 @@ test("section turns: after a succeeded draft only, of a section that exists, up 
   assert.equal(turn(section(0, { kind: "appeal" }), 2, memo()), "نوع المذكرة يختلف عن التحليل — ابدأ صياغة جديدة");
   assert.equal(turn(draft, 2, memo()), SECTION_EDIT_COPY.draftDone);
   assert.equal(turn(section(2), 2, memo()), null);
-  const thirty = memo(...Array.from({ length: 30 }, () => editRow(0, 10)));
-  assert.equal(turn(section(0), 32, thirty), SECTION_EDIT_COPY.limit);
+  // Owner ١٦٦: the 6th edit is refused (default 5), or per the admin's number.
+  const five = memo(...Array.from({ length: 5 }, () => editRow(0, 0)));
+  assert.equal(turn(section(0), 7, five), sectionEditLimitText(5));
+  assert.equal(turn(section(0), 7, five, { sectionEditsIncluded: 6 }), null);
+  assert.equal(turn(section(0), 4, memo(editRow(0, 0), editRow(1, 0)), { sectionEditsIncluded: 2 }), sectionEditLimitText(2));
 });
 
 // ── through the pipeline ─────────────────────────────────────────────────────
@@ -244,8 +269,11 @@ const FOUND: Retrieved = {
   map: { S1: { kind: "article", id: "labor__art-77", title: "نظام العمل — السابعة والسبعون", url: "/laws/labor#labor__art-77" } },
 };
 
-function db(prior: unknown[], startError: { code?: string; message: string } | null = null) {
+function db(prior: unknown[], startError: { code?: string; message: string } | null = null, included?: number) {
   return fakeDb((q: FakeQuery) => {
+    if (q.table === "platform_settings" && included !== undefined && q.filters.some(([, c, v]) => c === "key" && v === SECTION_EDITS_SETTING_KEY)) {
+      return { data: { value: { included } } };
+    }
     if (q.table === "platform_settings") return { data: { value: { "legal-drafter": { mode: "live" } } } };
     if (q.table === "ai_runs" && q.op === "select") return { data: prior };
     if (q.op === "rpc" && (q.table === "ai_start_section_edit" || q.table === "ai_start_run" || q.table === "ai_start_run_with_credit")) {
@@ -277,7 +305,7 @@ const body = (input: Record<string, unknown>, over: Record<string, unknown> = {}
 });
 const rpc = (log: FakeQuery[]) => log.find((q) => q.op === "rpc" && q.table.startsWith("ai_start"));
 
-test("pipeline: a free edit goes to ai_start_section_edit at 0 with the caps; the read includes price_points", async () => {
+test("pipeline: an edit goes to ai_start_section_edit at 0 with N / N / 0 / N (owner ١٦٦); the read includes price_points", async () => {
   const { client, log } = db(memo(editRow(0, 0)));
   const r = await startRunWith(client as never, deps(), LAWYER, body(section(1), { expectedPrice: 0 }));
   assert.equal(r.status, 202);
@@ -287,24 +315,35 @@ test("pipeline: a free edit goes to ai_start_section_edit at 0 with the caps; th
   assert.equal(p.p_price, 0);
   assert.equal(p.p_section_index, 1);
   assert.equal(p.p_conversation, CONV);
-  assert.deepEqual([p.p_free_per_memo, p.p_free_per_section, p.p_paid_price, p.p_max_per_memo], [5, 2, 10, 30]);
+  assert.deepEqual([p.p_free_per_memo, p.p_free_per_section, p.p_paid_price, p.p_max_per_memo], [5, 5, 0, 5]);
+  assert.ok(log.some((q) => q.table === "platform_settings" && q.filters.some(([, c, v]) => c === "key" && v === SECTION_EDITS_SETTING_KEY)), "the setting is read");
+  // The admin's number reaches the lock too.
+  const seven = db(memo(), null, 7);
+  await startRunWith(seven.client as never, deps(), LAWYER, body(section(1), { expectedPrice: 0 }));
+  const p7 = rpc(seven.log)!.payload as Record<string, unknown>;
+  assert.deepEqual([p7.p_free_per_memo, p7.p_free_per_section, p7.p_paid_price, p7.p_max_per_memo], [7, 7, 0, 7]);
   assert.equal(p.p_credit_kind, undefined);
   const read = log.find((q) => q.table === "ai_runs" && q.op === "select")!;
   assert.match(String(read.columns), /price_points/);
 });
 
-test("pipeline: the 6th memo edit and the 3rd edit of a section are charged 10", async () => {
-  const five = memo(editRow(0, 0), editRow(0, 0), editRow(1, 0), editRow(1, 0), editRow(2, 0));
-  const a = db(five);
-  assert.equal((await startRunWith(a.client as never, deps(), LAWYER, body(section(2), { expectedPrice: 10 }))).status, 202);
-  assert.equal((rpc(a.log)!.payload as Record<string, unknown>).p_price, 10);
+test("pipeline: the 3rd edit of a section and the 5th of the memo are free; the 6th is refused before anything starts", async () => {
+  const two = db(memo(editRow(0, 0), editRow(0, 0)));
+  assert.equal((await startRunWith(two.client as never, deps(), LAWYER, body(section(0), { expectedPrice: 0 }))).status, 202);
+  assert.equal((rpc(two.log)!.payload as Record<string, unknown>).p_price, 0);
 
-  const two = memo(editRow(0, 0), editRow(0, 0));
-  const b = db(two);
-  assert.equal((await startRunWith(b.client as never, deps(), LAWYER, body(section(0), { expectedPrice: 10 }))).status, 202);
-  assert.equal((rpc(b.log)!.payload as Record<string, unknown>).p_price, 10);
+  const four = db(memo(editRow(0, 0), editRow(0, 0), editRow(1, 0), editRow(1, 0)));
+  assert.equal((await startRunWith(four.client as never, deps(), LAWYER, body(section(2), { expectedPrice: 0 }))).status, 202);
 
-  // A failed (refunded) edit is not read back: its free edit is available again.
+  const five = db(memo(editRow(0, 0), editRow(0, 0), editRow(1, 0), editRow(1, 0), editRow(2, 0)));
+  const refused = await startRunWith(five.client as never, deps(), LAWYER, body(section(2), { expectedPrice: 0 }));
+  assert.equal(refused.status, 409);
+  assert.equal(refused.body.code, "turn_refused");
+  assert.equal(refused.body.error, sectionEditLimitText(5));
+  assert.equal(rpc(five.log), undefined, "nothing started, nothing charged");
+  assert.deepEqual((refused.body.details as Record<string, unknown>).sectionEdits, { total: 5, freeMemo: 5, freeBySection: { 0: 2, 1: 2, 2: 1 } }, "the screen resyncs its tally");
+
+  // A failed (refunded) edit is not read back: its edit is available again.
   const c = db(memo(editRow(0, 0)));
   await startRunWith(c.client as never, deps(), LAWYER, body(section(0), { expectedPrice: 0 }));
   assert.equal((rpc(c.log)!.payload as Record<string, unknown>).p_price, 0);
@@ -319,12 +358,12 @@ test("pipeline: a section edit never spends a founder credit, even when the brow
   assert.equal(r.body.creditUsed, false);
 });
 
-test("pipeline: a price other than the one shown is refused, uncharged, with the counts to show again", async () => {
+test("pipeline: a price other than 0 (an old screen that showed points) is refused, uncharged, with the counts to show again", async () => {
   const { client, log } = db(memo(editRow(0, 0), editRow(0, 0)));
-  const r = await startRunWith(client as never, deps(), LAWYER, body(section(0), { expectedPrice: 0 }));
+  const r = await startRunWith(client as never, deps(), LAWYER, body(section(0), { expectedPrice: 10 }));
   assert.equal(r.status, 409);
   assert.equal(r.body.code, "price_changed");
-  assert.equal(r.body.price, 10);
+  assert.equal(r.body.price, 0);
   assert.deepEqual((r.body.details as Record<string, unknown>).sectionEdits, { total: 2, freeMemo: 2, freeBySection: { 0: 2 } });
   assert.equal(rpc(log), undefined, "nothing started");
 });
@@ -332,7 +371,7 @@ test("pipeline: a price other than the one shown is refused, uncharged, with the
 test("pipeline: the SQL's refusals — a race lost, the ceiling, no draft — and a missing function refuses uncharged", async () => {
   for (const [message, code, error] of [
     ["section_price_changed", "price_changed", SECTION_EDIT_COPY.priceChanged],
-    ["section_edit_limit", "turn_refused", SECTION_EDIT_COPY.limit],
+    ["section_edit_limit", "turn_refused", sectionEditLimitText(5)],
     ["section_no_draft", "turn_refused", SECTION_EDIT_COPY.waitDraft],
   ] as const) {
     const { client } = db(memo(), { code: "P0001", message });
@@ -350,11 +389,11 @@ test("pipeline: the SQL's refusals — a race lost, the ceiling, no draft — an
   }
 });
 
-test("pipeline: the 31st edit is refused by the turn check, before anything is charged", async () => {
-  const { client, log } = db(memo(...Array.from({ length: 30 }, () => editRow(1, 10))));
-  const r = await startRunWith(client as never, deps(), LAWYER, body(section(0), { expectedPrice: 10 }));
+test("pipeline: past the included edits (here the admin's 3) the turn check refuses, before anything is charged", async () => {
+  const { client, log } = db(memo(...Array.from({ length: 3 }, () => editRow(1, 0))), null, 3);
+  const r = await startRunWith(client as never, deps(), LAWYER, body(section(0), { expectedPrice: 0 }));
   assert.equal(r.status, 409);
-  assert.equal(r.body.error, SECTION_EDIT_COPY.limit);
+  assert.equal(r.body.error, sectionEditLimitText(3));
   assert.equal(rpc(log), undefined);
 });
 

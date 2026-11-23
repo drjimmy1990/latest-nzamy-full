@@ -10,7 +10,7 @@
 import { Warning, SealWarning, Lightbulb, ArrowsCounterClockwise } from "@phosphor-icons/react";
 import AiResultActions from "@/components/AiResultActions";
 import CitationCheckList, { asCitationVerdicts } from "@/components/ai/CitationCheckList";
-import { groupPoints, simResultText, SEVERITY_LABEL, SOURCE_LABEL, type SimResult } from "./_simResult";
+import { groupPoints, simResultText, severityLabel, SOURCE_LABEL, type SimResult } from "./_simResult";
 import { FOUNDER_CREDIT_USED_TEXT } from "@/lib/membership/founderPlan";
 import AssistIndicatorNote from "@/components/ai/AssistIndicatorNote";
 
@@ -19,6 +19,8 @@ const SEVERITY = {
   medium: { Icon: SealWarning, cls: "border-amber-500/25 bg-amber-500/10 text-amber-500" },
   low:    { Icon: Lightbulb,   cls: "border-blue-500/25 bg-blue-500/10 text-blue-500" },
 } as const;
+// Owner ١٧٤: a point the simulation did not rate, in a neutral tone.
+const UNRATED = { Icon: SealWarning, cls: "border-zinc-500/20 bg-zinc-500/10 text-zinc-500" } as const;
 
 export default function SimResultView({ result, isDark, chargedPoints, creditUsed = false, onReset }: {
   result: SimResult; isDark: boolean; chargedPoints: number; creditUsed?: boolean; onReset: () => void;
@@ -47,12 +49,12 @@ export default function SimResultView({ result, isDark, chargedPoints, creditUse
         <div key={g.source} className={`${card} p-5 space-y-3`}>
           <p className={head}>{SOURCE_LABEL[g.source]} ({g.points.length.toLocaleString("ar-SA")})</p>
           {g.points.map((p, i) => {
-            const s = SEVERITY[p.severity] ?? SEVERITY.medium;
+            const s = (p.severity && SEVERITY[p.severity]) || UNRATED;
             return (
               <div key={i} className={`rounded-xl border p-3.5 ${isDark ? "border-white/[0.06]" : "border-zinc-100"}`}>
                 <div className="mb-1.5 flex flex-wrap items-center gap-2">
                   <span className={`inline-flex items-center gap-1 rounded-lg border px-2 py-0.5 text-[10px] font-bold ${s.cls}`}>
-                    <s.Icon size={11} weight="fill" /> {SEVERITY_LABEL[p.severity] ?? SEVERITY_LABEL.medium}
+                    <s.Icon size={11} weight="fill" /> {severityLabel(p.severity)}
                   </span>
                   <p className={`text-[13px] font-semibold ${body}`}>{p.title}</p>
                 </div>

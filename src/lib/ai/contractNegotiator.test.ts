@@ -209,7 +209,8 @@ const body = (over: Record<string, unknown> = {}) => ({ tool: "contract-negotiat
 
 test("off: nobody is charged, for every role, whether the setting is empty, unreadable or says off", async () => {
   for (const setting of [null, {}, { "contract-negotiator": { mode: "off" } }]) {
-    for (const role of [...ROLES, "admin"]) {
+    // Owner ١٥٦ (أ): the admin runs an off tool exempt — pinned below.
+    for (const role of ROLES) {
       const { client, log } = db(setting);
       const { d, state } = deps();
       const r = await startRunWith(client as never, d, actor(role), body());
@@ -218,6 +219,10 @@ test("off: nobody is charged, for every role, whether the setting is empty, unre
       assert.deepEqual(rpcs(log), [], `${role}: no money function`);
       assert.equal(state.n8n, 0, role);
     }
+    const { client, log } = db(setting);
+    const r = await startRunWith(client as never, deps().d, actor("admin"), body());
+    assert.equal(r.status, 202, "owner ١٥٦: the admin runs the off tool");
+    assert.equal((log.find((q) => q.table === "ai_start_run")!.payload as Record<string, unknown>).p_exempt, true, "never charged");
   }
 });
 

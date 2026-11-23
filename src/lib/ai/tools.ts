@@ -33,7 +33,9 @@ import {
   SECTION_EDIT_PHASE,
   SECTION_INSTRUCTION_MAX,
   countSectionEdits,
+  sectionEditLimitText,
   sectionEditPrice,
+  sectionEditsExhausted,
   type SectionEditCounts,
 } from "./sectionEdits.ts";
 
@@ -135,7 +137,13 @@ export interface AiToolSpec {
    * then the draft): the Arabic refusal of a turn out of order, or null. Runs
    * after the conversation's earlier runs are read and before the charge.
    */
-  checkTurn?: (input: Record<string, unknown>, turn: number, prior: ReadonlyArray<{ input: unknown; output: unknown; status: string }>) => string | null;
+  checkTurn?: (
+    input: Record<string, unknown>,
+    turn: number,
+    prior: ReadonlyArray<{ input: unknown; output: unknown; status: string }>,
+    /** Owner ١٦٦ (l13): the memo's included section edits (admin setting), read by runCore for a section edit. */
+    ctx?: { sectionEditsIncluded?: number },
+  ) => string | null;
   /**
    * Rebuilds, from the conversation's stored runs, the parts of the input the
    * server already holds, so the browser's copy is never trusted (owner ٤١٠:
@@ -601,6 +609,13 @@ const NOT_STATED = "غير مذكور";
 const text = (v: unknown, max: number, fallback = ""): string => boundedText(v, max) ?? fallback;
 const oneOf = <T extends string>(v: unknown, list: readonly T[], fallback: T): T =>
   (list as readonly unknown[]).includes(v) ? (v as T) : fallback;
+/**
+ * Owner ١٧٤ / ١١٥ (batch l13): a rating the model did not give (a level, an
+ * assessment, a severity) stays null — the screen says «لم يُحدَّد» — instead
+ * of a made-up «متوسط» shown as if the engine had judged it.
+ */
+const ratingOf = <T extends string>(v: unknown, list: readonly T[]): T | null =>
+  (list as readonly unknown[]).includes(v) ? (v as T) : null;
 const listOf = <T>(v: unknown, max: number, map: (x: unknown) => T | null): T[] =>
   (Array.isArray(v) ? v : []).map(map).filter((x): x is T => x !== null).slice(0, max);
 
@@ -636,7 +651,7 @@ function caseBriefOutput(raw: unknown): Record<string, unknown> | null {
     highlights: listOf(raw.highlights, 12, (h) =>
       isPlainObject(h) && boundedText(h.text, 500) ? { kind: oneOf(h.kind, BRIEF_KINDS, "info"), text: text(h.text, 500) } : null,
     ),
-    assessment: oneOf(raw.assessment, BRIEF_LEVELS, "medium"),
+    assessment: ratingOf(raw.assessment, BRIEF_LEVELS),
     assessmentReason: text(raw.assessmentReason, 1000),
     options: listOf(raw.options, 6, (o) =>
       isPlainObject(o) && boundedText(o.label, 200) ? { label: text(o.label, 200), requires: text(o.requires, 400) } : null,
@@ -720,7 +735,7 @@ function briefCheckOutput(raw: unknown): Record<string, unknown> | null {
     findings: listOf(raw.findings, 25, (f) =>
       isPlainObject(f) && boundedText(f.issue, 800)
         ? {
-            severity: oneOf(f.severity, FINDING_SEVERITIES, "medium"),
+            severity: ratingOf(f.severity, FINDING_SEVERITIES),
             location: text(f.location, 200, "عام"),
             issue: text(f.issue, 800),
             fix: text(f.fix, 800),
@@ -825,7 +840,7 @@ function wargamingOutput(raw: unknown, input: Record<string, unknown>): Record<s
     isPlainObject(p) && asked.includes(String(p.source)) && boundedText(p.title, 300) && boundedText(p.detail, 1500)
       ? {
           source: p.source as WargamingTarget,
-          severity: oneOf(p.severity, SEVERITIES, "medium"),
+          severity: ratingOf(p.severity, SEVERITIES),
           title: text(p.title, 300),
           detail: text(p.detail, 1500),
           counter: text(p.counter, 1500),
@@ -872,7 +887,7 @@ function analyzeStrengthOutput(raw: unknown): Record<string, unknown> | null {
   const lines = (v: unknown) => listOf(v, 8, (s) => boundedText(s, 500));
   return {
     grounds: {
-      level: oneOf(g.level, LEVELS, "medium"),
+      level: ratingOf(g.level, LEVELS),
       summary,
       strengths: lines(g.strengths),
       weaknesses: lines(g.weaknesses),
@@ -885,12 +900,12 @@ function analyzeStrengthOutput(raw: unknown): Record<string, unknown> | null {
     ),
     risks: listOf(raw.risks, 10, (r) =>
       isPlainObject(r) && boundedText(r.risk, 400)
-        ? { risk: text(r.risk, 400), level: oneOf(r.level, SEVERITIES, "medium"), mitigation: text(r.mitigation, 600) }
+        ? { risk: text(r.risk, 400), level: ratingOf(r.level, SEVERITIES), mitigation: text(r.mitigation, 600) }
         : null,
     ),
     devil: listOf(raw.devil, 6, (d) =>
       isPlainObject(d) && boundedText(d.text, 1000)
-        ? { label: text(d.label, 150, "ملاحظة"), text: text(d.text, 1000), severity: oneOf(d.severity, DEVIL_SEVERITIES, "high") }
+        ? { label: text(d.label, 150, "ملاحظة"), text: text(d.text, 1000), severity: ratingOf(d.severity, DEVIL_SEVERITIES) }
         : null,
     ),
     cited: Array.isArray(raw.cited) ? raw.cited.slice(0, 40) : [],
@@ -1811,13 +1826,15 @@ function legalDrafterOutput(raw: unknown, input: Record<string, unknown>): Recor
 /**
  * Turn 0 is the analysis; turn 1 the draft of that same kind, once the analysis
  * succeeded; every later turn a section edit (owner ٤١٠) of that draft, once it
- * succeeded, naming one of its sections, up to SECTION_EDIT_MAX_PER_MEMO. A
- * second draft is refused (it would be a free second memo).
+ * succeeded, naming one of its sections, up to the memo's included revisions
+ * (owner ١٦٦, the admin setting; 5 until saved). A second draft is refused (it
+ * would be a free second memo).
  */
 function legalDrafterTurn(
   input: Record<string, unknown>,
   turn: number,
   prior: ReadonlyArray<{ input: unknown; output: unknown; status: string }>,
+  ctx?: { sectionEditsIncluded?: number },
 ): string | null {
   if (turn === 0) return input.phase === "issues" ? null : DRAFT_COPY.firstStep;
   if (turn === 1) {
@@ -1835,7 +1852,7 @@ function legalDrafterTurn(
   const sections = Array.isArray(draft.output.sections) ? draft.output.sections : [];
   const index = input.section_index;
   if (!Number.isInteger(index) || (index as number) < 0 || (index as number) >= sections.length) return SECTION_EDIT_COPY.badSection;
-  if (countSectionEdits(prior).total >= SECTION_EDIT_MAX_PER_MEMO) return SECTION_EDIT_COPY.limit;
+  if (sectionEditsExhausted(countSectionEdits(prior), ctx?.sectionEditsIncluded)) return sectionEditLimitText(ctx?.sectionEditsIncluded);
   return null;
 }
 
@@ -2220,14 +2237,14 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     // Pleadings: a consultant does not plead (Art. 18 of نظام المحاماة).
     consultantBlocked: true,
     // Charged once, on the analysis; the draft that follows it is free. A
-    // section edit (owner ٤١٠): free within 5 per memo and 2 per section, else
-    // 10 points (sectionEdits.ts); unknown counts are paid, never free.
+    // section edit (owner ١٦٦, batch l13): included in the memo price up to the
+    // admin's number (5), refused after it — never charged (sectionEdits.ts).
     price: (input, ctx) =>
       input.phase === SECTION_EDIT_PHASE
         ? sectionEditPrice(ctx.priorSectionEdits, input.section_index)
         : (ctx.turn ?? 0) === 0 ? draftKindPrice(input.kind, ctx.draftPrices) : 0,
     // An analysis and its draft are two runs. Section edits are not held to this
-    // limit (ai_start_section_edit): the memo's ceiling of 30 bounds them; and
+    // limit (ai_start_section_edit): the memo's included revisions bound them; and
     // since 20261108_41 they are not counted against it either, and the draft
     // of a succeeded analysis is never refused for the day.
     dailyLimit: 10,

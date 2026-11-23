@@ -71,10 +71,11 @@ test("toolAccessFor: a role that cannot use the tool hears «role» whatever the
   }
 });
 
-test("toolAccessFor: admin passes role and consultant, but off stops an admin too", () => {
+test("toolAccessFor: admin passes role, consultant and (owner ١٥٦ أ) a switched-off tool; off still stops a lawyer", () => {
   const blocked = spec({ consultantBlocked: true });
   assert.equal(toolAccessFor(blocked, { userType: "admin", practiceKind: "consultant" }, live), "ok");
-  assert.equal(toolAccessFor(spec(), { userType: "admin", practiceKind: null }, off), "tool_off");
+  assert.equal(toolAccessFor(spec(), { userType: "admin", practiceKind: null }, off), "ok");
+  assert.equal(toolAccessFor(spec(), { userType: "lawyer", practiceKind: "advocate" }, off), "tool_off");
 });
 
 // ── R5: toolAvailability(mode, isAdmin) is the one rule ─────────────────────
@@ -82,14 +83,16 @@ test("toolAccessFor: admin passes role and consultant, but off stops an admin to
 test("toolAvailability: every mode × admin pair, read through effectiveToolMode", () => {
   const expected = (mode: AiToolMode, isAdmin: boolean) => {
     const m = effectiveToolMode(mode);
-    return m === "live" || (m === "staff" && isAdmin) ? "ok" : "tool_off";
+    return isAdmin || m === "live" ? "ok" : "tool_off";
   };
   for (const mode of MODES) {
     for (const isAdmin of [true, false]) {
       assert.equal(toolAvailability(mode, isAdmin), expected(mode, isAdmin), `${mode} admin=${isAdmin}`);
     }
   }
-  assert.equal(toolAvailability("off", true), "tool_off");
+  // Owner ١٥٦ (أ): the admin really runs a switched-off tool (exempt, logged).
+  assert.equal(toolAvailability("off", true), "ok");
+  assert.equal(toolAvailability("off", false), "tool_off");
   assert.equal(toolAvailability("staff", true), "ok");
   assert.equal(toolAvailability("staff", false), "tool_off");
   assert.equal(toolAvailability("live", false), "ok");

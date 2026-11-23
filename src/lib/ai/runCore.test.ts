@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fakeDb, type FakeQuery } from "../payments/fakeDb.test-helper.ts";
-import { AI_COPY, callbackWith, mapCitations, startRunWith, type RunActor, type StartRunDeps } from "./runCore.ts";
+import { AI_COPY, callbackWith, mapCitations, mergeUsage, startRunWith, type RunActor, type StartRunDeps } from "./runCore.ts";
 import { resolveAiFiles } from "./aiFiles.ts";
 import { serveFileText } from "./fileTextServe.ts";
 import { FILE_TEXT_TTL_MS } from "./fileTextToken.ts";
@@ -211,6 +211,53 @@ test("citations keep only sources the app sent, once each", () => {
   ]);
   assert.deepEqual(mapCitations("S1", sources), []);
   assert.deepEqual(mapCitations(["__proto__", "toString"], sources), []);
+});
+
+test("owner ١٥٦ (l13): usages add up; a run with no tokens never hides a spent one", () => {
+  const a = { model: "m-lib", input_tokens: 100, output_tokens: 10, cache_read_tokens: 0 };
+  const b = { model: "m-tool", input_tokens: 1000, output_tokens: 200, cache_read_tokens: 50 };
+  assert.deepEqual(mergeUsage(a, b), { model: "m-tool", input_tokens: 1100, output_tokens: 210, cache_read_tokens: 50 });
+  assert.deepEqual(mergeUsage(null, b), b);
+  assert.equal(mergeUsage(null, null), null);
+  const zero = { model: "m-tool", input_tokens: 0, output_tokens: 0, cache_read_tokens: 0 };
+  assert.deepEqual(mergeUsage(a, zero), { ...a, model: "m-tool" }, "the search writer's tokens survive a 0/0 reply");
+  assert.deepEqual(mergeUsage(zero, b), b);
+});
+
+test("owner ١٥٦ (l13): a job's search-writer tokens stored at dispatch join the callback's; a refused answer keeps its tokens", async () => {
+  const running = { id: RUN, tool: "echo-job", status: "running", class: "job", source_ids: {}, usage: { model: "g", input_tokens: 40, output_tokens: 4, cache_read_tokens: 0 } };
+  {
+    const { client, log } = db({ run: running });
+    const r = await callbackWith(client as never, {
+      run_id: RUN, status: "succeeded", output: { echo: "x" }, citations: [],
+      usage: { model: "g", input_tokens: 1000, output_tokens: 100, cache_read_tokens: 0 },
+    });
+    assert.equal(r.body.final, "succeeded");
+    const done = log.find((q) => q.table === "ai_runs" && q.op === "update")!.payload as Record<string, unknown>;
+    assert.deepEqual(done.usage, { model: "g", input_tokens: 1040, output_tokens: 104, cache_read_tokens: 0 });
+    assert.match(String(log.find((q) => q.table === "ai_runs" && q.op === "select")!.columns), /\busage\b/);
+  }
+  {
+    // The model answered (and was billed) but the shape is wrong: refunded, tokens kept.
+    const { client, log } = db({ run: { ...running, usage: null } });
+    const r = await callbackWith(client as never, {
+      run_id: RUN, status: "succeeded", output: { nope: 1 }, citations: [],
+      usage: { model: "g", input_tokens: 900, output_tokens: 90 },
+    });
+    assert.equal(r.body.final, "failed");
+    const kept = log.find((q) => q.table === "ai_runs" && q.op === "update");
+    assert.ok(kept, "the spent tokens are written before the refund");
+    assert.deepEqual((kept!.payload as Record<string, unknown>).usage, { model: "g", input_tokens: 900, output_tokens: 90, cache_read_tokens: 0 });
+    assert.ok(kept!.filters.some(([op, c, v]) => op === "eq" && c === "status" && v === "running"), "only while running");
+    const order = log.filter((q) => q.op === "update" || q.op === "rpc").map((q) => q.table);
+    assert.deepEqual(order, ["ai_runs", "ai_fail_run"]);
+  }
+  {
+    // 0 / 0 (a workflow not yet re-applied): nothing extra is written on a refusal.
+    const { client, log } = db({ run: { ...running, usage: null } });
+    await callbackWith(client as never, { run_id: RUN, status: "succeeded", output: { nope: 1 }, usage: { model: "g", input_tokens: 0, output_tokens: 0 } });
+    assert.equal(log.filter((q) => q.table === "ai_runs" && q.op === "update").length, 0);
+  }
 });
 
 test("the callback settles a running job once and answers 200 when it is already final", async () => {
