@@ -45,12 +45,13 @@ const SUPER_ONLY = [
 
 // ─── The console's own sidebar (AdminSidebar.tsx) ─────────────────────────────
 
-test("super_admin sees all 41 items of the console sidebar", () => {
+test("super_admin sees all 42 items of the console sidebar", () => {
   const all = hrefsOf(NAV);
   // l9 row 54: one list for both navs — 37, plus إضافة مستخدم, الأدوار والصلاحيات,
   // سجل المدفوعات and إدارة الأسعار from the old ADMIN_SIDEBAR, minus the
-  // «قريباً» page «إعدادات النظام» (/dashboard/admin/system); + دفعات الاختبار (l9 testinfra).
-  assert.equal(all.length, 41, "the console sidebar has 41 items");
+  // «قريباً» page «إعدادات النظام» (/dashboard/admin/system); + دفعات الاختبار (l9 testinfra);
+  // + المجلة التشريعية (l13).
+  assert.equal(all.length, 42, "the console sidebar has 42 items");
   assert.equal(new Set(all).size, all.length, "no href is listed twice");
   assert.deepEqual(adminNavForRole("super_admin"), NAV);
 });
@@ -221,9 +222,9 @@ test("filterNavGroupsByRole keeps the group's own fields", () => {
 
 // ─── ADMIN_SIDEBAR (SharedSidebar / GlobalSearch) ─────────────────────────────
 
-// l9 row 54: ADMIN_SIDEBAR is the console list (41) plus the personal /settings.
+// l9 row 54: ADMIN_SIDEBAR is the console list (42 since l13) plus the personal /settings.
 test("ADMIN_SIDEBAR: super_admin and a null role see all 42 items", () => {
-  assert.equal(hrefsOf(ADMIN_SIDEBAR).length, 42, "ADMIN_SIDEBAR has 42 items");
+  assert.equal(hrefsOf(ADMIN_SIDEBAR).length, 43, "ADMIN_SIDEBAR has 43 items");
   assert.deepEqual(adminSidebarForRole("super_admin"), ADMIN_SIDEBAR);
   assert.deepEqual(adminSidebarForRole(null), ADMIN_SIDEBAR);
 });

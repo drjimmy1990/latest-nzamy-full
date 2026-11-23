@@ -14,7 +14,7 @@ import {
 /** O22 (batch l11-misc): server-side feature flags in platform_settings.feature_flags. */
 
 test("the list is closed and every flag has an Arabic name and description", () => {
-  assert.deepEqual([...FEATURE_FLAG_KEYS], ["site_assistant", "library_similar_links"]);
+  assert.deepEqual([...FEATURE_FLAG_KEYS], ["site_assistant", "library_similar_links", "legislative_journal_enabled"]);
   for (const k of FEATURE_FLAG_KEYS) {
     assert.ok(FEATURE_FLAGS[k].nameAr.length > 3);
     assert.ok(FEATURE_FLAGS[k].descriptionAr.length > 10);
@@ -46,6 +46,14 @@ test("owner Q171 (l13): no «رابط آلي» switch or label; a stored value f
   for (const k of FEATURE_FLAG_KEYS) {
     assert.doesNotMatch(FEATURE_FLAGS[k].nameAr + FEATURE_FLAGS[k].descriptionAr, /رابط آلي|ربط آلي/);
   }
+});
+
+test("batch l13: the legislative journal switch ships OFF (opens after 17 Dec, owner Q190–Q195)", () => {
+  assert.equal(defaultFeatureFlags().legislative_journal_enabled, false);
+  assert.equal(parseFeatureFlags(null).legislative_journal_enabled, false, "no row → off");
+  assert.equal(parseFeatureFlags({ legislative_journal_enabled: "true" }).legislative_journal_enabled, false, "a string is not a switch");
+  assert.equal(parseFeatureFlags({ legislative_journal_enabled: true }).legislative_journal_enabled, true);
+  assert.equal(featureFlagsIssue({ legislative_journal_enabled: true }), null);
 });
 
 test("write validator: an object of known flags → booleans, nothing else", () => {

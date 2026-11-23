@@ -55,6 +55,15 @@ export const FEATURE_FLAGS = Object.freeze({
       "يعرض تحت كل مادة قسماً مستقلاً بالمواد المتقاربة معها في المعنى من أنظمة أخرى. يقترحها النظام حسب المعنى، وليست علاقة نظامية بين المادتين. إيقافه يخفي القسم من القارئ خلال دقيقة، ويبقى في مستكشف الجراف للفريق.",
     defaultOn: true,
   }),
+  // Batch l13 (owner Q190–Q195): read by /journal, its issue page and PDF, and
+  // the journal cron. Default OFF — the journal opens after 17 Dec; the admin
+  // page /dashboard/admin/journal works while it is off, to prepare entries.
+  legislative_journal_enabled: Object.freeze({
+    nameAr: "«المجلة التشريعية»",
+    descriptionAr:
+      "صفحة المجلة التشريعية للزوار والمشتركين، والعدد الشهري وإرساله بالبريد لمن فعّل «النشرة الإخبارية». وهي مطفأة حتى تُفتح المجلة. إيقافها يخفي الصفحة ويوقف الإرسال خلال دقيقة، ويبقى إدخال الأخبار واعتمادها متاحاً للإدارة.",
+    defaultOn: false,
+  }),
 } satisfies Record<string, FeatureFlagDef>);
 
 export type FeatureFlagKey = keyof typeof FEATURE_FLAGS;

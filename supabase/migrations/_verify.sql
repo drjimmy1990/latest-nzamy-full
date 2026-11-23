@@ -8426,3 +8426,26 @@ select 'Q181 + Q182: the individual''s tool setting is valid and names Q181; lis
                    from public.platform_settings where key = 'free_question_tool_by_account_type'), false)
        and coalesce((select pg_catalog.jsonb_typeof(value -> 'voice') = 'string' from public.platform_settings where key = 'listen_voice'), false) as ok;
 -- <<< verify:l13_assistant
+-- >>> verify:l13_journal
+-- Batch l13-journal (owner Q190–Q195): run 20261203_70 any time, before or after the deploy.
+select 'l13 journal: 4 tables, RLS on, no anon privilege, admin-only policies, send log not writable by sessions (run 20261203_70)' as check,
+       case when to_regclass('public.journal_entries') is null or to_regclass('public.journal_issues') is null
+                 or to_regclass('public.journal_issue_entries') is null or to_regclass('public.journal_issue_sends') is null then false else
+       coalesce((select bool_and(relrowsecurity) from pg_catalog.pg_class
+                  where oid in (to_regclass('public.journal_entries'), to_regclass('public.journal_issues'),
+                                to_regclass('public.journal_issue_entries'), to_regclass('public.journal_issue_sends'))), false)
+       and not has_table_privilege('anon', 'public.journal_entries', 'SELECT')
+       and not has_table_privilege('anon', 'public.journal_issues', 'SELECT')
+       and not has_table_privilege('anon', 'public.journal_issue_sends', 'SELECT')
+       and not has_table_privilege('authenticated', 'public.journal_issue_sends', 'INSERT')
+       and not has_table_privilege('authenticated', 'public.journal_issue_sends', 'UPDATE')
+       and has_table_privilege('service_role', 'public.journal_issue_sends', 'INSERT')
+       and coalesce((select count(*) from pg_catalog.pg_policies
+                      where schemaname = 'public' and tablename like 'journal\_%'
+                        and coalesce(qual, '') not ilike '%is_admin()%'), 1) = 0
+       and coalesce((select count(*) from pg_catalog.pg_policies
+                      where schemaname = 'public' and tablename like 'journal\_%'), 0) = 4
+       and exists (select 1 from pg_catalog.pg_constraint
+                    where conname = 'journal_issues_approved_stamp' and conrelid = to_regclass('public.journal_issues'))
+       end as ok;
+-- <<< verify:l13_journal

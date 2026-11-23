@@ -248,6 +248,9 @@ const WRITE_MARKERS = [
   "purgeNowWith(",
   // P3 Task 10 (R24): the founder retry re-runs fulfilment through the resume path
   "fulfillOrder(",
+  // l13 journal: building an issue, and e-mailing one batch of an approved issue
+  "buildIssue(",
+  "sendIssueBatch(",
 ];
 
 function firstWriteAt(body: string): number {
@@ -351,6 +354,13 @@ const GATES: Array<{ file: string; method: string; action: StaffAction | "per-fi
   // l9 testinfra (owner file 19 §1ج): move a test account to a batch; «مسح دفعة الاختبار» (super admin + fresh TOTP)
   { file: "test-batches/route.ts", method: "POST", action: "settings.write", logs: 1 },
   { file: "test-batches/purge/route.ts", method: "POST", action: "users.delete", logs: 1 },
+  // l13 (owner Q190–Q195): «المجلة التشريعية» — entries are content.delete (as the blog), issues broadcasts.send
+  { file: "journal/entries/route.ts", method: "POST", action: "content.delete", logs: 1 },
+  { file: "journal/entries/[id]/route.ts", method: "PATCH", action: "content.delete", logs: 1 },
+  { file: "journal/entries/[id]/route.ts", method: "DELETE", action: "content.delete", logs: 1 },
+  { file: "journal/issues/route.ts", method: "POST", action: "broadcasts.send", logs: 1 },
+  // send arm + approve / unapprove arm
+  { file: "journal/issues/[id]/route.ts", method: "PATCH", action: "broadcasts.send", logs: 2 },
 ];
 
 for (const { file, method, action, logs } of GATES) {
