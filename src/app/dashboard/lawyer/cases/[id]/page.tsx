@@ -11,7 +11,7 @@ import {
   MapPin, MoneyWavy, Robot, FolderOpen, Eye, CheckSquare,
   Graph, UsersThree, Circle, DotsThree,
   ArrowsOut, ArrowsIn, Spinner, ArrowClockwise, Timer, SortAscending,
-  Archive, ClockCounterClockwise, Prohibit,
+  Archive, ClockCounterClockwise, Prohibit, NotePencil,
 } from "@phosphor-icons/react";
 import { useRiyadhToday } from "@/hooks/useRiyadhToday";
 import { hearingDisplayState, HEARING_DISPLAY_LABEL_AR, type HearingDisplayState } from "@/lib/services/hearingVocabulary";
@@ -150,6 +150,8 @@ const CaseGraphView = dynamic(
   () => import("@/app/dashboard/business/kanban/CaseGraphView"),
   { ssr: false, loading: () => <div className="h-96 flex items-center justify-center text-sm text-slate-400">جارٍ تحميل خريطة القضية...</div> }
 );
+// Owner ١٨٩ (ب), batch l13: the free board «لوحة», a tab beside the map (the map is unchanged).
+const CaseFreeBoard = dynamic(() => import("@/components/dashboard/caseBoard/CaseFreeBoard"), { ssr: false });
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 /**
@@ -283,6 +285,8 @@ const TABS: { id: string; label: string; icon: React.ElementType; group: CaseTab
   // client, while «فريق القضية» (owner ١٦٩, the notes tab) never includes the client.
   { id: "team",      label: "أطراف القضية", icon: UsersThree, group: "file" },
   { id: "graph",     label: "خريطة القضية", icon: Graph, group: "file" },
+  // owner ١٨٩ (ب): the free board, beside the map — its own table, the case's own access rule.
+  { id: "board",     label: "لوحة",        icon: NotePencil, group: "file" },
   { id: "notes",     label: "الملاحظات",   icon: ChatDots, group: "file" },
 ];
 const TAB_IDS = TABS.map(t => t.id);
@@ -2343,6 +2347,13 @@ export default function CaseDetailPage() {
                   </div>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* ── لوحة (owner ١٨٩ (ب)) — the case's free board, saved per case ── */}
+          {activeTab === "board" && (
+            <div className={`${card} overflow-hidden`} style={{ height: "580px" }}>
+              <CaseFreeBoard caseId={id} isDark={isDark} />
             </div>
           )}
 
