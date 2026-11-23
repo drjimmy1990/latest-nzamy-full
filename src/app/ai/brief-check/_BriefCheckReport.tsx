@@ -11,7 +11,8 @@ import { Warning, SealWarning, Lightbulb } from "@phosphor-icons/react";
 import CitationCheckList, { asCitationVerdicts, type CitationVerdict } from "@/components/ai/CitationCheckList";
 
 export interface BriefFinding {
-  severity: "high" | "medium" | "low";
+  /** null: the review gave no severity (owner ١٧٤ — never a made-up «متوسطة»). */
+  severity: "high" | "medium" | "low" | null;
   location: string;
   issue: string;
   fix: string;
@@ -39,13 +40,14 @@ const SEVERITY = {
   medium: { label: "متوسطة", Icon: SealWarning, cls: "border-amber-500/25 bg-amber-500/10 text-amber-500" },
   low:    { label: "بسيطة", Icon: Lightbulb,   cls: "border-blue-500/25 bg-blue-500/10 text-blue-500" },
 } as const;
+const UNRATED = { label: "بلا تصنيف", Icon: SealWarning, cls: "border-zinc-500/20 bg-zinc-500/10 text-zinc-500" } as const;
 
 export default function BriefCheckReportView({ report, isDark, chargedPoints }: { report: BriefCheckReport; isDark: boolean; chargedPoints: number }) {
   const card = isDark ? "bg-zinc-900 border border-white/[0.06] rounded-2xl" : "bg-white border border-zinc-200/70 rounded-2xl";
   const head = `text-[11px] font-black uppercase tracking-wider ${isDark ? "text-zinc-500" : "text-zinc-400"}`;
   const body = isDark ? "text-zinc-300" : "text-zinc-700";
   const order = { high: 0, medium: 1, low: 2 } as const;
-  const findings = [...report.findings].sort((a, b) => (order[a.severity] ?? 1) - (order[b.severity] ?? 1));
+  const findings = [...report.findings].sort((a, b) => (a.severity ? order[a.severity] : 3) - (b.severity ? order[b.severity] : 3));
 
   return (
     <div className="space-y-4">
@@ -58,7 +60,7 @@ export default function BriefCheckReportView({ report, isDark, chargedPoints }: 
         <p className={head}>الثغرات ({findings.length.toLocaleString("ar-SA")})</p>
         {findings.length === 0 && <p className={`text-[12px] ${body}`}>لم تُرصد ثغرات.</p>}
         {findings.map((f, i) => {
-          const s = SEVERITY[f.severity] ?? SEVERITY.medium;
+          const s = (f.severity && SEVERITY[f.severity]) || UNRATED;
           return (
             <div key={i} className={`rounded-xl border p-3.5 ${isDark ? "border-white/[0.06]" : "border-zinc-100"}`}>
               <div className="flex flex-wrap items-center gap-2 mb-1.5">

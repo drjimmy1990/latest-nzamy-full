@@ -40,7 +40,7 @@ import CitationCheckList, { asCitationVerdicts } from "@/components/ai/CitationC
 import { aiReadableAccept, isAiReadable, splitAiReadable } from "@/components/ai/aiReadable";
 import { AI_TEXT_FILES_ON } from "@/lib/ai/aiTextFilesFlag";
 import { ANALYZE_STRENGTH_PRICE, CASE_SUMMARY_MAX, CASE_SUMMARY_MIN, WAVE4_FILES } from "@/lib/ai/tools";
-import { asStrengthReport, strengthReportText, LEVEL_LABEL, RISK_LABEL, STRENGTH_DISCLAIMER, type StrengthReport } from "./_report";
+import { asStrengthReport, strengthReportText, levelLabel, RISK_LABEL, STRENGTH_DISCLAIMER, UNRATED_LABEL, type StrengthReport } from "./_report";
 import { useToolUsable } from "@/hooks/useToolUsable";
 import Navbar from "@/components/Navbar";
 import { useToolDraft } from "@/hooks/useToolDraft";
@@ -66,6 +66,8 @@ const RISK_TONE = {
   low: "border-blue-500/25 bg-blue-500/10 text-blue-500",
 } as const;
 const DEVIL_LABEL = { critical: "حرج", high: "مرتفع", medium: "متوسط" } as const;
+// Owner ١٧٤: a rating the analysis did not give, in a neutral tone.
+const UNRATED_TONE = "border-zinc-500/20 bg-zinc-500/10 text-zinc-500";
 
 export default function AIStrengthPage() {
   const { isDark } = useTheme();
@@ -323,7 +325,7 @@ function StrengthReportView({ report, isDark, activeTab, setActiveTab, chargedPo
         <div className="space-y-4">
           <div className={`${card} p-5`}>
             <p className={head}>تقدير الموقف</p>
-            <p className={`mt-1 text-[18px] font-bold ${LEVEL_TONE[g.level]}`}>{LEVEL_LABEL[g.level]}</p>
+            <p className={`mt-1 text-[18px] font-bold ${g.level ? LEVEL_TONE[g.level] : "text-zinc-500"}`}>{levelLabel(g.level)}</p>
             <p className={`mt-1 text-[11px] leading-relaxed ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>{STRENGTH_DISCLAIMER}</p>
             {/* Owner ٣٨: the level is an «مؤشر مساعد», never a prediction. */}
             <AssistIndicatorNote isDark={isDark} className="mt-1.5" />
@@ -354,7 +356,7 @@ function StrengthReportView({ report, isDark, activeTab, setActiveTab, chargedPo
           {report.risks.length === 0 ? empty : report.risks.map((r, i) => (
             <div key={i} className={`rounded-xl border p-3.5 ${isDark ? "border-white/[0.06]" : "border-zinc-100"}`}>
               <div className="flex flex-wrap items-center gap-2">
-                <span className={`rounded-lg border px-2 py-0.5 text-[10px] font-bold ${RISK_TONE[r.level] ?? RISK_TONE.medium}`}>{RISK_LABEL[r.level] ?? "متوسط"}</span>
+                <span className={`rounded-lg border px-2 py-0.5 text-[10px] font-bold ${(r.level && RISK_TONE[r.level]) || UNRATED_TONE}`}>{(r.level && RISK_LABEL[r.level]) || UNRATED_LABEL}</span>
                 <p className={`text-[13px] font-semibold ${body}`}>{r.risk}</p>
               </div>
               {r.mitigation && <p className={`mt-1.5 text-[12px] leading-relaxed ${isDark ? "text-emerald-400/90" : "text-emerald-700"}`}>الوقاية: {r.mitigation}</p>}
@@ -368,7 +370,7 @@ function StrengthReportView({ report, isDark, activeTab, setActiveTab, chargedPo
           {report.devil.length === 0 ? empty : report.devil.map((d, i) => (
             <div key={i} className={`rounded-xl border p-3.5 ${isDark ? "border-white/[0.06]" : "border-zinc-100"}`}>
               <div className="flex flex-wrap items-center gap-2">
-                <span className={`rounded-lg border px-2 py-0.5 text-[10px] font-bold ${d.severity === "critical" ? RISK_TONE.high : RISK_TONE.medium}`}>{DEVIL_LABEL[d.severity] ?? "مرتفع"}</span>
+                <span className={`rounded-lg border px-2 py-0.5 text-[10px] font-bold ${!d.severity ? UNRATED_TONE : d.severity === "critical" ? RISK_TONE.high : RISK_TONE.medium}`}>{(d.severity && DEVIL_LABEL[d.severity]) || UNRATED_LABEL}</span>
                 <p className={`text-[13px] font-semibold ${body}`}>{d.label}</p>
               </div>
               <p className={`mt-1.5 text-[13px] leading-relaxed ${body}`}>{d.text}</p>

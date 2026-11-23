@@ -54,7 +54,8 @@ interface BriefResult {
   };
   story: string;
   highlights: Array<{ kind: "error" | "warning" | "info"; text: string }>;
-  assessment: "strong" | "medium" | "weak";
+  /** null: the brief gave no assessment (owner ١٧٤ — never a made-up «متوسط»). */
+  assessment: "strong" | "medium" | "weak" | null;
   assessmentReason: string;
   // No link comes from the model: the server's shape has none (tools.ts caseBriefOutput).
   options: Array<{ label: string; requires: string }>;
@@ -101,6 +102,7 @@ const ASSESS_CFG = {
   medium: { label: "متوسط", color: "text-amber-500", bg: "bg-amber-500/10", border: "border-amber-500/20" },
   weak:   { label: "ضعيف", color: "text-red-500",  bg: "bg-red-500/10",  border: "border-red-500/20"  },
 };
+const UNRATED_ASSESS = { label: "لم يُحدَّد في التحليل", color: "text-zinc-500", bg: "bg-zinc-500/10", border: "border-zinc-500/20" };
 
 // ─── Page ──────────────────────────────────────────────────────────────────────
 
@@ -190,7 +192,7 @@ function CaseBriefTool() {
     });
   }
 
-  const assess = result ? ASSESS_CFG[result.assessment] : null;
+  const assess = result ? (result.assessment && ASSESS_CFG[result.assessment]) || UNRATED_ASSESS : null;
 
   return (
     <div className={`max-w-4xl mx-auto p-5 md:p-8 space-y-6 ${isDark ? "text-zinc-100" : "text-zinc-900"}`} dir="rtl">

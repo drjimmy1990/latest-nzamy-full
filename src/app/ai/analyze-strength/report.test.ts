@@ -18,7 +18,14 @@ test("the stored result reads back as the four tabs and the library's verdicts",
   assert.equal(r.citation_check.length, 1);
   assert.equal(asStrengthReport({ grounds: { level: "strong" } }), null);
   assert.equal(asStrengthReport(null), null);
-  assert.equal(asStrengthReport({ grounds: { summary: "x", level: 90 } })!.grounds.level, "medium");
+  // Owner ١٧٤: an unknown level is shown as «لم يُحدَّد», never as «موقف متوسط».
+  const unrated = asStrengthReport({ grounds: { summary: "x", level: 90 }, risks: [{ risk: "ر", level: "?", mitigation: "م" }] })!;
+  assert.equal(unrated.grounds.level, null);
+  assert.equal(asStrengthReport({ grounds: { summary: "x", level: "medium" } })!.grounds.level, "medium");
+  const text = strengthReportText({ ...unrated, risks: [{ risk: "ر", level: null, mitigation: "م" }] });
+  assert.match(text, /تقدير الموقف: لم يُحدَّد في التحليل/);
+  assert.match(text, /ر \(لم يُحدَّد\) — م/);
+  assert.doesNotMatch(text, /متوسط/);
 });
 
 test("the copied text names the level in words and carries no number or percentage", () => {
@@ -39,7 +46,7 @@ test("٤١٤: the owner's level words and his disclaimer, last in the exported t
   assert.ok(t.endsWith(`\n\n${STRENGTH_DISCLAIMER}`), "the disclaimer closes the export");
   assert.doesNotMatch(t, /أسانيد (قوية|متوسطة|ضعيفة)/);
   const page = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
-  const level = page.indexOf("{LEVEL_LABEL[g.level]}");
+  const level = page.indexOf("{levelLabel(g.level)}");
   const note = page.indexOf("{STRENGTH_DISCLAIMER}");
   assert.ok(level > 0 && note > level && note - level < 300, "the disclaimer sits right under the level");
   assert.match(page, /<ConsultantGate>/, "R1: part of the simulator, so Art. 18 applies");

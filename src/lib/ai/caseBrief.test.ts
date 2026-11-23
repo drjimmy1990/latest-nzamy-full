@@ -156,7 +156,7 @@ test("the BriefResult is rebuilt: bounded strings, fixed levels, no extra field,
   assert.equal(out.caseCard.court, "غير مذكور");
   assert.equal(out.caseCard.extra, undefined);
   assert.deepEqual(out.highlights.map((h: { kind: string }) => h.kind), ["warning", "info"]);
-  assert.equal(out.assessment, "medium");
+  assert.equal(out.assessment, null, "owner ١٧٤: «very strong» is no level — none shown, never a made-up «متوسط»");
   assert.deepEqual(out.options, [{ label: "تقديم سجلات الدوام", requires: "كشوف الحضور" }]);
   assert.deepEqual(out.questions, ["هل وُجّه إنذار؟"]);
   assert.deepEqual(out.clientRequests, [{ request: "كشف الحساب", reason: "إثبات الأجر", priority: "normal", type: "financial" }]);

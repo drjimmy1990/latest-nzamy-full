@@ -194,14 +194,14 @@ test("wargaming output: points only for the targets asked, no probability field,
     },
     { targets: ["opponent", "court"] },
   ) as Record<string, any>;
-  assert.deepEqual(out.points.map((p: Record<string, unknown>) => [p.source, p.severity]), [["opponent", "high"], ["court", "medium"]]);
+  assert.deepEqual(out.points.map((p: Record<string, unknown>) => [p.source, p.severity]), [["opponent", "high"], ["court", null]], "owner ١٧٤: an unknown severity stays null, never a made-up «medium»");
   assert.ok(!("probability" in out.points[0]));
   assert.equal(out.plea_script, "");
   assert.equal(out.cited.length, 1);
   assert.equal(AI_TOOLS.wargaming.validateOutput({ summary: "x", points: [] }, { targets: ["opponent"] }), null);
 });
 
-test("analyze-strength output: a level in words, no score; unknown levels fall back; no summary is refused", () => {
+test("analyze-strength output: a level in words, no score; an unknown level stays null (owner ١٧٤); no summary is refused", () => {
   const v = AI_TOOLS["analyze-strength"].validateOutput;
   const out = v(
     {
@@ -214,7 +214,10 @@ test("analyze-strength output: a level in words, no score; unknown levels fall b
   ) as Record<string, any>;
   assert.equal(out.grounds.level, "strong");
   assert.ok(!("score" in out.grounds));
-  assert.deepEqual(out.risks[0], { risk: "عدم الاختصاص", level: "medium", mitigation: "دفع مقابل" });
+  assert.deepEqual(out.risks[0], { risk: "عدم الاختصاص", level: null, mitigation: "دفع مقابل" });
+  const unrated = v({ grounds: { level: "excellent", summary: "س" }, devil: [{ text: "ث" }] }, {}) as Record<string, any>;
+  assert.equal(unrated.grounds.level, null, "owner ١٧٤: no level given → none shown, never «متوسط»");
+  assert.equal(unrated.devil[0].severity, null);
   assert.deepEqual(out.cited, []);
   assert.equal(v({ grounds: { level: "strong" } }, {}), null);
   assert.equal(v({}, {}), null);
