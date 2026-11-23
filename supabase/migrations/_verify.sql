@@ -8219,3 +8219,22 @@ select 'l12 test kinds (owner 109): test_accounts.kind present, caps and mail si
        and coalesce(pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.demo_guard_sandbox_row()')), 'test_account_kind(v_u)') > 0, false)
        and coalesce(pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.test_mail_sink_check(text,uuid[],text,text,text)')), 'u is distinct from v_own') > 0, false) as ok;
 -- <<< verify:l12_access
+-- >>> verify:l13_canvas
+-- Batch l13-canvas (owner ١٨٩ (ب), the «لوحة» tab beside the case map): run 20261203_60 BEFORE the deploy.
+select 'l13 free board: case_free_boards with RLS, 4 policies on case_board_open (invoker + is_case_worker), no guest grant, no session delete or move (run 20261203_60)' as check,
+       case when to_regclass('public.case_free_boards') is null or to_regprocedure('public.case_board_open(text)') is null then false else
+       coalesce((select relrowsecurity from pg_catalog.pg_class where oid = to_regclass('public.case_free_boards')), false)
+       and (select pg_catalog.count(*) from pg_catalog.pg_policy where polrelid = to_regclass('public.case_free_boards')) = 4
+       and (select pg_catalog.count(*) from pg_catalog.pg_policy
+             where polrelid = to_regclass('public.case_free_boards') and polpermissive
+               and coalesce(pg_catalog.pg_get_expr(polqual, polrelid), pg_catalog.pg_get_expr(polwithcheck, polrelid), '') ilike '%case_board_open(case_request_id)%') = 3
+       and not coalesce((select p.prosecdef from pg_catalog.pg_proc p where p.oid = to_regprocedure('public.case_board_open(text)')), true)
+       and coalesce(pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.case_board_open(text)')), 'is_case_worker') > 0, false)
+       and coalesce(pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.case_board_open(text)')), 'service_requests') > 0, false)
+       and not has_table_privilege('anon', 'public.case_free_boards', 'SELECT')
+       and not has_table_privilege('authenticated', 'public.case_free_boards', 'DELETE')
+       and not has_column_privilege('authenticated', 'public.case_free_boards', 'case_request_id', 'UPDATE')
+       and not has_column_privilege('authenticated', 'public.case_free_boards', 'created_by', 'UPDATE')
+       and has_table_privilege('authenticated', 'public.case_free_boards', 'SELECT')
+       end as ok;
+-- <<< verify:l13_canvas

@@ -41,7 +41,7 @@ import {
   FileText, ChartLine, Plus, Download, UploadSimple,
   ArrowUpRight, CheckCircle, Warning, Scales,
   CheckSquare, FolderOpen, Eye, Graph, Spinner, ArrowClockwise, Timer,
-  ChatDots, PencilSimple, Archive, User,
+  ChatDots, PencilSimple, Archive, User, NotePencil,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
@@ -93,6 +93,9 @@ import AddDeadlineModal from "../../../lawyer/_components/AddDeadlineModal";
 import DeadlineCard from "../../../lawyer/_components/DeadlineCard";
 import RecordStageOutcomeModal from "../../../lawyer/_components/RecordStageOutcomeModal";
 import LegalCanvas from "./LegalCanvas";
+import dynamic from "next/dynamic";
+// Owner ١٨٩ (ب), batch l13: the free board «لوحة», a tab beside the map (the map is unchanged).
+const CaseFreeBoard = dynamic(() => import("@/components/dashboard/caseBoard/CaseFreeBoard"), { ssr: false });
 import CaseArchivePanel from "@/components/dashboard/caseArchive/CaseArchivePanel";
 import {
   getCaseNotes,
@@ -115,7 +118,7 @@ import CaseTimeExpensesSection from "@/components/dashboard/financeLedger/CaseTi
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type CaseTab = "overview" | "tasks" | "hearings" | "stages" | "deadlines" | "documents" | "notes" | "canvas";
+type CaseTab = "overview" | "tasks" | "hearings" | "stages" | "deadlines" | "documents" | "notes" | "canvas" | "board";
 type CaseStatus = "active" | "pending" | "suspended" | "closed" | "cancelled";
 type TaskStatus = "todo" | "inprogress" | "done";
 
@@ -155,6 +158,8 @@ const TABS: { id: CaseTab; label: string; icon: React.ElementType }[] = [
   { id: "documents", label: "المستندات",      icon: FolderOpen },
   { id: "notes",     label: "الملاحظات",      icon: ChatDots },
   { id: "canvas",    label: "خريطة القضية",   icon: Graph },
+  // owner ١٨٩ (ب): the free board, beside the map — its own table, the case's own access rule.
+  { id: "board",     label: "لوحة",          icon: NotePencil },
 ];
 
 const STATUS_CONFIG: Record<CaseStatus, { label: string; color: string; dot: string }> = {
@@ -1447,6 +1452,13 @@ export default function FirmCaseDetailsPage() {
           {/* ── Canvas — unchanged, already reads the real per-case graph ── */}
           {activeTab === "canvas" && (
             <LegalCanvas caseId={id} />
+          )}
+
+          {/* ── لوحة (owner ١٨٩ (ب)) — the case's free board, saved per case ── */}
+          {activeTab === "board" && id && (
+            <div className={`${card} overflow-hidden`} style={{ height: "580px" }}>
+              <CaseFreeBoard caseId={id} isDark={isDark} />
+            </div>
           )}
         </motion.div>
       </AnimatePresence>
