@@ -38,6 +38,8 @@ import { retentionSettingIssue } from "@/lib/ai/aiHistory";
 // Batch l12 firm (20261202_80): firm role scope (Q112) and founder storage fair use (N21).
 import { firmCaseScopeIssue } from "@/lib/firm/firmCaseScope";
 import { founderStorageIssue } from "@/lib/membership/founderStorage";
+// Batch l13 founder (20261203_20, owner Q144 أ): the founder monthly invites.
+import { FOUNDER_INVITES_KEY, founderInvitesIssue } from "@/lib/founder/founderInvites";
 
 /** Allowlisted setting keys that admins can modify */
 const ALLOWED_SETTINGS_KEYS = [
@@ -138,6 +140,10 @@ const ALLOWED_SETTINGS_KEYS = [
   // {"gb": n, "alert_pct": n} — the founder's internal storage fair use (N21;
   // src/lib/membership/founderStorage.ts). Never shown on a marketing page.
   "founder_storage_fair_use",
+  // Batch l13 founder (20261203_20, owner Q144 أ): {"monthly", "trial_days",
+  // "points", "points_scope": "library_agent"|"general", "valid_days"} — the
+  // founder's monthly invites (src/lib/founder/founderInvites.ts).
+  FOUNDER_INVITES_KEY,
   // Batch l9 public (owner file 20 row 4, file 15 rows 11 / 45;
   // src/lib/publicSeo/platformRegistry.ts): the platform's licence number and
   // its issuer, as plain strings. Empty → the licence line is hidden on /faq,
@@ -252,6 +258,8 @@ const SETTINGS_VALUE_VALIDATORS: Record<string, SettingValidator> = {
   // Batch l12 firm: pure, covered by firmCaseScope.test.ts / founderStorage.test.ts.
   firm_case_scope: firmCaseScopeIssue,
   founder_storage_fair_use: founderStorageIssue,
+  // Batch l13 founder: pure, covered by src/lib/founder/founderInvites.test.ts.
+  [FOUNDER_INVITES_KEY]: founderInvitesIssue,
   // Batch l12 simpledraft: pure, covered by src/lib/ai/simpleContract.test.ts.
   [SIMPLE_CONTRACT_PRICE_KEY]: simpleContractPriceIssue,
 };

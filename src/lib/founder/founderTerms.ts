@@ -54,7 +54,9 @@
  *     bonus — the higher one (founder_bonus_rule, default "higher_only");
  *   - ١٢: «البونص» → «النقاط الإضافية، إن وُجدت» (the campaign bonus table
  *     is cancelled, Q88a).
- *   The «3 دعوات» bullet is unchanged: its build waits on question ١٤٤.
+ *   The «3 دعوات» bullet is unchanged. Question ١٤٤ (أ) is built in batch l13
+ *   (src/lib/founder/founderInvites.ts, SQL 20261203_20); this versioned text
+ *   was left as it is.
  *
  * FOUNDER_TERMS_VERSION names this text. The founder checkout requires the
  * buyer to accept exactly this version (founderConsent.ts) and stores it on

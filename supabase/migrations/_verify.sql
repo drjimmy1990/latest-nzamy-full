@@ -8262,3 +8262,32 @@ select 'points_available_for_tool: same wallet rule, definer, search_path '''', 
        and (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
              where n.nspname = 'public' and p.proname = 'points_available_for_tool') = 1 as ok;
 -- <<< verify:l13_points
+-- >>> verify:l13_founder
+-- Batch l13 founder: run 20261203_20 BEFORE the l13 deploy (the invite routes answer «قيد التفعيل» without it).
+select 'l13 founder (owner ٣): an unpaid founder hold is free at exactly reserved_until in reserve / activate / summary; the sweep is a tidy-up (pinned by 20261203_20)' as check,
+       coalesce(pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.founder_reserve_seat(uuid, uuid)')), 'reserved_until > now()') > 0, false)
+       and coalesce(pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.founder_activate(uuid)')), 'reserved_until > now()') > 0, false)
+       and coalesce(pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.founder_seat_summary()')), 'reserved_until > now()') > 0, false)
+       and coalesce(pg_catalog.pg_get_functiondef(to_regprocedure('public.founder_reserve_seat(uuid, uuid)')) !~ 'reserved_until\s*(>=|>\s*\(?\s*now\(\)\s*[-+])', false)
+       and coalesce(pg_catalog.pg_get_functiondef(to_regprocedure('public.founder_activate(uuid)')) !~ 'reserved_until\s*(>=|>\s*\(?\s*now\(\)\s*[-+])', false)
+       and coalesce(pg_catalog.pg_get_functiondef(to_regprocedure('public.founder_seat_summary()')) !~ 'reserved_until\s*(>=|>\s*\(?\s*now\(\)\s*[-+])', false)
+       and coalesce(pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.founder_release_expired()')), 'reserved_until <= now()') > 0, false) as ok;
+select 'l13 founder (Q144 أ): founder invites — setting, server-only table (RLS on, no policy), create / redeem service role only, redeem gives lib-trial + points (run 20261203_20)' as check,
+       case when to_regclass('public.founder_invites') is null
+              or to_regprocedure('public.founder_invite_create(uuid)') is null
+              or to_regprocedure('public.founder_invite_redeem(uuid, text)') is null then false else
+       exists (select 1 from public.platform_settings where key = 'founder_invites')
+       and coalesce((select relrowsecurity from pg_catalog.pg_class where oid = 'public.founder_invites'::regclass), false)
+       and not exists (select 1 from pg_catalog.pg_policies where schemaname = 'public' and tablename = 'founder_invites')
+       and not has_table_privilege('anon', 'public.founder_invites', 'SELECT')
+       and not has_table_privilege('authenticated', 'public.founder_invites', 'SELECT')
+       and not has_function_privilege('authenticated', 'public.founder_invite_create(uuid)', 'EXECUTE')
+       and not has_function_privilege('authenticated', 'public.founder_invite_redeem(uuid, text)', 'EXECUTE')
+       and not has_function_privilege('anon', 'public.founder_invite_redeem(uuid, text)', 'EXECUTE')
+       and has_function_privilege('service_role', 'public.founder_invite_redeem(uuid, text)', 'EXECUTE')
+       and coalesce(pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.founder_invite_redeem(uuid, text)')), '''lib-trial''') > 0, false)
+       and coalesce(pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.founder_invite_redeem(uuid, text)')), 'credit_wallet_points') > 0, false)
+       and coalesce((select s.monthly between 1 and 20 and s.points_scope in ('general', 'library_agent')
+                       from public.founder_invite_settings() s), false)
+       end as ok;
+-- <<< verify:l13_founder
