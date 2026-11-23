@@ -70,25 +70,28 @@ export function toolAvailability(mode: AiToolMode, isAdmin: boolean): "ok" | "to
   return effective === "off" || effective === "staff" ? "tool_off" : "ok";
 }
 
-type ToolAudience = Pick<AiToolSpec, "roles" | "consultantBlocked" | "consultantPaidTerm">;
+type ToolAudience = Pick<AiToolSpec, "roles" | "consultantBlocked" | "consultantAllowed">;
 interface ToolCaller {
   userType: string;
   practiceKind: string | null;
   /**
-   * Owner ١٤٦: a consultant's paid term that was already running at the cut-off
-   * (consultantTerm.ts). Read only for a consultant; only a literal `true` counts.
+   * Owner decision (22-23 Nov 2026): a consultant who is an ACTIVE member of a
+   * firm keeps the firm role's tools (only the pleading and reserved tools stay
+   * shut to him); an INDEPENDENT consultant runs the library assistant alone.
+   * Only a literal `true` marks a member, so an unknown answer is the stricter
+   * independent one.
    */
-  consultantPaidTerm?: boolean;
+  firmMember?: boolean;
 }
 
 /** May this kind of account use the tool at all? An admin always may. Needs no setting. */
 export function toolRoleRefusal(spec: ToolAudience, actor: ToolCaller): "role" | "consultant_blocked" | null {
   if (actor.userType === "admin") return null;
   if (!spec.roles.includes(actor.userType)) return "role";
-  if (spec.consultantBlocked && actor.practiceKind === "consultant") {
-    // Owner ١٤٦: a paid consultant keeps a newly reserved tool to the end of his term.
-    if (spec.consultantPaidTerm === true && actor.consultantPaidTerm === true) return null;
-    return "consultant_blocked";
+  if (actor.practiceKind === "consultant") {
+    if (spec.consultantBlocked) return "consultant_blocked";
+    // The allowlist: an independent consultant's tools are the ones that opt in.
+    if (actor.firmMember !== true && spec.consultantAllowed !== true) return "consultant_blocked";
   }
   return null;
 }

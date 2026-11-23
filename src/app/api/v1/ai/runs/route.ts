@@ -9,7 +9,7 @@ import { withGraphCallLog } from "@/lib/ai/graphCallLog";
 import { resolveAiFiles } from "@/lib/ai/aiFiles";
 import { aiTextFilesConfig, pastedFileUrlFrom } from "@/lib/ai/textFilesConfig";
 import { startRunWith, type RouteReply, type RunActor } from "@/lib/ai/runCore";
-import { readConsultantPaidTerm } from "@/lib/ai/consultantTerm";
+import { readConsultantStanding } from "@/lib/auth/consultantScopeServer";
 import { freeQuestionStatusWith, freeQuestionToolOf, previewOnlySources } from "@/lib/ai/freeQuestion";
 import { progressSink } from "@/lib/ai/progressEvents";
 import { runForViewer, viewerIsAdmin } from "@/lib/ai/runVisibility";
@@ -173,8 +173,8 @@ export async function POST(request: NextRequest) {
       practiceKind: practice,
       displayName: typeof profile?.display_name === "string" ? profile.display_name : null,
       freeQuestionTool: freeTool,
-      // Owner ١٤٦: read for a consultant only (consultantTerm.ts).
-      ...(practice === "consultant" ? { consultantPaidTerm: await readConsultantPaidTerm(admin, user.id) } : {}),
+      // Owner decision (22-23 Nov 2026): a consultant's firm membership, read for a consultant only.
+      ...(practice === "consultant" ? { firmMember: (await readConsultantStanding(supabase, user.id)).firmMember } : {}),
     };
 
     const graphOn = graphRagEnabled();

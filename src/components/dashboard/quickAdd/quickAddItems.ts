@@ -69,6 +69,10 @@ export interface QuickAddContext {
 }
 
 export function visibleQuickAddItems(ctx: QuickAddContext): QuickAddItemDef[] {
+  // Owner decision (22-23 Nov 2026): on the lawyer's own dashboard a consultant
+  // is the independent one (a firm member is drawn the firm scope), and every
+  // item here creates a lawyer-workspace record, so he gets none.
+  if (ctx.scope === "lawyer" && ctx.practiceKind === "consultant") return [];
   return QUICK_ADD_ITEMS.filter((item) => {
     if (ctx.practiceKind === "consultant" && isConsultantBlockedPath(item.routes.lawyer)) return false;
     if (ctx.scope === "firm") {

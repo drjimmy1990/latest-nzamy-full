@@ -25,8 +25,8 @@ test("an advocate on the lawyer dashboard gets every item", () => {
   assert.deepEqual(ids({ scope: "lawyer" }), ["case", "hearing", "client", "task", "deadline", "note", "ledger"], "no practice kind = advocate");
 });
 
-test("a consultant (Art. 18) gets no hearing and no deadline, on either dashboard", () => {
-  assert.deepEqual(ids({ scope: "lawyer", practiceKind: "consultant" }), ["case", "client", "task", "note", "ledger"]);
+test("a consultant: none on the lawyer dashboard (library only, 22-23 Nov 2026); no hearing and no deadline on the firm one (Art. 18)", () => {
+  assert.deepEqual(ids({ scope: "lawyer", practiceKind: "consultant" }), []);
   assert.deepEqual(ids({ scope: "firm", practiceKind: "consultant", firmRole: "managing_partner", canAddCase: true }), ["case", "client", "task", "note", "ledger"]);
 });
 
