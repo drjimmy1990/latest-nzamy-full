@@ -16,15 +16,19 @@
 import type { GraphEdge, GraphNode, Point } from "./_graph-model";
 import type { ShortcutEventLike } from "./_graph-history";
 
-export type BoardShortcut = "copy" | "paste" | "group";
+export type BoardShortcut = "copy" | "paste" | "group" | "selectAll";
 
-/** Ctrl/⌘ + C / V / G on any keyboard layout. Shift or Alt held → not ours. */
+/**
+ * Ctrl/⌘ + C / V / G / A on any keyboard layout. Shift or Alt held → not ours.
+ * A (select every card) is the case-graph reference's item 6 (file 11, row 56).
+ */
 export function boardShortcut(e: ShortcutEventLike): BoardShortcut | null {
   if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return null;
   switch (e.code) {
     case "KeyC": return "copy";
     case "KeyV": return "paste";
     case "KeyG": return "group";
+    case "KeyA": return "selectAll";
     default: return null;
   }
 }

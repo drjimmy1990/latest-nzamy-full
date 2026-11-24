@@ -13,6 +13,7 @@ import {
   type NodeType,
 } from "./_graph-model";
 import { cardPosCenteredAt, curveMidpoint, curvePath, edgeCurve, tempLinePath } from "./_graph-geometry";
+import { EDGE_LABEL_LIST_ID, EDGE_LABEL_PRESETS, edgeInFocus, firstNeighbours } from "./_graph-focus";
 import { useCaseGraphState } from "./_use-case-graph-state";
 import { SidebarLauncher, AiAnalysisPanel, OverlaysBundle } from "./CaseGraphOverlays";
 import { LinkCardBody, ChecklistCardBody } from "./CaseGraphCardExtras";
@@ -113,6 +114,12 @@ export default function CaseGraphView({
     fitToView,
     undo, redo, canUndo, canRedo, resetGraph, autoLayout,
   } = useCaseGraphState({ initialNodes: seedNodes, initialEdges: seedEdges });
+
+  // Row 51 (file 11): the hovered card's "local graph" — it, its first
+  // neighbours and the arrows between them stay full strength, the rest fades.
+  // Off while an arrow is being drawn (the pointer is choosing a target then).
+  const focusNodeId = drawingEdgeFrom ? null : hoveredNodeId;
+  const focusIds = firstNeighbours(edges, focusNodeId);
 
   const [showImport, setShowImport] = useState(false);
   const canImport = enableCaseImport && !!caseId;
@@ -656,7 +663,7 @@ export default function CaseGraphView({
                       stroke={edgeColor} 
                       strokeWidth={String(edgeWidth)} 
                       strokeDasharray={cnf.dash || "none"}
-                      opacity={0.6}
+                      opacity={edgeInFocus(edge, focusNodeId) ? 0.6 : 0.12}
                     />
                   </g>
                 );
@@ -674,6 +681,12 @@ export default function CaseGraphView({
                 />
               )}
             </svg>
+
+            {/* Row 54: the reference's ready relation names, suggested on every
+                arrow label (free text still allowed). */}
+            <datalist id={EDGE_LABEL_LIST_ID}>
+              {EDGE_LABEL_PRESETS.map((name) => <option key={name} value={name} />)}
+            </datalist>
 
             {/* Editable Edge Labels overlay */}
             {edges.map(edge => {
@@ -694,6 +707,7 @@ export default function CaseGraphView({
                   value={edge.label}
                   onChange={(e) => handleEdgeLabelChange(edge.id, e.target.value)}
                   placeholder="الوصف..."
+                  list={EDGE_LABEL_LIST_ID}
                 />
               );
             })}
@@ -728,6 +742,7 @@ export default function CaseGraphView({
                     minHeight: '90px',
                     overflow: 'visible',
                     touchAction: 'none',
+                    opacity: focusIds && !focusIds.has(node.id) ? 0.35 : 1,
                     zIndex: isSelected ? 20 : 10,
                     ...(nodeGroup ? {
                       outline: `2px solid ${nodeGroup.color}50`,
