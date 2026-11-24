@@ -247,6 +247,17 @@ test("the e-mail step: offered when the channel works, else a human reviews", ()
   assert.equal(decideLawyerSignup({ ...before, instantApprovalEnabled: false }).next, "email_otp", "the code is asked even while approval is manual");
 });
 
+test("batch l15: a mobile confirmed by the WhatsApp sign-up code stands in for the e-mail code", () => {
+  const before = { ...ALL_GOOD, emailOtpVerified: false };
+  assert.deepEqual(decideLawyerSignup({ ...before, phoneOtpVerified: true }), { outcome: "approve", next: null, reasons: [] });
+  assert.deepEqual(decideLawyerSignup({ ...before, phoneOtpVerified: true, emailChannelAvailable: false }), {
+    outcome: "approve", next: null, reasons: [],
+  }, "no e-mail channel needed once the mobile is confirmed");
+  assert.deepEqual(decideLawyerSignup({ ...before, phoneOtpVerified: false }), { outcome: "pending", next: "email_otp", reasons: [] });
+  assert.equal(decideLawyerSignup({ ...before, phoneOtpVerified: true, nameMatch: "different" }).outcome, "review", "hard reasons still hold");
+  assert.equal(decideLawyerSignup({ ...before, phoneOtpVerified: true, instantApprovalEnabled: false }).outcome, "review");
+});
+
 test("decision ٢٧: no registry-mobile, WhatsApp or SMS input exists in the table any more", () => {
   const keys = Object.keys(ALL_GOOD);
   for (const gone of ["hasRegistryMobile", "identityOtpVerified", "identityOtpLicenceMatches", "identityChannelAvailable"]) {

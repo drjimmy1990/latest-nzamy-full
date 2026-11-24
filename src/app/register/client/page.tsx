@@ -50,6 +50,8 @@ import { recordTermsAcceptance } from "@/lib/legal/termsAcceptanceClient";
 import { getPlanList, type AudienceTab } from "@/constants/pricingData";
 import { resolveRequestedPlan } from "@/lib/pricing/planRequest";
 import { savePendingPlan, sessionStorageOrNull } from "@/lib/pricing/pendingPlan";
+// Batch l15: a new account confirms its mobile by WhatsApp before anything else.
+import { phoneOtpRequiredNow } from "@/lib/phoneOtp/phoneOtpClient";
 import { trackEventOnce } from "@/lib/analytics/track";
 
 // The /pricing audience whose plans a given account type can sign up for.
@@ -455,6 +457,17 @@ export default function RegisterClientPage() {
                             // session. Best-effort — a failure is healed on the
                             // next signed-in visit (see terms_version above).
                             if (signUpData.session) await recordTermsAcceptance("signup");
+
+                            // Batch l15: with a session and the admin's switch
+                            // on, the WhatsApp code comes first. The plan from
+                            // /pricing waits in sessionStorage for the wizard.
+                            // Without a session (e-mail confirmation still on)
+                            // nothing changes: «تحقّق من بريدك» as before.
+                            if (signUpData.session && (await phoneOtpRequiredNow())) {
+                              savePendingPlan(sessionStorageOrNull(), planParam);
+                              window.location.assign("/verify-phone");
+                              return;
+                            }
 
                             setSignupHasSession(Boolean(signUpData.session));
                             setStep(4);

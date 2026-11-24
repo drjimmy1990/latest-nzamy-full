@@ -42,6 +42,8 @@ import { firmCaseScopeIssue } from "@/lib/firm/firmCaseScope";
 import { founderStorageIssue } from "@/lib/membership/founderStorage";
 // Batch l13 founder (20261203_20, owner Q144 أ): the founder monthly invites.
 import { FOUNDER_INVITES_KEY, founderInvitesIssue } from "@/lib/founder/founderInvites";
+// Batch l15 (20261205_10): the WhatsApp sign-up code switch.
+import { SIGNUP_PHONE_OTP_KEY, signupPhoneOtpIssue } from "@/lib/phoneOtp/phoneOtpRules";
 
 /** Allowlisted setting keys that admins can modify */
 const ALLOWED_SETTINGS_KEYS = [
@@ -160,6 +162,10 @@ const ALLOWED_SETTINGS_KEYS = [
   // Batch l13 aiadmin (owner ١٦٦): {"included": 0..30} — the legal drafter's
   // section edits included in a memo's price (5 until saved; src/lib/ai/sectionEdits.ts).
   SECTION_EDITS_SETTING_KEY,
+  // Batch l15 (20261205_10; src/lib/phoneOtp/phoneOtpRules.ts): {"enabled": bool} —
+  // «رمز التحقق عبر واتساب عند التسجيل». The database stamps enabled_at the first
+  // time it is stored on and never moves it (trg_signup_phone_otp_setting).
+  SIGNUP_PHONE_OTP_KEY,
   "license_number",
   "license_issuer",
 ] as const;
@@ -275,6 +281,8 @@ const SETTINGS_VALUE_VALIDATORS: Record<string, SettingValidator> = {
   [SIMPLE_CONTRACT_PRICE_KEY]: simpleContractPriceIssue,
   // Batch l13 aiadmin: pure, covered by src/lib/ai/sectionEdits.test.ts.
   [SECTION_EDITS_SETTING_KEY]: sectionEditsIncludedIssue,
+  // Batch l15: pure, covered by src/lib/phoneOtp/phoneOtp.test.ts.
+  [SIGNUP_PHONE_OTP_KEY]: signupPhoneOtpIssue,
 };
 
 /** A read error or a missing row counts as incomplete, so live stays refused. */
