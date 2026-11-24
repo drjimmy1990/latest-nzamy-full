@@ -438,7 +438,7 @@ begin
   if missing <> '' then
     raise exception '20261026_20 verify:%', missing;
   end if;
-  raise notice '20261026_20 verify: OK — coupons and coupon_usage are server only (no policy, no anon / authenticated privilege); 25 %% cap and top-up exclusion on every coupon; once per user and once per order guarded; one open / paid order per (buyer, coupon); used_count follows inserts and deletes; NZAMY50 and NEWCLIENT received the owner''s rules (stamped); other seeded codes switched off';
+  raise notice '20261026_20 verify: OK — coupons and coupon_usage are server only (no policy, no anon / authenticated privilege); cap ceiling (25 %%, or 100 %% once 20261204_60 ran) and top-up exclusion on every coupon; once per user and once per order guarded; one open / paid order per (buyer, coupon); used_count follows inserts and deletes; NZAMY50 and NEWCLIENT received the owner''s rules (stamped); other seeded codes switched off';
 end $$;
 
 commit;
