@@ -202,11 +202,15 @@ test("the device list never carries the hash, marks this device, newest first", 
   assert.deepEqual(toDeviceList(null, "h1"), []);
 });
 
-test("settings patch: a boolean switch and a number 1–10", () => {
+test("settings patch: a boolean switch and one device or two (l14, owner ٢٠٧)", () => {
   assert.deepEqual(parseDeviceSettingsPatch({ enabled: true, limit: 2 }), { ok: true, columns: { device_limit_enabled: true, device_limit: 2 } });
+  assert.deepEqual(parseDeviceSettingsPatch({ limit: 1 }), { ok: true, columns: { device_limit: 1 } });
   assert.equal(parseDeviceSettingsPatch({ enabled: "yes" }).ok, false);
   assert.equal(parseDeviceSettingsPatch({ limit: 0 }).ok, false);
+  assert.deepEqual(parseDeviceSettingsPatch({ limit: 3 }), { ok: false, error: "عدد الأجهزة جهاز واحد أو جهازان" });
+  assert.equal(parseDeviceSettingsPatch({ limit: 10 }).ok, false);
   assert.equal(parseDeviceSettingsPatch({ limit: 11 }).ok, false);
+  assert.equal(parseDeviceSettingsPatch({ limit: "2" }).ok, false);
   assert.equal(parseDeviceSettingsPatch({ limit: 2.5 }).ok, false);
   assert.equal(parseDeviceSettingsPatch({}).ok, false);
   assert.equal(parseDeviceSettingsPatch(null).ok, false);

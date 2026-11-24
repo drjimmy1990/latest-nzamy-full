@@ -84,15 +84,22 @@ test("below the minimum is refused with the minimum named; exactly the minimum i
   assert.deepEqual(evaluateCoupon(PLAN50, ctx({ netHalalas: 20000 })), { ok: true, discountHalalas: 5000 });
 });
 
-test("the 25 % cap binds every coupon: a fixed value above it and a percentage above it are both cut to 25 %", () => {
+test("the row's cap (25 by default) binds every coupon: a fixed value above it and a percentage above it are both cut to it", () => {
   // 50 SAR on a 200 SAR net is exactly 25 %
   assert.deepEqual(evaluateCoupon(PLAN50, ctx({ netHalalas: 20000 })), { ok: true, discountHalalas: 5000 });
   // a fixed 500 SAR coupon on a 390 SAR plan → 97.50 SAR
   const big = { ...PLAN50, discount_value: 500, min_order_amount: 0 };
   assert.deepEqual(evaluateCoupon(big, ctx()), { ok: true, discountHalalas: 9750 });
-  // a 50 % coupon → 25 %; a row claiming a 60 % cap is still held at 25 %
-  const pct = { ...PLAN50, discount_type: "percentage", discount_value: 50, min_order_amount: 0, max_discount_pct: 60 };
+  // a 50 % coupon on a 25 % cap → 25 %; l14: a row with a 60 % cap gives its 50 %
+  const pct = { ...PLAN50, discount_type: "percentage", discount_value: 50, min_order_amount: 0 };
   assert.deepEqual(evaluateCoupon(pct, ctx({ netHalalas: 149000 })), { ok: true, discountHalalas: 37250 });
+  assert.deepEqual(evaluateCoupon({ ...pct, max_discount_pct: 60 }, ctx({ netHalalas: 149000 })), { ok: true, discountHalalas: 74500 });
+  // l14: the ceiling is 100 % — a 100 % code covers the whole net, a row claiming more is held at 100
+  const full = { ...PLAN50, discount_type: "percentage", discount_value: 100, min_order_amount: 0, max_discount_pct: 100 };
+  assert.deepEqual(evaluateCoupon(full, ctx({ netHalalas: 39000 })), { ok: true, discountHalalas: 39000 });
+  assert.deepEqual(evaluateCoupon({ ...full, discount_value: 500, discount_type: "fixed", max_discount_pct: 150 }, ctx({ netHalalas: 39000 })), { ok: true, discountHalalas: 39000 });
+  // an unreadable cap falls back to the default 25, never to the ceiling
+  assert.deepEqual(evaluateCoupon({ ...full, max_discount_pct: "x" }, ctx({ netHalalas: 39000 })), { ok: true, discountHalalas: 9750 });
   // floor, never above the cap: 25 % of 39,001 halalas is 9,750.25 → 9,750
   assert.deepEqual(evaluateCoupon(big, ctx({ netHalalas: 39001 })), { ok: true, discountHalalas: 9750 });
   // LAUNCH2026-shaped: 25 % of 1,490 SAR

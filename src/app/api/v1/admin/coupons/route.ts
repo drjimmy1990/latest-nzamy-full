@@ -10,7 +10,10 @@ import {
   couponAudience,
   couponBodyObject,
   couponDateIso,
+  couponPurpose,
+  PURPOSE_REQUIRED_AR,
 } from "@/lib/payments/couponAdminRules";
+import { isMissingFeatureColumn } from "@/lib/library/optionalColumn";
 import { couponsAvailable } from "@/lib/payments/couponServer";
 
 /**
@@ -24,6 +27,9 @@ import { couponsAvailable } from "@/lib/payments/couponServer";
  *   max_uses_per_user, used_count, valid_from, valid_until, active,
  *   created_by, metadata, created_at, updated_at
  */
+
+/** l14: the purpose column is missing (20261204_60 not run yet). */
+const PURPOSE_MIGRATION_AR = "حقل «الغرض» غير متاح قبل ترحيل 20261204_60 — لم يُحفظ الكود.";
 
 // The page's eligibleRoles ("client", "business", …) become profiles.user_type
 // values ("individual", "corporate", …) through couponAdminRules.couponAudience
@@ -86,6 +92,13 @@ export async function GET() {
  * runs (couponsAvailable false) the two new columns are not sent; the rules
  * still apply.
  *
+ * Batch l14 (20261204_60, owner package of 23 Nov §٤): every new code needs
+ * its «الغرض» (body.purpose, 3–500 characters — couponPurpose) → 400
+ * PURPOSE_REQUIRED_AR; it is stored in coupons.purpose and in the audit row.
+ * The cap may go up to 100 % (default 25); a code that covers the whole
+ * price is refused at checkout without a saved card (fullDiscount.ts).
+ * Before 20261204_60 runs the insert names a missing purpose column → 503.
+ *
  * Review M6/M7: a body that is not a JSON object, or a startsAt / expiresAt
  * that is not a date, is a 400 (it was a 500). A date-only value is that day in
  * Riyadh: startsAt from 00:00, expiresAt until 23:59:59 (couponDateIso).
@@ -107,6 +120,12 @@ export async function POST(request: NextRequest) {
     const code = typeof body.code === "string" ? body.code.trim().toUpperCase() : "";
     if (!code) {
       return NextResponse.json({ error: "الكود مطلوب" }, { status: 400 });
+    }
+
+    // l14: the purpose is mandatory for every new code (owner item 67أ)
+    const purpose = couponPurpose(body.purpose);
+    if (!purpose) {
+      return NextResponse.json({ error: PURPOSE_REQUIRED_AR }, { status: 400 });
     }
 
     const couponType = typeof body.couponType === "string" ? body.couponType : "discount";
@@ -170,6 +189,7 @@ export async function POST(request: NextRequest) {
       valid_until: expiresAt.value,
       active,
       created_by: gate.userId,
+      purpose,
       metadata: flags.metadata ?? baseMetadata,
       ...discount.fields,
     };
@@ -181,6 +201,9 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (error) {
+      if (isMissingFeatureColumn(error, "purpose")) {
+        return NextResponse.json({ error: PURPOSE_MIGRATION_AR }, { status: 503 });
+      }
       console.error("[admin/coupons POST] Supabase error:", error.message, error.details, error.hint, error.code);
       return NextResponse.json({ error: DB_ERROR_AR }, { status: 500 });
     }
@@ -191,7 +214,7 @@ export async function POST(request: NextRequest) {
       targetType: "coupon",
       targetId: data?.id != null ? String(data.id) : null,
       after: insertRow,
-      metadata: { code },
+      metadata: { code, purpose },
     });
 
     return NextResponse.json({ success: true, data }, { status: 201 });

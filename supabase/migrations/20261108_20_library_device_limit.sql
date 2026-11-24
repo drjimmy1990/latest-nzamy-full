@@ -65,10 +65,17 @@ alter table public.library_monitor_settings
   add column if not exists device_limit_enabled boolean not null default false,
   add column if not exists device_limit int not null default 2;
 
-alter table public.library_monitor_settings
-  drop constraint if exists library_monitor_settings_device_limit_check;
-alter table public.library_monitor_settings
-  add constraint library_monitor_settings_device_limit_check check (device_limit between 1 and 10);
+-- Added only when missing: 20261204_60 (batch l14, owner ٢٠٧) narrowed it to
+-- 1–2 devices, and a re-run of this file must not widen it back to 10.
+do $$
+begin
+  if not exists (select 1 from pg_constraint
+                  where conrelid = 'public.library_monitor_settings'::regclass
+                    and conname = 'library_monitor_settings_device_limit_check') then
+    alter table public.library_monitor_settings
+      add constraint library_monitor_settings_device_limit_check check (device_limit between 1 and 10);
+  end if;
+end $$;
 
 comment on column public.library_monitor_settings.device_limit_enabled is
   'Owner ٤٢٧: refuse a new device beyond device_limit on the subscriber library text. Ships false (20261108_20).';

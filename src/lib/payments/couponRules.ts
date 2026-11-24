@@ -30,8 +30,12 @@
  *     price-book id such as "ind-ai", edited on the admin coupons page);
  *   - the order's net before VAT must reach min_order_amount;
  *   - the discount is the coupon's value (fixed SAR, or a percentage of the
- *     net) capped at max_discount_pct (25) of the net, floored to a halala so
- *     the cap is never exceeded;
+ *     net) capped at the row's max_discount_pct of the net (25 by default —
+ *     owner ١٥٥; up to 100 since batch l14, 20261204_60, for a code the admin
+ *     saved with its «الغرض»), floored to a halala so the cap is never
+ *     exceeded. A discount that leaves less than Moyasar's smallest charge is
+ *     a full discount (fullDiscount.ts): checkout and the preview refuse it
+ *     without a saved card, and do not activate it yet;
  *   - VAT (15 %) is computed on the net AFTER the discount.
  *
  * Every rule is read from the coupon's ROW, never from its code: a name in
@@ -139,7 +143,10 @@ export function sarToHalalas(value: number | string | null | undefined): number 
   return Math.round(n * 100);
 }
 
-const MAX_PCT = 25;
+/** The hard ceiling of any coupon (batch l14, 20261204_60); the row's max_discount_pct (25 by default) decides below it. */
+const MAX_PCT = 100;
+/** The column's default (owner ١٥٥) — used when a row's cap cannot be read. */
+const DEFAULT_PCT = 25;
 
 export function evaluateCoupon(row: CouponRow | null | undefined, ctx: CouponContext): CouponDecision {
   if (!row || row.active !== true) return { ok: false, reason: "invalid" };
@@ -179,7 +186,8 @@ export function evaluateCoupon(row: CouponRow | null | undefined, ctx: CouponCon
   if (!Number.isFinite(value) || value <= 0) return { ok: false, reason: "invalid" };
   const raw = row.discount_type === "fixed" ? sarToHalalas(value) : Math.floor((net * Math.min(value, 100)) / 100);
   const pctRaw = Number(row.max_discount_pct);
-  const pct = Number.isFinite(pctRaw) && pctRaw > 0 ? Math.min(pctRaw, MAX_PCT) : MAX_PCT;
+  // an unreadable cap falls back to the default 25 %, never to the ceiling
+  const pct = Number.isFinite(pctRaw) && pctRaw > 0 ? Math.min(pctRaw, MAX_PCT) : DEFAULT_PCT;
   const cap = Math.floor((net * pct) / 100);
   const discountHalalas = Math.min(raw, cap);
   if (discountHalalas <= 0) return { ok: false, reason: "invalid" };
