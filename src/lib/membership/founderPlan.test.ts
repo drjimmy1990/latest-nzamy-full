@@ -12,6 +12,7 @@ import {
   founderCreditRefundText,
   FOUNDER_CAMPAIGN_ID,
   FOUNDER_CREDIT_PRICE_TEXT,
+  FOUNDER_DRAFTING_WORK_PRICE_TEXT,
   FOUNDER_CREDIT_REFUNDED_FAILURE,
   FOUNDER_CREDIT_USED_TEXT,
   FOUNDER_CREDITS,
@@ -136,6 +137,12 @@ test("founderCreditLabel: the independent output reads «(N من M)», no «مت
 test("the price and deducted lines are the brief's words", () => {
   assert.equal(FOUNDER_CREDIT_PRICE_TEXT, "من رصيد باقة المؤسس — بلا نقاط");
   assert.equal(FOUNDER_CREDIT_USED_TEXT, "استُخدم من رصيد باقة المؤسس");
+});
+
+test("old note ب27: the drafter's price line says «عمل واحد من ٦», not points", () => {
+  assert.equal(FOUNDER_DRAFTING_WORK_PRICE_TEXT, "عمل واحد من ٦ أعمال صياغة في باقة المؤسس — بلا نقاط");
+  const step = readFileSync(new URL("../../components/draft/steps/StepAiDraft.tsx", import.meta.url), "utf8");
+  assert.match(step, /paidByCredit \? `\$\{FOUNDER_DRAFTING_WORK_PRICE_TEXT\}، تشمل التحليل والصياغة`/);
 });
 
 const MEMBER = {
