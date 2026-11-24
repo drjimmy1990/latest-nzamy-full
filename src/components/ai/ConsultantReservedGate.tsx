@@ -13,9 +13,9 @@ import { CONSULTANT_RESERVED_MESSAGE } from "@/lib/auth/practiceKind";
 /**
  * Owner ١٤٦ (register 14 #19, batch l12): the legal opinion is reserved for the
  * licensed advocate and the law firm until the consultant's account type opens.
- * A consultant whose paid term was already running keeps it to the term's end
- * (src/lib/ai/consultantTerm.ts); the server decides, and this gate asks it
- * through GET /api/v1/ai/tool-status (the run path's own rule, R5).
+ * The paid-term exception was withdrawn (owner decision, 22-23 Nov 2026): an
+ * independent consultant keeps the library only. The server decides, and this
+ * gate asks it through GET /api/v1/ai/tool-status (the run path's own rule, R5).
  *
  * Every other account gets the page unchanged; no tool-status read is made for
  * them. Known limit: while the tool itself is switched off, tool-status answers

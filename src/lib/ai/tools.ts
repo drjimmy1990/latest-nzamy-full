@@ -59,13 +59,11 @@ export interface AiToolSpec {
   /** Art. 18: a consultant (practice_kind) may not run it. */
   consultantBlocked: boolean;
   /**
-   * Owner ١٤٦ (register 14 #19, batch l12): a tool newly closed to the
-   * consultant that is not pleading (the legal opinion, محترف العقود). A
-   * consultant whose paid plan term was already running at the cut-off keeps
-   * it until that term ends (consultantTerm.ts), and the refusal names the
-   * reservation, not Art. 18's pleading ban.
+   * Owner decision (22-23 Nov 2026): an independent consultant runs ONLY the
+   * tools that say so here (today: the library assistant). The default is
+   * closed, so a tool added tomorrow is shut to him until someone opens it.
    */
-  consultantPaidTerm?: true;
+  consultantAllowed?: true;
   /**
    * The price in points, from the validated input (metered tools read `pages`).
    * `priorSectionEdits`: the memo's section edits so far, read by runCore from
@@ -1974,6 +1972,7 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     tier: "fast",
     roles: LIBRARY_ROLES,
     consultantBlocked: false,
+    consultantAllowed: true,
     // Owner ٢٥٧: 5 points flat, the chat and «اشرح لي» alike.
     price: () => 5,
     // Owner ٣٠ (18 Nov, batch l7): the account's free questions, once —
@@ -2149,7 +2148,6 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     // Owner ١٤٦ (batch l12): closed to the consultant until his account type
     // opens; a paid term already running keeps it to its end.
     consultantBlocked: true,
-    consultantPaidTerm: true,
     price: () => LEGAL_CONSULT_PRICE,
     dailyLimit: 5,
     defaultMode: "off",
@@ -2165,7 +2163,6 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     tier: "deep",
     roles: LEGAL_OPINION_ROLES,
     consultantBlocked: true,
-    consultantPaidTerm: true,
     price: () => LEGAL_LETTER_PRICE,
     dailyLimit: 5,
     defaultMode: "off",
@@ -2184,7 +2181,6 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     // the legal opinion (a paid term already running keeps it); contract review
     // on the same page stays open to him.
     consultantBlocked: true,
-    consultantPaidTerm: true,
     price: () => CONTRACTS_PRO_PRICE,
     dailyLimit: 5,
     defaultMode: "off",

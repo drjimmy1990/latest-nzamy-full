@@ -14,7 +14,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
-import { getSidebarByUserType, withoutConsultantBlockedItems } from "./navigation.sidebars.ts";
+import { FIRM_ROLE_ALLOWED_HREFS, getSidebarByUserType, withoutConsultantBlockedItems } from "./navigation.sidebars.ts";
+import { isConsultantAllowedPath } from "../lib/auth/consultantScope.ts";
 import { isConsultantBlockedPath, type PracticeKind } from "../lib/auth/practiceKind.ts";
 import type { SidebarGroup, SidebarItem } from "./navigation.types.ts";
 
@@ -57,26 +58,71 @@ test("the consultant sidebar has no blocked href, in every lawyer variant", () =
   }
 });
 
-test("the consultant keeps contracts, consultations, the legal opinion, clients and documents", () => {
-  const hrefs = hrefsOf(lawyerSidebar("full", "consultant"));
-  for (const href of [
-    "/dashboard/lawyer/contracts",
-    "/dashboard/lawyer/consultations",
-    "/ai/legal-opinion",
-    "/dashboard/lawyer/clients",
-    "/dashboard/lawyer/documents",
-  ]) {
-    assert.ok(hrefs.includes(href), `${href} should stay on the consultant sidebar`);
+// 22-23 Nov 2026 (owner): the independent consultant sees the library only. The two tests that stood
+// here ("keeps contracts, consultations, the legal opinion, clients and documents" and "is the advocate
+// one minus the blocked items") pinned the opposite rule and are replaced by the allowlist tests below.
+
+const LIBRARY_ONLY_HREFS = [
+  "/dashboard/lawyer", "/laws", "/laws/my", "/marketplace", "/marketplace/post",
+  "/dashboard/lawyer/join-office", "/dashboard/lawyer/profile", "/notifications", "/settings",
+];
+
+test("(a) the independent consultant sees the library, the market as a client, his account — and nothing else", () => {
+  for (const { name, mode, country } of VARIANTS) {
+    const hrefs = hrefsOf(lawyerSidebar(mode, "consultant", country));
+    assert.deepEqual(hrefs, LIBRARY_ONLY_HREFS, name);
+    for (const href of hrefs) assert.ok(isConsultantAllowedPath(href), `${href} is on the sidebar but not on the allowlist`);
   }
 });
 
-test("the consultant sidebar is the advocate one minus the blocked items, nothing else", () => {
-  for (const { name, mode, country } of VARIANTS) {
-    const advocate = hrefsOf(lawyerSidebar(mode, "advocate", country));
-    const consultant = hrefsOf(lawyerSidebar(mode, "consultant", country));
-    assert.deepEqual(consultant, advocate.filter((href) => !isConsultantBlockedPath(href)), name);
+test("(a) the lawyer's tools, consultations and the provider side of the market are not on the consultant's sidebar", () => {
+  const hrefs = hrefsOf(lawyerSidebar("full", "consultant", "SA"));
+  for (const href of [
+    "/dashboard/lawyer/contracts", "/dashboard/lawyer/consultations", "/ai/legal-opinion", "/ai/draft", "/ai/contracts",
+    "/dashboard/lawyer/clients", "/dashboard/lawyer/documents", "/dashboard/lawyer/finance", "/dashboard/lawyer/vault",
+    "/dashboard/lawyer/cases", "/dashboard/lawyer/marketplace", "/marketplace/collaborate", "/ai/global", "/ai/quick-answer",
+  ]) {
+    assert.ok(!hrefs.includes(href), `${href} must not be on the consultant sidebar`);
   }
-  assert.ok(hrefsOf(lawyerSidebar("full", "consultant", "SA")).includes("/ai/global"));
+  // the multi-role addons cannot widen it either
+  const withAddons = getSidebarByUserType("lawyer", "full", null, ["notary", "bailiff", "arbitrator"], null, null, null, false, "SA", "consultant");
+  assert.deepEqual(hrefsOf(withAddons), LIBRARY_ONLY_HREFS);
+});
+
+test("(b) an advocate, a firm and a firm legal_consultant / external_of_counsel member are exactly what they were", () => {
+  // the advocate: the full list, with the court tools
+  const advocate = hrefsOf(lawyerSidebar("full", "advocate"));
+  for (const href of ["/dashboard/lawyer/contracts", "/dashboard/lawyer/consultations", "/ai/legal-opinion", "/dashboard/lawyer/clients", "/ai/wargaming"]) {
+    assert.ok(advocate.includes(href), href);
+  }
+  // a firm member drawn the firm menu keeps their role's list, whatever the session's practice kind
+  for (const role of ["legal_consultant", "external_of_counsel"] as const) {
+    const before = getSidebarByUserType("firm", "full", null, [], null, null, role, false, null);
+    const withKind = getSidebarByUserType("firm", "full", null, [], null, null, role, false, null, "consultant");
+    assert.deepEqual(withKind, before, `${role}: practice kind is ignored in the firm menu`);
+    assert.deepEqual(
+      hrefsOf(before).filter((h) => !h.includes("?")).sort(),
+      [...FIRM_ROLE_ALLOWED_HREFS[role]].filter((h) => !h.includes("?")).sort().filter((h) => hrefsOf(before).includes(h)),
+      role,
+    );
+    assert.ok(hrefsOf(before).includes("/ai/draft"), `${role} keeps the drafting tool`);
+  }
+  assert.ok(hrefsOf(getSidebarByUserType("firm", "full", null, [], null, null, "managing_partner", false, null)).includes("/dashboard/firm"));
+});
+
+test("(d) a blank, unknown or odd practice kind never gives a lawyer the consultant's menu", () => {
+  const advocate = lawyerSidebar("full", "advocate");
+  for (const kind of [undefined, null, "", "Consultant", "CONSULTANT", "unknown", " consultant"]) {
+    assert.deepEqual(lawyerSidebar("full", kind as PracticeKind | null | undefined), advocate, JSON.stringify(kind));
+  }
+});
+
+test("an admin simulating the consultant is drawn the same library-only menu (UI only)", () => {
+  assert.deepEqual(hrefsOf(lawyerSidebar("full", "consultant")), LIBRARY_ONLY_HREFS);
+});
+
+test("the consultant menu has no «قريباً» row", () => {
+  for (const g of lawyerSidebar("full", "consultant", "SA")) for (const i of g.items) assert.equal(i.badge, undefined, i.href);
 });
 
 test("the advocate sidebar is unchanged: advocate, null and no argument all agree", () => {
@@ -209,4 +255,25 @@ test("the /ai hub drops the court tools from a consultant's grid", () => {
     page.includes('if (user.practiceKind === "consultant" && isConsultantBlockedPath(t.href)) return false;'),
     "the /ai hub's allowedTools filter does not drop the court tools for a consultant",
   );
+});
+
+test("a consultant who is an active firm member keeps the lawyer menu minus the Art. 18 tools on his own lawyer pages (the proxy's rule)", () => {
+  for (const country of [null, "SA"]) {
+    const member = getSidebarByUserType("lawyer", "full", null, [], null, null, null, false, country, "consultant", null, null, true);
+    const expected = withoutConsultantBlockedItems(getSidebarByUserType("lawyer", "full", null, [], null, null, null, false, country, "advocate"));
+    assert.deepEqual(member, expected, String(country));
+    assert.notDeepEqual(hrefsOf(member), LIBRARY_ONLY_HREFS);
+    for (const h of hrefsOf(member)) assert.equal(isConsultantBlockedPath(h), false, h);
+  }
+  // without the membership flag he is the independent one
+  assert.deepEqual(
+    hrefsOf(getSidebarByUserType("lawyer", "full", null, [], null, null, null, false, null, "consultant", null, null, false)),
+    LIBRARY_ONLY_HREFS,
+  );
+});
+
+test("the consultant's marketplace rows are the client side only", () => {
+  const hrefs = hrefsOf(lawyerSidebar("full", "consultant", "SA")).filter((h) => h.startsWith("/marketplace"));
+  assert.deepEqual(hrefs, ["/marketplace", "/marketplace/post"]);
+  for (const h of hrefs) assert.equal(isConsultantAllowedPath(h), true, h);
 });

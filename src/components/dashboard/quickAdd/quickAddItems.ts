@@ -66,9 +66,20 @@ export interface QuickAddContext {
   firmRole?: AffiliationRole | string | null;
   /** Firm dashboard: the session role's `addNewCase`. */
   canAddCase?: boolean;
+  /**
+   * The session has an active firm membership (useUser().firmMembership). A
+   * consultant who is a member is not the independent one (the proxy's rule):
+   * on his own lawyer dashboard he keeps the items minus the Art. 18 ones.
+   */
+  firmMember?: boolean;
 }
 
 export function visibleQuickAddItems(ctx: QuickAddContext): QuickAddItemDef[] {
+  // Owner decision (22-23 Nov 2026): on the lawyer's own dashboard an
+  // independent consultant gets none, since every item here creates a
+  // lawyer-workspace record. A consultant who is a firm member keeps them
+  // (minus the Art. 18 ones below), as the proxy lets him in.
+  if (ctx.scope === "lawyer" && ctx.practiceKind === "consultant" && ctx.firmMember !== true) return [];
   return QUICK_ADD_ITEMS.filter((item) => {
     if (ctx.practiceKind === "consultant" && isConsultantBlockedPath(item.routes.lawyer)) return false;
     if (ctx.scope === "firm") {

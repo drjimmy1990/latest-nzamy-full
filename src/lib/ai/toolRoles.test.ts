@@ -24,7 +24,7 @@ const src = (rel: string) => readFileSync(join(process.cwd(), "src", rel), "utf8
 /** The two test tools and the library's own assistant keep their own lists. */
 const NOT_CUSTOMER_TOOLS = new Set(["echo-fast", "echo-job", "library-assistant"]);
 const PLEADING_TOOLS = ["analyze-strength", "brief-check", "legal-drafter", "najiz-optimizer", "wargaming"];
-/** Owner ١٤٦ (batch l12): reserved for the advocate and the firm, not pleading; a paid consultant keeps them to his term's end. */
+/** Owner ١٤٦ (batch l12): reserved for the advocate and the firm, not pleading. (The paid-term exception was withdrawn on 22-23 Nov 2026.) */
 const RESERVED_TOOLS = ["contracts-pro", "legal-opinion-consult", "legal-opinion-letter"];
 const OUTSIDERS = ["", "client", "arbitrator", "translator"];
 const KINDS = ["advocate", "consultant", null] as const;
@@ -77,8 +77,10 @@ test("owner ١٢٢: government no longer reaches the legal opinion; the library 
 test("the consultant lock is on the pleading tools (Art. 18, decision 407, ruling R1) and the owner ١٤٦ reserved tools", () => {
   const blocked = Object.values(AI_TOOLS).filter((t) => t.consultantBlocked).map((t) => t.id).sort();
   assert.deepEqual(blocked, [...PLEADING_TOOLS, ...RESERVED_TOOLS].sort());
-  const reserved = Object.values(AI_TOOLS).filter((t) => t.consultantPaidTerm === true).map((t) => t.id).sort();
-  assert.deepEqual(reserved, RESERVED_TOOLS);
+  // Owner decision (22-23 Nov 2026): the consultant's tools are an allowlist. Today: the library assistant alone.
+  const allowed = Object.values(AI_TOOLS).filter((t) => t.consultantAllowed === true).map((t) => t.id).sort();
+  assert.deepEqual(allowed, ["library-assistant"]);
+  for (const id of allowed) assert.equal(AI_TOOLS[id].consultantBlocked, false, `${id} is both allowed and blocked`);
 });
 
 test("the matrix: each tool × each account type × the consultant flag", () => {
@@ -90,9 +92,17 @@ test("the matrix: each tool × each account type × the consultant flag", () => 
         let want: "role" | "consultant_blocked" | null;
         if (userType === "admin") want = null;
         else if (!spec.roles.includes(userType)) want = "role";
-        else if (spec.consultantBlocked && practiceKind === "consultant") want = "consultant_blocked";
+        else if (practiceKind === "consultant" && (spec.consultantBlocked || spec.consultantAllowed !== true)) want = "consultant_blocked";
         else want = null;
         assert.equal(got, want, `${spec.id} × ${userType || "(empty)"} × ${practiceKind}`);
+        // A consultant who is an active firm member keeps the firm role's tools: only the flagged ones stay shut.
+        if (practiceKind === "consultant" && userType !== "admin" && spec.roles.includes(userType)) {
+          assert.equal(
+            toolRoleRefusal(spec, { userType, practiceKind, firmMember: true }),
+            spec.consultantBlocked ? "consultant_blocked" : null,
+            `${spec.id} × ${userType} × consultant firm member`,
+          );
+        }
         cases++;
       }
     }
@@ -115,9 +125,21 @@ test("the matrix: each tool × each account type × the consultant flag", () => 
     assert.equal(toolRoleRefusal(AI_TOOLS[id], { userType: "lawyer", practiceKind: "consultant" }), "consultant_blocked", id);
     assert.equal(toolRoleRefusal(AI_TOOLS[id], { userType: "lawyer", practiceKind: "advocate" }), null, id);
   }
-  // A consultant keeps the other advice tools (owner ١٤٦ took the legal opinion and contracts-pro).
-  for (const id of ["quick-answer", "contract-review", "assistant"]) {
-    assert.equal(toolRoleRefusal(AI_TOOLS[id], { userType: "lawyer", practiceKind: "consultant" }), null, id);
+  // An independent consultant runs the library assistant alone (22-23 Nov 2026); the other advice
+  // tools a consultant used to keep are shut to him, and stay open to an advocate and a firm member.
+  for (const id of ["quick-answer", "contract-review", "assistant", "communicate"]) {
+    assert.equal(toolRoleRefusal(AI_TOOLS[id], { userType: "lawyer", practiceKind: "consultant" }), "consultant_blocked", id);
+    assert.equal(toolRoleRefusal(AI_TOOLS[id], { userType: "lawyer", practiceKind: "consultant", firmMember: true }), null, `${id} (firm member)`);
+    assert.equal(toolRoleRefusal(AI_TOOLS[id], { userType: "lawyer", practiceKind: "advocate" }), null, `${id} (advocate)`);
+  }
+  assert.equal(toolRoleRefusal(AI_TOOLS["library-assistant"], { userType: "lawyer", practiceKind: "consultant" }), null);
+  // Fail closed on the membership: anything but a literal true is the independent consultant.
+  for (const firmMember of [undefined, false, "true" as unknown as boolean, 1 as unknown as boolean]) {
+    assert.equal(toolRoleRefusal(AI_TOOLS["quick-answer"], { userType: "lawyer", practiceKind: "consultant", firmMember }), "consultant_blocked");
+  }
+  // A blank or unknown practice kind never locks a lawyer out.
+  for (const practiceKind of [null, "", "Consultant", "unknown"]) {
+    assert.equal(toolRoleRefusal(AI_TOOLS["quick-answer"], { userType: "lawyer", practiceKind }), null, String(practiceKind));
   }
 });
 
@@ -271,7 +293,9 @@ test("a short table of named cases (tool × account type × practice kind)", () 
     ["echo-fast", "individual", null, "role"],
     ["najiz-optimizer", "lawyer", "consultant", "consultant_blocked"],
     ["contracts-pro", "lawyer", "consultant", "consultant_blocked"],
-    ["contract-review", "lawyer", "consultant", null],
+    // 22-23 Nov 2026: the independent consultant keeps the library assistant alone, so contract-review is shut to him.
+    ["contract-review", "lawyer", "consultant", "consultant_blocked"],
+    ["library-assistant", "lawyer", "consultant", null],
     ["analyze-strength", "micro", "advocate", "role"],
     ["legal-opinion-letter", "individual", null, "role"],
     ["legal-opinion-letter", "firm", "consultant", "consultant_blocked"],

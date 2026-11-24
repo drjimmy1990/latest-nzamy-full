@@ -87,8 +87,8 @@ export function QuickAddProvider({ scope, firmRole, canAddCase, children }: Prov
 
   const enabled = !user.loading && quickAddEnabledFor(user);
   const items = useMemo(
-    () => (enabled ? visibleQuickAddItems({ scope, practiceKind: user.practiceKind, firmRole, canAddCase }) : []),
-    [enabled, scope, user.practiceKind, firmRole, canAddCase],
+    () => (enabled ? visibleQuickAddItems({ scope, practiceKind: user.practiceKind, firmRole, canAddCase, firmMember: !!user.firmMembership }) : []),
+    [enabled, scope, user.practiceKind, firmRole, canAddCase, user.firmMembership],
   );
   const available = items.length > 0;
 
