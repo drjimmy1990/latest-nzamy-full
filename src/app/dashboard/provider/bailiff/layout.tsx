@@ -1,0 +1,6 @@
+import ProviderSpecialtyGate from "@/components/auth/ProviderSpecialtyGate";
+
+/** Live check of 13 Nov, row 23: only the bailiff specialty (or an admin) opens these pages. */
+export default function ProviderSpecialtyLayout({ children }: { children: React.ReactNode }) {
+  return <ProviderSpecialtyGate specialty="bailiff">{children}</ProviderSpecialtyGate>;
+}
