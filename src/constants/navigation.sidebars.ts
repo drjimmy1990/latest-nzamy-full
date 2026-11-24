@@ -509,7 +509,10 @@ export function getSidebarByUserType(
     }
     case "corporate":  base = getCorporateSidebar(businessRole); break;
     case "micro":      base = MICRO_SIDEBAR; break;
-    case "provider":   base = PROVIDER_SIDEBAR; break;
+    // Live check of 13 Nov, row 19: a notary (provider, sub_role "notary") got
+    // the bare provider list — the notary section was only added through
+    // active_roles, which a provider whose own specialty IS notary never has.
+    case "provider":   base = subRole === "notary" ? mergeAddonSections(PROVIDER_SIDEBAR, NOTARY_ADDON_SECTIONS) : PROVIDER_SIDEBAR; break;
     case "government": base = getGovernmentSidebar(governmentRole); break;
     case "ngo":        base = NGO_SIDEBAR; break;
     default:           return [];
@@ -520,7 +523,7 @@ export function getSidebarByUserType(
   // K1 Fix: Prevent Lawyer roles from bleeding into Corporate UI
   if (activeRoles && activeRoles.length > 0 && userType !== "corporate" && !isIndependentConsultant) {
     const addons: SidebarGroup[] = [];
-    if (activeRoles.includes("notary"))      addons.push(...NOTARY_ADDON_SECTIONS);
+    if (activeRoles.includes("notary") && !(userType === "provider" && subRole === "notary")) addons.push(...NOTARY_ADDON_SECTIONS);
     if (activeRoles.includes("bailiff"))     addons.push(...BAILIFF_ADDON_SECTIONS);
     if (activeRoles.includes("arbitrator"))  addons.push(...ARBITRATOR_ADDON_SECTIONS);
     if (addons.length) base = mergeAddonSections(base, addons);

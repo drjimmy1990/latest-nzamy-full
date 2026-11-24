@@ -6,7 +6,7 @@
  */
 import assert from "node:assert/strict";
 import test from "node:test";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const ROOT = join(import.meta.dirname, "../../..");
@@ -32,4 +32,11 @@ test("no link in src points at /erp/library any more", () => {
     read("src/components/floating/constants/floatingServices.tsx"),
     /key: "firm-trainee-library"[^\n]*href: "\/laws" \}/,
   );
+});
+
+// Live check of 13 Nov, row 48: the old /erp/library mock had a «نسخ» button that
+// copied nothing (and «معاينة» / download buttons with no handler). The redirect
+// above already made it unreachable, so the page file is gone rather than patched.
+test("the unreachable /erp/library mock page is deleted, not left behind the redirect", () => {
+  assert.equal(existsSync(join(ROOT, "src/app/erp/library/page.tsx")), false);
 });

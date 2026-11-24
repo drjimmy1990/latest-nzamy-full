@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Scales, Gavel, Scroll, CheckCircle, BookOpen, MagnifyingGlass, ArrowsClockwise
+  Gavel, Scroll, CheckCircle, BookOpen, MagnifyingGlass, ArrowsClockwise
 } from "@phosphor-icons/react";
 import * as PhosphorIcons from "@phosphor-icons/react";
 import { type DemoPrinciple, type DemoPrecedent, type DemoOrder } from "../demo-data-access";
@@ -179,7 +179,8 @@ export function PrincipleRow({ p, isDark, idx, isRTL = true, q = "" }: { p: Cata
       {href && <PrincipleCardLink href={href} label={idLabel ? `${idLabel} — فتح في مجموعته` : "فتح المبدأ في مجموعته"} />}
       <div className={`flex items-start gap-3 ${href ? "relative z-[1] pointer-events-none" : ""}`}>
         <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${isDark ? "bg-[#C8A762]/10" : "bg-amber-50"}`}>
-          <Scales size={16} className={isDark ? "text-[#C8A762]" : "text-amber-700"} weight="duotone" />
+          {/* No cross-like icon (researcher reference item 3, file 11 row 43): a principle is a gavel, as in R3e. */}
+          <Gavel size={16} className={isDark ? "text-[#C8A762]" : "text-amber-700"} weight="duotone" />
         </div>
         <div className="flex-1 min-w-0">
 

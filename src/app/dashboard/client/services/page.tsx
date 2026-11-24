@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useSyncExternalStore } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import { isLawyerOnlyAiHref } from "@/lib/ai/lawyerOnlyTools";
@@ -20,6 +20,7 @@ import { PRICE_PENDING_AR, useClientPricingCatalog } from "@/hooks/useClientPric
 import type { ClientPricingAudience, ClientServiceCatalogItem } from "@/constants/clientServiceCatalog";
 import { resolveClientService } from "@/lib/pricing/clientPricingAudience";
 import { COMING_SOON_BADGE_AR, isTerminalToolHref } from "@/constants/betaGatedRoutes";
+import { categoryFromSearch } from "./_category-param";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -295,14 +296,25 @@ function SubServiceCard({ svc }: { svc: SubService }) {
 
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 
+// The query string never changes under this page without a navigation, so the
+// store has nothing to subscribe to; the server snapshot is "" (no category).
+const noSubscription = () => () => {};
+
 export default function RequestServicePage() {
-  const [selectedCat, setSelectedCat] = useState<string | null>(null);
+  // `picked` is the viewer's own choice; until they make one, `?cat=` (the top
+  // menu's links, live check row 11) decides which category opens expanded.
+  const [picked, setPicked] = useState<{ id: string | null } | null>(null);
+  const search = useSyncExternalStore(noSubscription, () => window.location.search, () => "");
   const { catalog, audience, audienceLoading } = useClientPricingCatalog();
 
   const visibleCategories = useMemo(
     () => buildCategories(catalog, audience, audienceLoading),
     [catalog, audience, audienceLoading],
   );
+  const selectedCat = picked
+    ? picked.id
+    : categoryFromSearch(search, visibleCategories.map((cat) => cat.id));
+  const setSelectedCat = (id: string | null) => setPicked({ id });
 
   return (
     <div className="max-w-5xl mx-auto" dir="rtl">

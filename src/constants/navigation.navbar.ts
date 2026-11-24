@@ -124,11 +124,17 @@ export const FIRM_NAV: NavItem[] = [
 export const INDIVIDUAL_NAV: NavItem[] = [
   { label: "لوحة التحكم",  labelEn: "Dashboard",    href: "/dashboard/client" },
   { label: "الخدمات",      labelEn: "Services",     href: "#services",
+    // Live check of 13 Nov (row 11): four links here pointed at
+    // /dashboard/client/services/{representation,notarization,drafting,hearings},
+    // pages that never existed (404). Each link now opens a category the
+    // catalogue really sells (CLIENT_SERVICE_CATEGORIES ids), already expanded
+    // on the services page; court representation and hearing attendance are
+    // not sold, so they are not offered here.
     children: [
-      { label: "التمثيل القضائي", labelEn: "Court Representation", href: "/dashboard/client/services/representation", icon: "Gavel" },
-      { label: "التوثيق الرسمي",  labelEn: "Official Notarization", href: "/dashboard/client/services/notarization", icon: "Stamp" },
-      { label: "صياغة المذكرات",   labelEn: "Memo Drafting",         href: "/dashboard/client/services/drafting",      icon: "PencilSimple" },
-      { label: "حضور الجلسات",     labelEn: "Attend Hearings",       href: "/dashboard/client/services/hearings",      icon: "CalendarCheck" },
+      { label: "تحرير دعوى أو مذكرة", labelEn: "Lawsuits & Memos",       href: "/dashboard/client/services?cat=legal-filing", icon: "Gavel" },
+      { label: "عقود ووثائق",         labelEn: "Contracts & Documents",  href: "/dashboard/client/services?cat=contracts",    icon: "FileText" },
+      { label: "دراسة وتقييم القضية", labelEn: "Case Assessment",        href: "/dashboard/client/services?cat=case-study",   icon: "MagnifyingGlass" },
+      { label: "خدمات خاصة",          labelEn: "Special Services",       href: "/dashboard/client/services?cat=special",      icon: "Stamp" },
       { label: "الاستشارات",       labelEn: "Consultations",         href: "/dashboard/client/consultation",           icon: "ChatDots" },
       { label: "كل الخدمات",       labelEn: "All Services",          href: "/dashboard/client/services",               icon: "ArrowLeft" },
     ]

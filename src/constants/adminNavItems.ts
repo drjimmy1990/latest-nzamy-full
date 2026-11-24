@@ -52,7 +52,9 @@ export const ADMIN_NAV_SECTIONS: readonly AdminNavSection[] = [
     sectionEn: "Users",
     items: [
       { href: "/dashboard/admin/users", label: "جميع المستخدمين", labelEn: "All Users", icon: "Users" },
-      { href: "/dashboard/admin/users/new", label: "إضافة مستخدم", labelEn: "Add User", icon: "UserCirclePlus" },
+      // «إضافة مستخدم» (/dashboard/admin/users/new) is not listed: no route creates an
+      // account from the console yet, and the page said «تم إنشاء الحساب» without
+      // sending anything (live check of 13 Nov, row 30). The page is «قيد التفعيل».
       { href: "/dashboard/admin/users/roles", label: "الأدوار والصلاحيات", labelEn: "Roles & Permissions", icon: "Key" },
       { href: "/dashboard/admin/business", label: "بروفيلات الشركات", labelEn: "Company Profiles", icon: "Buildings" },
       { href: "/dashboard/admin/provider-verification", label: "تحقق المزودين", labelEn: "Provider KYC", icon: "ShieldCheck" },

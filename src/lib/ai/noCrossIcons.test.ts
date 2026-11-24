@@ -32,6 +32,8 @@ const SCOPES = [
   "constants/navigation.sidebars.ts",
   "constants/navigation.navbar.ts",
   "constants/adminNavItems.ts",
+  // l14 (file 11 row 43): the principle card in the /laws results list.
+  "app/laws/components/ListItems.tsx",
 ];
 
 test("no Scales icon on the AI tools, their menus, the drafter or the canvas", () => {

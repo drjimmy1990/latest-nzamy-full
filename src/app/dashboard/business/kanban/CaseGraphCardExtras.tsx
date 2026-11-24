@@ -17,6 +17,7 @@ import {
   toggleChecklistItem,
 } from "./_graph-sanitize";
 import { toArabicDigits } from "@/lib/services/arabicCount";
+import { parseCardMarkdown, type MdSpan } from "./_graph-markdown";
 
 const stop = (e: { stopPropagation: () => void }) => e.stopPropagation();
 
@@ -152,6 +153,42 @@ export function ChecklistCardBody({
           <Plus size={11} />
         </button>
       </div>
+    </div>
+  );
+}
+
+/**
+ * A card's text with its Markdown marks drawn (row 57 of file 11): headings,
+ * list lines, bold and italic — as React elements from parsed data, never as
+ * HTML. A click opens the text for editing again.
+ */
+export function CardMarkdownView({
+  text,
+  className,
+  onEdit,
+}: {
+  text: string;
+  className: string;
+  onEdit: () => void;
+}) {
+  const span = (s: MdSpan, i: number) =>
+    s.bold ? <strong key={i}>{s.text}</strong> : s.italic ? <em key={i}>{s.text}</em> : <span key={i}>{s.text}</span>;
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      title="انقر للتعديل"
+      onPointerDown={stop}
+      onClick={(e) => { e.stopPropagation(); onEdit(); }}
+      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); onEdit(); } }}
+      className={`cursor-text space-y-0.5 ${className}`}
+    >
+      {parseCardMarkdown(text).map((b, i) =>
+        b.kind === "h1" ? <p key={i} className="text-[12px] font-black">{b.spans.map(span)}</p>
+        : b.kind === "h2" ? <p key={i} className="text-[11px] font-bold">{b.spans.map(span)}</p>
+        : b.kind === "li" ? <p key={i} className="ps-3 before:me-1 before:content-['•']">{b.spans.map(span)}</p>
+        : <p key={i}>{b.spans.map(span)}</p>,
+      )}
     </div>
   );
 }

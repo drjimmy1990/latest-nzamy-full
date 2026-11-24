@@ -13,9 +13,11 @@ import {
   type NodeType,
 } from "./_graph-model";
 import { cardPosCenteredAt, curveMidpoint, curvePath, edgeCurve, tempLinePath } from "./_graph-geometry";
+import { EDGE_LABEL_LIST_ID, EDGE_LABEL_PRESETS, edgeInFocus, firstNeighbours } from "./_graph-focus";
 import { useCaseGraphState } from "./_use-case-graph-state";
 import { SidebarLauncher, AiAnalysisPanel, OverlaysBundle } from "./CaseGraphOverlays";
-import { LinkCardBody, ChecklistCardBody } from "./CaseGraphCardExtras";
+import { LinkCardBody, ChecklistCardBody, CardMarkdownView } from "./CaseGraphCardExtras";
+import { hasCardMarkdown } from "./_graph-markdown";
 import CaseImportDrawer from "./CaseImportDrawer";
 import { normalizeLoadedBoard } from "./_graph-sanitize";
 import { candidatesToNodes, type ImportCandidate } from "./_graph-import";
@@ -114,6 +116,14 @@ export default function CaseGraphView({
     undo, redo, canUndo, canRedo, resetGraph, autoLayout,
   } = useCaseGraphState({ initialNodes: seedNodes, initialEdges: seedEdges });
 
+  // Row 51 (file 11): the hovered card's "local graph" — it, its first
+  // neighbours and the arrows between them stay full strength, the rest fades.
+  // Off while an arrow is being drawn (the pointer is choosing a target then).
+  const focusNodeId = drawingEdgeFrom ? null : hoveredNodeId;
+  // A card with no arrows has no neighbourhood to show: nothing fades.
+  const neighbourhood = firstNeighbours(edges, focusNodeId);
+  const focusIds = neighbourhood && neighbourhood.size > 1 ? neighbourhood : null;
+
   const [showImport, setShowImport] = useState(false);
   const canImport = enableCaseImport && !!caseId;
   const importCandidates = (chosen: ImportCandidate[]) => {
@@ -158,6 +168,8 @@ export default function CaseGraphView({
   }
 
   const [expandedNoteId, setExpandedNoteId] = useState<string | null>(null);
+  // Row 57: a card whose text carries Markdown shows it drawn until clicked.
+  const [editingDescId, setEditingDescId] = useState<string | null>(null);
   // No legend existed for the six node-type colours or the three edge-line
   // styles (EDGE_CONFIG) — a lawyer reading someone else's board had to guess
   // what a colour meant. Off by default so it does not sit on top of a small
@@ -656,7 +668,7 @@ export default function CaseGraphView({
                       stroke={edgeColor} 
                       strokeWidth={String(edgeWidth)} 
                       strokeDasharray={cnf.dash || "none"}
-                      opacity={0.6}
+                      opacity={edgeInFocus(edge, focusIds ? focusNodeId : null) ? 0.6 : 0.12}
                     />
                   </g>
                 );
@@ -674,6 +686,12 @@ export default function CaseGraphView({
                 />
               )}
             </svg>
+
+            {/* Row 54: the reference's ready relation names, suggested on every
+                arrow label (free text still allowed). */}
+            <datalist id={EDGE_LABEL_LIST_ID}>
+              {EDGE_LABEL_PRESETS.map((name) => <option key={name} value={name} />)}
+            </datalist>
 
             {/* Editable Edge Labels overlay */}
             {edges.map(edge => {
@@ -694,6 +712,7 @@ export default function CaseGraphView({
                   value={edge.label}
                   onChange={(e) => handleEdgeLabelChange(edge.id, e.target.value)}
                   placeholder="الوصف..."
+                  list={EDGE_LABEL_LIST_ID}
                 />
               );
             })}
@@ -728,6 +747,7 @@ export default function CaseGraphView({
                     minHeight: '90px',
                     overflow: 'visible',
                     touchAction: 'none',
+                    opacity: focusIds && !focusIds.has(node.id) ? 0.35 : 1,
                     zIndex: isSelected ? 20 : 10,
                     ...(nodeGroup ? {
                       outline: `2px solid ${nodeGroup.color}50`,
@@ -762,11 +782,12 @@ export default function CaseGraphView({
 
                       {/* Title + meta */}
                       <div className="flex-1 min-w-0">
-                        {/* «مستعجل» is also TEXT, not only the glow: the glow is
-                            motion, switched off under prefers-reduced-motion. */}
+                        {/* «أولوية قصوى» (the reference's wording, row 53) is also
+                            TEXT, not only the glow: the glow is motion, switched
+                            off under prefers-reduced-motion. */}
                         {node.urgent && (
                           <span className={`inline-flex items-center gap-0.5 mb-0.5 me-1 px-1.5 rounded-full text-[8px] font-bold ${isDark ? "bg-red-500/15 text-red-400" : "bg-red-50 text-red-700"}`}>
-                            <Lightning size={8} weight="fill" /> مستعجل
+                            <Lightning size={8} weight="fill" /> أولوية قصوى
                           </span>
                         )}
                         {node.meta && <span className="block text-[8px] font-bold text-[#C8A762] mb-0.5 truncate">{node.meta}</span>}
@@ -806,17 +827,30 @@ export default function CaseGraphView({
                       />
                     )}
 
-                    {/* Desc textarea */}
+                    {/* Desc: drawn Markdown (row 57) until clicked, else the textarea */}
                     <div className="relative px-3 pt-1.5 pb-2 flex-1 flex flex-col gap-1.5">
+                      {editingDescId !== node.id && hasCardMarkdown(node.desc) ? (
+                        <CardMarkdownView
+                          text={node.desc}
+                          onEdit={() => setEditingDescId(node.id)}
+                          className={`w-full text-[10px] leading-relaxed flex-1 ${node.customColor ? "text-white/80" : isDark ? "text-zinc-400" : "text-zinc-600"}`}
+                        />
+                      ) : (
                       <textarea
                         value={node.desc}
+                        autoFocus={editingDescId === node.id}
+                        // Typing a mark into a plain card must not swap the box away
+                        // under the cursor: a focused box counts as being edited.
+                        onFocus={() => setEditingDescId(node.id)}
                         onChange={e => handleNodeTextChange(node.id, "desc", e.target.value)}
+                        onBlur={() => { if (editingDescId === node.id) setEditingDescId(null); }}
                         onPointerDown={e => e.stopPropagation()}
                         placeholder="اكتب التفاصيل..."
                         rows={isCustom ? 3 : 2}
                         className={`w-full text-[10px] leading-relaxed bg-transparent outline-none resize-none cursor-text placeholder-zinc-400 flex-1
                           ${node.customColor ? "text-white/80" : isDark ? "text-zinc-400" : "text-zinc-600"}`}
                       />
+                      )}
                       {/* Notes Field (Sticky Note Style) */}
                       {(() => {
                         const hasContent = !!(node.notes && node.notes.length > 0);
@@ -1162,7 +1196,7 @@ export default function CaseGraphView({
               <button onClick={() => { setNodes(prev => prev.map(n => n.id === nodeMenu.nodeId ? { ...n, urgent: !n.urgent } : n)); setNodeMenu(null); }}
                 className={`w-full text-start px-3 py-2 text-xs font-semibold rounded-lg flex items-center gap-2 ${isDark ? "text-zinc-300 hover:bg-zinc-700" : "text-zinc-600 hover:bg-zinc-100"}`}>
                 <Lightning size={13} className={isDark ? "text-red-400" : "text-red-600"} />
-                {nd.urgent ? "إلغاء «مستعجل»" : "تمييز كمستعجل (توهّج)"}
+                {nd.urgent ? "إلغاء «أولوية قصوى»" : "تمييز بأولوية قصوى (توهّج)"}
               </button>
               <div className={`my-1 border-t ${isDark ? "border-zinc-700" : "border-zinc-100"}`} />
               <button onClick={() => deleteNodes([nodeMenu.nodeId])}
