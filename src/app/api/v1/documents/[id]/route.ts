@@ -146,21 +146,27 @@ export async function DELETE(
       if (doc.storage_path && !ownObject) {
         console.error("[documents DELETE permanent] object kept — storage_path is outside the folder it was written in:", id);
       }
+      // Old note ب3 (Patch 0003, «غلاف الخزنة»): the ROW goes first, then the
+      // file. A database row and a storage object cannot share one
+      // transaction, so the order decides what a failure leaves behind:
+      // file-first left a row in the bin pointing at a file that no longer
+      // exists when the row delete then failed; row-first leaves at worst an
+      // orphaned object, never a broken document.
+      const { error: deleteRowError } = await admin.from("attachments").delete().eq("id", id);
+      if (deleteRowError) {
+        console.error("[documents DELETE permanent] row delete failed:", id, deleteRowError.message, deleteRowError.code);
+        return NextResponse.json({ error: "تعذّر الحذف النهائي للمستند." }, { status: 500 });
+      }
+
       if (doc.storage_path && !held && ownObject) {
         const { error: removeError } = await admin.storage.from("documents").remove([doc.storage_path]);
         if (removeError) {
           // Logged, not fatal: an orphaned storage object is this codebase's
           // accepted leftover elsewhere (see deleteDocument in
-          // documentService.ts) — worse would be a row nobody can ever purge
-          // because a flaky storage call keeps blocking the delete.
+          // documentService.ts) — the row is already gone, so the user's
+          // delete has happened.
           console.error("[documents DELETE permanent] storage remove failed:", id, removeError.message);
         }
-      }
-
-      const { error: deleteRowError } = await admin.from("attachments").delete().eq("id", id);
-      if (deleteRowError) {
-        console.error("[documents DELETE permanent] row delete failed:", id, deleteRowError.message, deleteRowError.code);
-        return NextResponse.json({ error: "تعذّر الحذف النهائي للمستند." }, { status: 500 });
       }
 
       return NextResponse.json({ ok: true });

@@ -20,7 +20,7 @@ import { RUN_STILL_RUNNING_CODE } from "@/lib/ai/aiRunClient";
 import { CitedText, SourceList, asCitations } from "@/components/ai/CitedAnswer";
 import { DRAFT_KINDS, draftKindPrice, type DraftKindId } from "@/lib/ai/draftKinds";
 import FounderCreditChoice from "@/components/membership/FounderCreditChoice";
-import { creditKindForRun, founderCreditChoiceKey, FOUNDER_CREDIT_PRICE_TEXT, FOUNDER_CREDIT_USED_TEXT } from "@/lib/membership/founderPlan";
+import { creditKindForRun, founderCreditChoiceKey, FOUNDER_DRAFTING_WORK_PRICE_TEXT, FOUNDER_CREDIT_USED_TEXT } from "@/lib/membership/founderPlan";
 import {
   analysisInput, asDraftAnalysis, asEditedSection, asPleading, canAnalyse, draftBlocker, draftInput, pleadingBlocks, pleadingText, pleadingWordHtml,
   sectionEditInput, withEditedSections,
@@ -256,7 +256,7 @@ export function StepAiDraft({ isDark, kind, draftState, facts, fileIds, skippedF
             </p>
           </div>
           <span className="rounded-full border border-[#C8A762]/30 bg-[#C8A762]/10 px-3 py-1 text-[11px] font-bold text-[#C8A762]">
-            {paidByCredit ? `${FOUNDER_CREDIT_PRICE_TEXT}، تشمل التحليل والصياغة` : `${kindPrice.toLocaleString("ar-SA")} نقطة — تشمل التحليل والصياغة`}
+            {paidByCredit ? `${FOUNDER_DRAFTING_WORK_PRICE_TEXT}، تشمل التحليل والصياغة` : `${kindPrice.toLocaleString("ar-SA")} نقطة — تشمل التحليل والصياغة`}
           </span>
           {!paidByCredit && <ToolPointsAvailable tool="legal-drafter" price={kindPrice} className="text-[11px]" />}
         </div>

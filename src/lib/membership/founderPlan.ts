@@ -141,6 +141,12 @@ export function creditKindForRun(
 /** A tool's price line while the choice is checked. */
 export const FOUNDER_CREDIT_PRICE_TEXT = "من رصيد باقة المؤسس — بلا نقاط";
 
+/**
+ * The drafter's price line while the choice is checked (old note ب27: the
+ * founder sees «عمل واحد من ستة», not points). The count is FOUNDER_CREDITS.
+ */
+export const FOUNDER_DRAFTING_WORK_PRICE_TEXT = `عمل واحد من ${toArabicDigits(FOUNDER_CREDITS.drafting_work)} أعمال صياغة في باقة المؤسس — بلا نقاط`;
+
 /** The "N points deducted" line of a run the server paid with a credit (`creditUsed`). */
 export const FOUNDER_CREDIT_USED_TEXT = "استُخدم من رصيد باقة المؤسس";
 

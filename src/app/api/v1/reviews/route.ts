@@ -392,7 +392,7 @@ export async function POST(request: NextRequest) {
       userId: reqRow.assigned_to as string,
       title: "تقييم جديد على خدمتك",
       body: `تقييم بـ ${rating} من ٥ نجوم.`,
-      href: "/dashboard/lawyer/profile",
+      href: "/dashboard/lawyer/reviews", // ب8: the reviews page (ReviewsPanel), not the profile's first tab
     });
 
     return NextResponse.json({ data: review }, { status: 201 });
