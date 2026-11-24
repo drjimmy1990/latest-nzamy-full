@@ -780,11 +780,12 @@ export default function CaseGraphView({
 
                       {/* Title + meta */}
                       <div className="flex-1 min-w-0">
-                        {/* «مستعجل» is also TEXT, not only the glow: the glow is
-                            motion, switched off under prefers-reduced-motion. */}
+                        {/* «أولوية قصوى» (the reference's wording, row 53) is also
+                            TEXT, not only the glow: the glow is motion, switched
+                            off under prefers-reduced-motion. */}
                         {node.urgent && (
                           <span className={`inline-flex items-center gap-0.5 mb-0.5 me-1 px-1.5 rounded-full text-[8px] font-bold ${isDark ? "bg-red-500/15 text-red-400" : "bg-red-50 text-red-700"}`}>
-                            <Lightning size={8} weight="fill" /> مستعجل
+                            <Lightning size={8} weight="fill" /> أولوية قصوى
                           </span>
                         )}
                         {node.meta && <span className="block text-[8px] font-bold text-[#C8A762] mb-0.5 truncate">{node.meta}</span>}
@@ -1190,7 +1191,7 @@ export default function CaseGraphView({
               <button onClick={() => { setNodes(prev => prev.map(n => n.id === nodeMenu.nodeId ? { ...n, urgent: !n.urgent } : n)); setNodeMenu(null); }}
                 className={`w-full text-start px-3 py-2 text-xs font-semibold rounded-lg flex items-center gap-2 ${isDark ? "text-zinc-300 hover:bg-zinc-700" : "text-zinc-600 hover:bg-zinc-100"}`}>
                 <Lightning size={13} className={isDark ? "text-red-400" : "text-red-600"} />
-                {nd.urgent ? "إلغاء «مستعجل»" : "تمييز كمستعجل (توهّج)"}
+                {nd.urgent ? "إلغاء «أولوية قصوى»" : "تمييز بأولوية قصوى (توهّج)"}
               </button>
               <div className={`my-1 border-t ${isDark ? "border-zinc-700" : "border-zinc-100"}`} />
               <button onClick={() => deleteNodes([nodeMenu.nodeId])}
