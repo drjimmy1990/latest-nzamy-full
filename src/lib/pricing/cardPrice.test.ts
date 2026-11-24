@@ -41,7 +41,12 @@ test("a book card's price is the book's, in each cycle it is sold", () => {
     }
   }
   assert.deepEqual(cardPrice(card("firm-basic"), "semiannual", "en"), { price: "5,490", period: "SAR / 6 months" });
-  assert.equal(cardPrice(card("lawyer-pro"), "quarterly", "ar"), null, "no quarterly price: the card is not shown in that cycle");
+  // l14 (owner 23 Nov): «إدارة المكتب» is sold quarterly / half-yearly, the bundle too
+  assert.deepEqual(cardPrice(card("lawyer-pro"), "quarterly", "ar"), { price: "١٬٢٠٠", period: "ر.س / ٣ أشهر" });
+  assert.deepEqual(cardPrice(card("lawyer-bundle"), "quarterly", "ar"), { price: "٢٬٧١٢", period: "ر.س / ٣ أشهر" });
+  assert.deepEqual(cardPrice(card("lawyer-bundle"), "yearly", "ar"), { price: "٩٬٣٣٣", period: "ر.س / سنة" });
+  assert.equal(cardPrice(card("lawyer-bundle"), "monthly", "ar"), null, "the bundle is never monthly");
+  assert.equal(cardPrice(card("consultant-independent"), "quarterly", "ar"), null, "no quarterly price: the card is not shown in that cycle");
 });
 
 test("a one-payment card (top-up, library pass) shows its price in every cycle", () => {
@@ -81,9 +86,9 @@ test("§2 rule 1: the toggle offers professionals quarterly / half / yearly only
   }
 });
 
-test("lawyers see yearly only; firms quarterly / half / yearly (§6أ); the monthly 399 / 990 are not advertised", () => {
-  const lawyers = ["lawyer-pro", "topup-500", "topup-1000", "topup-2500", "topup-5000", "topup-10000"].map((id) => ({ id }));
-  assert.deepEqual(offeredCycles("lawyers", lawyers), ["yearly"]);
+test("lawyers (l14) and firms (§6أ) see quarterly / half / yearly; the monthly 399 / 990 are not advertised", () => {
+  const lawyers = ["lawyer-pro", "lawyer-bundle", "topup-500", "topup-1000", "topup-2500", "topup-5000", "topup-10000"].map((id) => ({ id }));
+  assert.deepEqual(offeredCycles("lawyers", lawyers), ["quarterly", "semiannual", "yearly"]);
   assert.deepEqual(offeredCycles("firms", [{ id: "firm-basic" }, { id: "firm-enterprise" }]), ["quarterly", "semiannual", "yearly"]);
   // individuals (q329, owner package of 1 Nov 2026): yearly only — even a stray
   // card of a retired plan adds no cycle to the toggle
@@ -137,7 +142,8 @@ test("derivation: no card of a price-book id carries a price string in src/const
   }
   // ind-preventive / ind-litigation have no card since q329 (retired in the book)
   // l12 (owner Q87): topup-50 is retired and has no card on any tab
-  assert.equal(cards, 30, "15 book items once in Arabic and once in English");
+  // l14: + lawyer-bundle on the lawyers' tab
+  assert.equal(cards, 32, "16 book items once in Arabic and once in English");
 });
 
 test("derivation: the price tables read the book too (firms, individuals comparison rows)", () => {

@@ -2,9 +2,16 @@ import { Lightning, Gavel } from "@phosphor-icons/react";
 import { Plan, ComparisonCategory } from "./pricing.types";
 import { aiToolPriceText, type PricedAiToolRef } from "@/lib/ai/toolPointsDisplay";
 import { topupBonusLabel, topupPointsTextById } from "../../lib/pricing/priceBook";
+import { bundleLibraryPointsLine } from "../../lib/points/pointsSettings";
 
 // ─── Lawyers: one subscription + point top-ups (owner answers ١٧٤ / ١٧٨, 2026-10-16) ─
-// - «المحامي المحترف»: 3,990 SAR/year. The 399 monthly price is retired
+// - Batch l14 (owner 23 Nov 2026, §حادي عشر #2): lawyer-pro is «إدارة المكتب»
+//   (the doc's erp-q1 / erp-q2 / erp-annual): 1,200 / 2,190 / 3,990 before
+//   VAT, office management only — the library is the separate pass or the
+//   bundle `lawyer-bundle` («إدارة المكتب + المكتبة القانونية», 2,712 /
+//   5,083 / 9,333, 15 % off the two; §عاشرًا). The cycle toggle shows the
+//   quarterly and half-yearly prices from the book.
+// - (before l14) «المحامي المحترف»: 3,990 SAR/year. The 399 monthly price is retired
 //   (owner, 26 Oct 2026: professionals never pay monthly), and the plan comes
 //   with NO points (owner ٢٩١: standard subscriptions open with 0 points).
 // - Points come from top-ups only. Batch l12 (owner Q87 / Q88a, 20 Nov 2026):
@@ -30,9 +37,11 @@ import { topupBonusLabel, topupPointsTextById } from "../../lib/pricing/priceBoo
 export const plansLawyers: { ar: Plan[]; en: Plan[] } = {
   ar: [
     {
-      id: "lawyer-pro", name: "المحامي المحترف", badge: null,
+      // Batch l14 (owner 23 Nov, §حادي عشر #2): this IS «إدارة المكتب» (the
+      // doc's erp-q1 / erp-q2 / erp-annual): 1,200 / 2,190 / 3,990 before VAT.
+      id: "lawyer-pro", name: "إدارة المكتب", badge: null,
       periodMonthly: "ر.س / شهر", periodYearly: "ر.س / سنة",
-      desc: "اشتراك سنوي لإدارة الممارسة؛ نقاط أدوات الذكاء الاصطناعي بحزم الشحن", target: "محامٍ مرخّص",
+      desc: "اشتراك إدارة المكتب وحده، بلا المكتبة القانونية؛ نقاط أدوات الذكاء الاصطناعي بحزم الشحن", target: "محامٍ مرخّص",
       cta: "اشترك الآن", ctaHref: "/register/provider?plan=lawyer-pro", highlighted: true, color: "border-royal/20",
       features: {
         ai: [
@@ -42,6 +51,22 @@ export const plansLawyers: { ar: Plan[]; en: Plan[] } = {
           `صياغة العقود وتدقيقها: ${aiToolPriceText("contracts-pro", "ar")}`,
         ],
         platform: ["إدارة القضايا والجلسات والمهل", "الموكّلون والاستشارات والعقود"],
+        support: [],
+      },
+    },
+    {
+      // Batch l14 (owner 23 Nov, §عاشرًا): the combined bundle, 15 % off the
+      // sum of «إدارة المكتب» and the library: 2,712 / 5,083 / 9,333.
+      id: "lawyer-bundle", name: "إدارة المكتب + المكتبة القانونية", badge: "خصم ١٥٪ على المجموع",
+      periodMonthly: "ر.س / شهر", periodYearly: "ر.س / سنة",
+      desc: "إدارة المكتب والمكتبة القانونية معاً بخصم ١٥٪ عن شرائهما منفصلين؛ نقاط أدوات الذكاء الاصطناعي بحزم الشحن", target: "محامٍ مرخّص",
+      cta: "اشترك الآن", ctaHref: "/register/provider?plan=lawyer-bundle", highlighted: false, color: "border-gold/20",
+      features: {
+        ai: [
+          bundleLibraryPointsLine("ar"),
+          "نقاط بقية الأدوات بحزم الشحن المستقلة",
+        ],
+        platform: ["إدارة القضايا والجلسات والمهل", "الموكّلون والاستشارات والعقود", "المكتبة القانونية كاملة طوال الاشتراك"],
         support: [],
       },
     },
@@ -83,9 +108,9 @@ export const plansLawyers: { ar: Plan[]; en: Plan[] } = {
   ],
   en: [
     {
-      id: "lawyer-pro", name: "Professional Lawyer", badge: null,
+      id: "lawyer-pro", name: "Office Management", badge: null,
       periodMonthly: "SAR / month", periodYearly: "SAR / year",
-      desc: "Yearly practice-management subscription; AI points come from top-ups", target: "Licensed lawyer",
+      desc: "Office management on its own, without the legal library; AI points come from top-ups", target: "Licensed lawyer",
       cta: "Subscribe", ctaHref: "/register/provider?plan=lawyer-pro", highlighted: true, color: "border-royal/20",
       features: {
         ai: [
@@ -94,6 +119,20 @@ export const plansLawyers: { ar: Plan[]; en: Plan[] } = {
           `Contract drafting and review: ${aiToolPriceText("contracts-pro", "en")}`,
         ],
         platform: ["Cases, hearings and deadlines", "Clients, consultations and contracts"],
+        support: [],
+      },
+    },
+    {
+      id: "lawyer-bundle", name: "Office Management + Legal Library", badge: "15% off the two",
+      periodMonthly: "SAR / month", periodYearly: "SAR / year",
+      desc: "Office management and the legal library together, 15% off buying them separately; AI points come from top-ups", target: "Licensed lawyer",
+      cta: "Subscribe", ctaHref: "/register/provider?plan=lawyer-bundle", highlighted: false, color: "border-gold/20",
+      features: {
+        ai: [
+          bundleLibraryPointsLine("en"),
+          "Points for the other tools from separate top-ups",
+        ],
+        platform: ["Cases, hearings and deadlines", "Clients, consultations and contracts", "The full legal library for the whole subscription"],
         support: [],
       },
     },
@@ -238,20 +277,22 @@ export const comparisonLawyers: { ar: ComparisonCategory[]; en: ComparisonCatego
   ar: [
     { category: "الاشتراك وحزم الشحن", icon: Lightning, rows: [
       // R2: no per-point price row; l12 (Q88a): points = price (1 point = 1 SAR before VAT), no bonus row.
-      { feature: "النقاط",      "lawyer-pro": "بالشحن", "topup-500": "٥٠٠",   "topup-1000": "١٬٠٠٠",       "topup-2500": "٢٬٥٠٠",       "topup-5000": "٥٬٠٠٠",       "topup-10000": "١٠٬٠٠٠" },
-      { feature: "الصلاحية",    "lawyer-pro": "—",      "topup-500": "٣ أشهر", "topup-1000": "٦ أشهر",      "topup-2500": "١٢ شهراً",     "topup-5000": "١٢ شهراً",     "topup-10000": "١٢ شهراً" },
+      { feature: "النقاط",      "lawyer-pro": "بالشحن", "lawyer-bundle": "بالشحن + نقاط مساعد المكتبة", "topup-500": "٥٠٠",   "topup-1000": "١٬٠٠٠",       "topup-2500": "٢٬٥٠٠",       "topup-5000": "٥٬٠٠٠",       "topup-10000": "١٠٬٠٠٠" },
+      { feature: "الصلاحية",    "lawyer-pro": "—",      "lawyer-bundle": "—", "topup-500": "٣ أشهر", "topup-1000": "٦ أشهر",      "topup-2500": "١٢ شهراً",     "topup-5000": "١٢ شهراً",     "topup-10000": "١٢ شهراً" },
     ]},
     { category: "المنصة", icon: Gavel, rows: [
-      { feature: "إدارة القضايا والجلسات والمهل", "lawyer-pro": true, "topup-500": "مع الاشتراك", "topup-1000": "مع الاشتراك", "topup-2500": "مع الاشتراك", "topup-5000": "مع الاشتراك", "topup-10000": "مع الاشتراك" },
+      { feature: "إدارة القضايا والجلسات والمهل", "lawyer-pro": true, "lawyer-bundle": true, "topup-500": "مع الاشتراك", "topup-1000": "مع الاشتراك", "topup-2500": "مع الاشتراك", "topup-5000": "مع الاشتراك", "topup-10000": "مع الاشتراك" },
+      { feature: "المكتبة القانونية", "lawyer-pro": false, "lawyer-bundle": true, "topup-500": false, "topup-1000": false, "topup-2500": false, "topup-5000": false, "topup-10000": false },
     ]},
   ],
   en: [
     { category: "Subscription & top-ups", icon: Lightning, rows: [
-      { feature: "Points",          "lawyer-pro": "Top-ups", "topup-500": "500",      "topup-1000": "1,000",          "topup-2500": "2,500",          "topup-5000": "5,000",          "topup-10000": "10,000" },
-      { feature: "Valid for",       "lawyer-pro": "—",       "topup-500": "3 months", "topup-1000": "6 months",       "topup-2500": "12 months",      "topup-5000": "12 months",      "topup-10000": "12 months" },
+      { feature: "Points",          "lawyer-pro": "Top-ups", "lawyer-bundle": "Top-ups + library assistant points", "topup-500": "500",      "topup-1000": "1,000",          "topup-2500": "2,500",          "topup-5000": "5,000",          "topup-10000": "10,000" },
+      { feature: "Valid for",       "lawyer-pro": "—",       "lawyer-bundle": "—", "topup-500": "3 months", "topup-1000": "6 months",       "topup-2500": "12 months",      "topup-5000": "12 months",      "topup-10000": "12 months" },
     ]},
     { category: "Platform", icon: Gavel, rows: [
-      { feature: "Cases, hearings and deadlines", "lawyer-pro": true, "topup-500": "With the subscription", "topup-1000": "With the subscription", "topup-2500": "With the subscription", "topup-5000": "With the subscription", "topup-10000": "With the subscription" },
+      { feature: "Cases, hearings and deadlines", "lawyer-pro": true, "lawyer-bundle": true, "topup-500": "With the subscription", "topup-1000": "With the subscription", "topup-2500": "With the subscription", "topup-5000": "With the subscription", "topup-10000": "With the subscription" },
+      { feature: "Legal Library", "lawyer-pro": false, "lawyer-bundle": true, "topup-500": false, "topup-1000": false, "topup-2500": false, "topup-5000": false, "topup-10000": false },
     ]},
   ],
 };

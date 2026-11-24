@@ -21,6 +21,12 @@
  *   is a platform admin (staff bypass, kept). 0 in the setting switches the
  *   gate off.
  *
+ *   Owner ٢٠١ (أ), 23 Nov 2026 (batch l14): ONE exception — while a
+ *   founder-invite library trial runs (the lib-trial grant of
+ *   founder_invite_redeem, 20261203_20, confirmed by founder_invites.grant_id)
+ *   the library stays open whatever the balance. The older trial / invitation
+ *   grants stay gated.
+ *
  *   A balance that could not be read (null) never locks (fail open): an
  *   outage must not shut a paying subscriber out.
  *
@@ -104,6 +110,25 @@ export interface PointsGateInput {
   /** points_balance + founder library credits; null when it could not be read. */
   balance: number | null;
   minPoints: number;
+  /**
+   * Owner ٢٠١ (أ), 23 Nov 2026 (batch l14): a founder-invite library trial is
+   * running (the lib-trial grant founder_invite_redeem made, 20261203_20).
+   * Its whole window the normal library stays open whatever the balance —
+   * every question spent below 50 would otherwise close the library too.
+   * Only a literal `true` counts. The trial's points stay the library
+   * assistant's, and the assistant still stops when they run out (its own
+   * price rule), so nothing else changes.
+   */
+  founderInviteTrial?: boolean;
+}
+
+/** The plan_ref / source pair founder_invite_redeem (20261203_20) writes, and no other path. */
+export const FOUNDER_INVITE_TRIAL_PLAN_REF = "lib-trial";
+export const FOUNDER_INVITE_TRIAL_SOURCE = "founder_campaign";
+
+/** True for a grant row that can be a founder-invite trial (the server confirms it against founder_invites.grant_id). */
+export function isFounderInviteTrialCandidate(row: { plan_ref?: unknown; source?: unknown }): boolean {
+  return row.plan_ref === FOUNDER_INVITE_TRIAL_PLAN_REF && row.source === FOUNDER_INVITE_TRIAL_SOURCE;
 }
 
 export interface PointsGateDecision {
@@ -118,7 +143,9 @@ export function libraryPointsGateDecision(input: PointsGateInput): PointsGateDec
   const open = { gated: false, locked: false };
   if (!(input.minPoints > 0)) return open;
   if (input.isAdmin === true) return open;
-  // Owner ٩٣ (l12): any active library grant is gated — no exempt plan.
+  // Owner ٢٠١ (l14): the founder-invite trial is outside the gate for its days.
+  if (input.founderInviteTrial === true) return open;
+  // Owner ٩٣ (l12): any other active library grant is gated — no exempt plan.
   if (input.planRefs.length === 0) return open;
   const locked = typeof input.balance === "number" && Number.isFinite(input.balance) && input.balance < input.minPoints;
   return { gated: true, locked };

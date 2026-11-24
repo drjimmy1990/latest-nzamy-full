@@ -26,8 +26,8 @@ import { isAuthUnavailable } from "@/lib/auth/apiAuth";
 import { AUTH_UNAVAILABLE_AR } from "@/lib/auth/resolveAuthOutcome";
 import { effectiveTier, type ActivePlanRow } from "@/lib/entitlementGrantRules";
 import { fullLibraryAccess } from "@/lib/libraryAccessDecision";
-import { activeLibraryGrantPlanRefs } from "@/lib/libraryAccessServer";
-import { libraryPointsGateDecision, libraryPointsLock, type LibraryPointsLock } from "@/lib/library/pointsGate";
+import { activeLibraryGrantPlanRefs, hasActiveFounderInviteTrial } from "@/lib/libraryAccessServer";
+import { FOUNDER_INVITE_TRIAL_PLAN_REF, libraryPointsGateDecision, libraryPointsLock, type LibraryPointsLock } from "@/lib/library/pointsGate";
 import { readLibraryMinPoints, readLibraryPointsBalance } from "@/lib/library/pointsGateServer";
 import type { StaffAction, StaffRole } from "@/lib/auth/staffRoles";
 import { isMissingStaffTable, staffDecision } from "@/lib/auth/staffDecision";
@@ -413,11 +413,16 @@ export async function libraryFullAccessState(userId: string | null, knownTier?: 
   const grants = planRefs ?? [];
   if (!fullLibraryAccess({ isAdmin, hasLibraryGrant: grants.length > 0 })) return NO_FULL_LIBRARY;
   // Is the balance asked at all? (minPoints 1 stands for "a gate exists".)
-  if (!libraryPointsGateDecision({ isAdmin, planRefs: grants, balance: null, minPoints: 1 }).gated) {
+  // Owner ٢٠١ (أ), batch l14: a running founder-invite library trial is
+  // outside the gate — read only when a lib-trial grant is active at all.
+  const founderInviteTrial = !isAdmin && grants.includes(FOUNDER_INVITE_TRIAL_PLAN_REF)
+    ? await hasActiveFounderInviteTrial(userId)
+    : false;
+  if (!libraryPointsGateDecision({ isAdmin, planRefs: grants, balance: null, minPoints: 1, founderInviteTrial }).gated) {
     return FULL_LIBRARY;
   }
   const [minPoints, balance] = await Promise.all([readLibraryMinPoints(), readLibraryPointsBalance(userId)]);
-  const decision = libraryPointsGateDecision({ isAdmin, planRefs: grants, balance, minPoints });
+  const decision = libraryPointsGateDecision({ isAdmin, planRefs: grants, balance, minPoints, founderInviteTrial });
   if (decision.locked && balance !== null) {
     return { hasFullAccess: false, pointsLock: libraryPointsLock(balance, minPoints) };
   }

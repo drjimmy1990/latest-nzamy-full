@@ -508,7 +508,8 @@ export async function startCheckoutWith(deps: CheckoutDeps, input: CheckoutInput
   // 2b (l8, owner item 9). a library plan (and the library-assistant points it
   // carries) for an account whose library is locked for its type: the owner's
   // message, before the audience check, before any price — nothing written
-  if (known.kind === "library" && deps.libraryAccountAllowed) {
+  // Batch l14: the ERP + library bundle carries a library pass, so the same lock.
+  if ((known.kind === "library" || known.libraryByBilling) && deps.libraryAccountAllowed) {
     let open = false;
     try {
       open = (await deps.libraryAccountAllowed(user.id)) === true;

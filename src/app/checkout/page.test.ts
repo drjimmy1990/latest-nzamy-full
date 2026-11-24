@@ -63,10 +63,12 @@ test("/checkout shows the listed price, the VAT sentence and the catalog notes",
   assert.match(page, /formatHalalas\(listed\)/);
   assert.match(page, /listedVatNotice\(item\)/);
   // l11 O7: the library-lock line for a holder of a gated library plan
-  assert.match(page, /checkoutItemNotes\(item, \{ libraryMinPoints, libraryQuestionPoints: aiToolPointRange\("library-assistant"\)\[1\] \}\)/);
-  // 06 ج6 + ٩٣ (l12): a library plan's checkout reads the minimum too
-  assert.match(page, /if \(item\.kind === "library"\) \{\s*try \{\s*libraryMinPoints = await readLibraryMinPoints\(\);/);
-  assert.match(page, /GATED_LIBRARY_PLAN_REFS\.includes\(r\)\)\) libraryMinPoints = await readLibraryMinPoints\(\)/);
+  // l14: and the cycle, for the ERP + library bundle's lines
+  assert.match(page, /checkoutItemNotes\(item, \{\s*libraryMinPoints,\s*libraryQuestionPoints: aiToolPointRange\("library-assistant"\)\[1\],\s*billing: parsed\.billing,\s*\}\)/);
+  // 06 ج6 + ٩٣ (l12): a library plan's checkout reads the minimum too — l14: and the bundle's
+  assert.match(page, /if \(item\.kind === "library" \|\| \(item\.kind === "plan" && item\.libraryByBilling\)\) \{\s*try \{\s*libraryMinPoints = await readLibraryMinPoints\(\);/);
+  // l14 (owner ٢٠١): no lock line while a founder-invite trial runs
+  assert.match(page, /GATED_LIBRARY_PLAN_REFS\.includes\(r\)\)\) \{\s*const trial = refs\.includes\(FOUNDER_INVITE_TRIAL_PLAN_REF\) && \(await hasActiveFounderInviteTrial\(user\.id\)\);\s*if \(!trial\) libraryMinPoints = await readLibraryMinPoints\(\);/);
   assert.doesNotMatch(page, /مقعد|مقاعد/);
 });
 

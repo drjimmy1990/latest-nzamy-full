@@ -6,6 +6,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { PAYABLE_ITEMS } from "./catalog.ts";
+import { TOPUP_SPEND_REFUND_LINE_AR } from "./billingView.ts";
 import { VAT_NOTICE } from "../pricing/vatNotice.ts";
 import type { CheckoutResponse } from "./checkoutRules.ts";
 import {
@@ -107,8 +108,9 @@ test("parseCheckoutQuery accepts an item and a billing it offers", () => {
     ["lawyer-pro", "once"],
     ["topup-100", "monthly"],
     ["lawyer-pro", "weekly"],
-    // a real cycle the item never listed
-    ["lawyer-pro", "quarterly"],
+    // a real cycle the item never listed (l14: lawyer-pro is sold quarterly now)
+    ["consultant-independent", "quarterly"],
+    ["lawyer-bundle", "monthly"],
     ["ind-preventive", "semiannual"],
   ] as const) {
     assert.deepEqual(parseCheckoutQuery(item, billing), { ok: false }, `${item} ${billing}`);
@@ -162,14 +164,16 @@ test("task 5 review M5: retired ind-litigation keeps resolving by id, but /check
 });
 
 test("checkoutItemNotes: each top-up states the validity the catalog grants and the point's value (l12 Q87); the points are in its label already", () => {
+  // l14 (owner ٢٠٦): after the point's value, the spend order and what it means for a refund
   const V = POINT_VALUE_LINE_AR;
   assert.equal(V, "النقطة = ريال سعودي واحد قبل ضريبة القيمة المضافة");
-  assert.deepEqual(checkoutItemNotes(PAYABLE_ITEMS["topup-100"]), ["صالحة ٣ أشهر من تاريخ الشراء", V]);
-  assert.deepEqual(checkoutItemNotes(PAYABLE_ITEMS["topup-250"]), ["صالحة ٣ أشهر من تاريخ الشراء", V]);
-  assert.deepEqual(checkoutItemNotes(PAYABLE_ITEMS["topup-500"]), ["صالحة ٣ أشهر من تاريخ الشراء", V]);
-  assert.deepEqual(checkoutItemNotes(PAYABLE_ITEMS["topup-1000"]), ["صالحة ٦ أشهر من تاريخ الشراء", V]);
+  const R = TOPUP_SPEND_REFUND_LINE_AR;
+  assert.deepEqual(checkoutItemNotes(PAYABLE_ITEMS["topup-100"]), ["صالحة ٣ أشهر من تاريخ الشراء", V, R]);
+  assert.deepEqual(checkoutItemNotes(PAYABLE_ITEMS["topup-250"]), ["صالحة ٣ أشهر من تاريخ الشراء", V, R]);
+  assert.deepEqual(checkoutItemNotes(PAYABLE_ITEMS["topup-500"]), ["صالحة ٣ أشهر من تاريخ الشراء", V, R]);
+  assert.deepEqual(checkoutItemNotes(PAYABLE_ITEMS["topup-1000"]), ["صالحة ٦ أشهر من تاريخ الشراء", V, R]);
   for (const id of ["topup-2500", "topup-5000", "topup-10000"]) {
-    assert.deepEqual(checkoutItemNotes(PAYABLE_ITEMS[id]), ["صالحة ١٢ شهراً من تاريخ الشراء", V], id);
+    assert.deepEqual(checkoutItemNotes(PAYABLE_ITEMS[id]), ["صالحة ١٢ شهراً من تاريخ الشراء", V, R], id);
   }
   // every top-up label names its points, so the screen shows them once (l12 Q88a: points = price)
   for (const [id, points] of [
@@ -179,7 +183,7 @@ test("checkoutItemNotes: each top-up states the validity the catalog grants and 
     assert.ok(PAYABLE_ITEMS[id].labelAr.includes(points), id);
   }
   // a top-up whose label does not name its points still gets the line
-  assert.deepEqual(checkoutItemNotes({ ...PAYABLE_ITEMS["topup-100"], labelAr: "شحن" }), ["١٠٠ نقطة", "صالحة ٣ أشهر من تاريخ الشراء", V]);
+  assert.deepEqual(checkoutItemNotes({ ...PAYABLE_ITEMS["topup-100"], labelAr: "شحن" }), ["١٠٠ نقطة", "صالحة ٣ أشهر من تاريخ الشراء", V, R]);
 });
 
 test("checkoutItemNotes: the library states its access length; firm plans promise no seats", () => {

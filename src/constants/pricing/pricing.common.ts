@@ -38,7 +38,7 @@ export const billingNotes: Record<AudienceTab, BillingNote> = {
   government:  { icon: "🏛", textAr: "عقد سنوي — ترخيص مؤسسي رسمي", textEn: "Annual contract — official institutional license" },
   // §2 rule 1: professionals are offered quarterly / half-yearly / yearly — no monthly on /pricing.
   // Owner ٢٩١ (26 Oct 2026): a subscription comes with no points; points come from top-ups only.
-  lawyers:     { icon: "🪙", textAr: "اشتراك سنوي، والنقاط بحزم شحن مستقلة عند الحاجة", textEn: "Yearly subscription; points come from separate top-ups when needed" },
+  lawyers:     { icon: "🪙", textAr: "اشتراك ربع سنوي أو نصف سنوي أو سنوي، والنقاط بحزم شحن مستقلة عند الحاجة", textEn: "Quarterly, half-yearly or yearly subscription; points come from separate top-ups when needed" },
   firms:       { icon: "🏢", textAr: "اشتراك سنوي بمقاعد مشمولة للمكتب أو الشركة", textEn: "Yearly subscription with seats included for the office or firm" },
   providers:   { icon: "🤝", textAr: "مجاني مع عمولة — أو اشترك سنوياً لتقليل العمولة والاحتفاظ بأرباحك", textEn: "Free with commission — or subscribe annually to reduce commission and keep more earnings" },
 };

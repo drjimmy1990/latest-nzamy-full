@@ -33,11 +33,12 @@ import {
   type BookEntry,
   type BookItemKind,
   type LaunchPrice,
+  type LibraryPart,
   type LibraryPlanRef,
   type ServerTierLiteral,
 } from "../pricing/priceBook.ts";
 
-export type { Billing, LibraryPlanRef, ServerTierLiteral };
+export type { Billing, LibraryPart, LibraryPlanRef, ServerTierLiteral };
 export type ItemKind = BookItemKind;
 export type VatMode = "exclusive" | "inclusive";
 
@@ -59,6 +60,11 @@ export type PayableItem = Readonly<{
   libraryDays?: number;
   points?: number;
   pointsValidityMonths?: number;
+  /**
+   * Batch l14: a plan that also grants a library pass (the ERP + library
+   * bundle), per billing — grantPurchase grants it with the plan.
+   */
+  libraryByBilling?: Readonly<Partial<Record<Billing, LibraryPart>>>;
   /**
    * Plans renew automatically (owner ٢٤٦), so only they keep the card. A
    * library pass, a top-up and the founder membership are billed once: false.
@@ -100,6 +106,7 @@ function toPayable(entry: BookEntry): PayableItem {
     ...(entry.libraryDays !== undefined ? { libraryDays: entry.libraryDays } : {}),
     ...(entry.points !== undefined ? { points: entry.points } : {}),
     ...(entry.pointsValidityMonths !== undefined ? { pointsValidityMonths: entry.pointsValidityMonths } : {}),
+    ...(entry.libraryByCycle ? { libraryByBilling: entry.libraryByCycle } : {}),
     saveCard: entry.kind === "plan", // never for "membership": billed once, no auto-renew
     buyers: entry.buyers === "any" ? "any" : Object.freeze([...entry.buyers]),
     ...(entry.launchPrices ? { launchPrices: entry.launchPrices } : {}),

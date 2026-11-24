@@ -3,7 +3,7 @@ import { createServiceClient } from "@/lib/supabase/server";
 import { cronSecretMatches } from "@/lib/payments/fulfillDecision";
 import { recordNotification } from "@/lib/notify";
 import { EXPIRY_WARNING_DAYS, expiryNotice, lotsToWarn, type ExpiringLot } from "@/lib/points/pointsExpiryNotice";
-import { GATED_LIBRARY_PLAN_REFS } from "@/lib/library/pointsGate";
+import { GATED_LIBRARY_PLAN_REFS, isFounderInviteTrialCandidate } from "@/lib/library/pointsGate";
 import { readLibraryMinPoints } from "@/lib/library/pointsGateServer";
 
 /**
@@ -87,19 +87,27 @@ export async function POST(request: NextRequest) {
   // chunks of GRANTS_CHUNK users (a short URL); a failed chunk only drops
   // that sentence for its users
   const gated = new Set<string>();
+  // Owner ٢٠١ (أ), batch l14: a founder-invite library trial is outside the
+  // 50-point gate, so its holder is not told an expiry may lock the library.
+  const inviteTrial = new Set<string>();
   let libraryMinPoints: number | null = null;
   const dueUsers = [...new Set(due.map((l) => l.user_id))];
   for (let i = 0; i < dueUsers.length; i += GRANTS_CHUNK) {
     const { data: grants, error: grantsErr } = await admin
       .from("library_access_grants")
-      .select("user_id")
+      .select("user_id, plan_ref, source")
       .in("user_id", dueUsers.slice(i, i + GRANTS_CHUNK))
       .in("plan_ref", [...GATED_LIBRARY_PLAN_REFS])
       .lte("starts_at", now.toISOString())
       .gt("ends_at", now.toISOString());
     if (grantsErr) console.warn("[cron/points-expiry] library grants:", grantsErr.code);
-    for (const g of (grants ?? []) as Array<{ user_id?: unknown }>) if (typeof g.user_id === "string") gated.add(g.user_id);
+    for (const g of (grants ?? []) as Array<{ user_id?: unknown; plan_ref?: unknown; source?: unknown }>) {
+      if (typeof g.user_id !== "string") continue;
+      gated.add(g.user_id);
+      if (isFounderInviteTrialCandidate(g)) inviteTrial.add(g.user_id);
+    }
   }
+  for (const id of inviteTrial) gated.delete(id);
   if (gated.size > 0) libraryMinPoints = await readLibraryMinPoints();
 
   let sent = 0;

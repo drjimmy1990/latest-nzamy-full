@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Coins } from "@phosphor-icons/react";
-import { arabicDigits, billingDateAr, pointsByType, pointsSummary, POINTS_SPEND_ORDER_AR, type BillingData } from "@/lib/payments/billingView";
+import { arabicDigits, billingDateAr, pointsByType, pointsSummary, POINTS_SPEND_ORDER_AR, POINTS_SPEND_REFUND_NOTE_AR, type BillingData } from "@/lib/payments/billingView";
 
 /**
  * PointsBalanceCard — the points balance and the nearest expiry, for the
@@ -43,7 +43,7 @@ export function PointsBalanceCard({ data }: { data: Pick<BillingData, "pointsBal
             </li>
           ))}
         </ul>
-        <p className="mt-2 text-[11px] text-zinc-500 dark:text-zinc-400">{POINTS_SPEND_ORDER_AR}</p>
+        <p className="mt-2 text-[11px] text-zinc-500 dark:text-zinc-400">{POINTS_SPEND_ORDER_AR} {POINTS_SPEND_REFUND_NOTE_AR}</p>
       </>)}
     </div>
   );
