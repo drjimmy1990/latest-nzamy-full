@@ -8460,3 +8460,19 @@ select 'Case map insert limited to the case''s workers (run 20261203_95)' as che
                   and permissive = 'RESTRICTIVE' and cmd = 'INSERT'
                   and coalesce(with_check, '') like '%case_board_open%') as ok;
 -- <<< verify:l13_case_graph_insert
+
+-- >>> verify:l14_links
+-- Batch l14 «links» (owner file 07 §2/§12, «تغطية الإحالات»): run 20261204_40 any time, before or after the deploy. Read-only.
+select 'l14 links: graph_rag_link_coverage present, SECURITY INVOKER, empty search_path, service role only (run 20261204_40)' as check,
+       coalesce((select not p.prosecdef and p.proconfig @> array['search_path=""']
+                        and not has_function_privilege('anon', p.oid, 'EXECUTE')
+                        and not has_function_privilege('authenticated', p.oid, 'EXECUTE')
+                        and has_function_privilege('service_role', p.oid, 'EXECUTE')
+                   from pg_catalog.pg_proc p
+                  where p.oid = to_regprocedure('public.graph_rag_link_coverage(text[],integer,integer)')), false) as ok;
+select 'l14 links: the coverage never counts SIMILAR_TO or an article''s link to itself as a legal link (run 20261204_40)' as check,
+       coalesce((select pg_catalog.strpos(pg_catalog.pg_get_functiondef(p.oid), 'e.edge_type <> ''SIMILAR_TO''') > 0
+                        and pg_catalog.strpos(pg_catalog.pg_get_functiondef(p.oid), 'e.source_key <> e.target_key') > 0
+                   from pg_catalog.pg_proc p
+                  where p.oid = to_regprocedure('public.graph_rag_link_coverage(text[],integer,integer)')), false) as ok;
+-- <<< verify:l14_links
