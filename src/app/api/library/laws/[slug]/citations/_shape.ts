@@ -18,6 +18,7 @@
  */
 import {
   LINK_SECTIONS,
+  READER_DISPLAY_ORDER,
   READER_QUERY_GROUPS,
   READER_LINK_SECTIONS,
   SHOWN_LINK_TYPES,
@@ -215,6 +216,8 @@ interface RawEdge {
   edge_type?: unknown;
   origin?: unknown;
   metadata?: unknown;
+  /** The edge's weight (a similar-meaning link: its similarity) — a number, never text. */
+  weight?: unknown;
 }
 
 /** `metadata.source` of a graph edge (owner_links / owner_edges), else undefined. */
@@ -291,6 +294,9 @@ export function shapeArticleRefs(
 
   const out: ArticleRefs = { found: true, sections: emptySections() };
   const seen = new Set<string>();
+  // Batch l14 (owner file 07 §3/§4): every item first, ordered, and only then
+  // cut to MAX_ITEMS_PER_SECTION — the cut never drops an amendment for a «إحالة».
+  const all: Record<LinkSection, Array<{ item: RefItem; weight: number }>> = { legislation: [], judicial: [], fiqh: [], similar: [] };
   for (const e of Array.isArray(r.edges) ? (r.edges as RawEdge[]) : []) {
     if (!isShownLinkType(e?.edge_type) || !asked.has(e.edge_type)) continue;
     const direction = e.source === center ? "out" : e.target === center ? "in" : null;
@@ -305,23 +311,29 @@ export function shapeArticleRefs(
     const place = placeOf(kind, otherKey, other);
     if (!place) continue;
     seen.add(`${section}|${otherKey}`);
-    const bucket = out.sections[section];
-    bucket.total++;
-    if (bucket.items.length >= MAX_ITEMS_PER_SECTION) continue;
+    out.sections[section].total++;
     const status = kind === "article" ? other.item_status : other.doc_status;
-    bucket.items.push({
-      key: otherKey,
-      kind,
-      title: capTitle(other.title) || capTitle(place.docId),
-      status: typeof status === "string" ? status : null,
-      linkType: e.edge_type,
-      direction,
-      relation: linkLabel(e.edge_type, direction),
-      section,
-      ...place,
-      anchorMissing: false,
-      auto: isUnreviewedAutoLink(e.edge_type, e.origin, edgeSource(e.metadata)),
+    all[section].push({
+      weight: typeof e.weight === "number" && Number.isFinite(e.weight) ? e.weight : 0,
+      item: {
+        key: otherKey,
+        kind,
+        title: capTitle(other.title) || capTitle(place.docId),
+        status: typeof status === "string" ? status : null,
+        linkType: e.edge_type,
+        direction,
+        relation: linkLabel(e.edge_type, direction),
+        section,
+        ...place,
+        anchorMissing: false,
+        auto: isUnreviewedAutoLink(e.edge_type, e.origin, edgeSource(e.metadata)),
+      },
     });
+  }
+  for (const s of LINK_SECTIONS) {
+    // The similar-meaning items closest first (file 07 §4); the legal ones in the box's order.
+    const list = s === "similar" ? [...all[s]].sort((a, b) => b.weight - a.weight) : all[s];
+    out.sections[s].items = sortRefItems(list.map((x) => x.item), lawSlug).slice(0, MAX_ITEMS_PER_SECTION);
   }
 
   // The list stops at the function's limit; its per-type counts do not.
@@ -527,11 +539,15 @@ export interface LawLinks {
   articles: Record<string, BulkGroup[]>;
 }
 
-/** The order the box lists groups in: READER_QUERY_GROUPS (amendment and regulation first, «إحالة», judicial, similar), out before in. */
-const GROUP_ORDER: readonly ShownLinkType[] = READER_QUERY_GROUPS.flatMap((g) => [...g.types]);
-function groupRank(t: ShownLinkType, d: "out" | "in"): number {
-  const i = GROUP_ORDER.indexOf(t);
-  return (i < 0 ? GROUP_ORDER.length : i) * 2 + (d === "out" ? 0 : 1);
+/**
+ * The order the box lists groups in: READER_DISPLAY_ORDER (batch l14, owner
+ * file 07 §4 — the in-force counterpart and the amendment, then the
+ * implementing regulation, then «إحالة», exception, «مع مراعاة», penalty;
+ * judicial; similar), out before in.
+ */
+export function groupRank(t: ShownLinkType, d: "out" | "in"): number {
+  const i = READER_DISPLAY_ORDER.indexOf(t);
+  return (i < 0 ? READER_DISPLAY_ORDER.length : i) * 2 + (d === "out" ? 0 : 1);
 }
 
 interface BulkLib {
@@ -695,7 +711,8 @@ export function expandLawLinks(bulk: Pick<LawLinks, "items" | "articles">, artic
     const shown: string[] = [];
     for (const [k, auto] of keys) {
       const base = bulk.items[k];
-      if (!base) continue;
+      // Owner file 07 §3: never the article itself (the server already drops it).
+      if (!base || k === `article:${articleId}`) continue;
       shown.push(k);
       if (seen.has(`${section}|${k}`)) continue;
       seen.add(`${section}|${k}`);
@@ -728,4 +745,249 @@ export function groupsOfRefs(refs: Pick<ArticleRefsOut, "sections">): RefGroupOu
     }
   }
   return [...by.values()].sort((x, y) => groupRank(x.linkType, x.direction) - groupRank(y.linkType, y.direction));
+}
+
+// ─── Batch l14 (owner file 07 §3, §4, §5, §12 — approved 23 Nov §15) ─────────
+
+/** Similar-meaning items shown per article (file 07 §4: «أعلى ٣ درجات تشابه فقط»). */
+export const SIMILAR_MAX = 3;
+
+/** The document part of an item title: «نظام العمل — المادة 7» → «نظام العمل». */
+export function docTitleOf(title: unknown): string {
+  return (String(title ?? "").split(/\s+[—–]\s+/)[0] ?? "").trim();
+}
+
+/**
+ * A law's name for telling two copies of one law apart from two laws:
+ * folded (foldTitle), its issuing part dropped («نظام القضاء الصادر بالمرسوم
+ * الملكي رقم (م/78) …» → «نظام القضاء»), a trailing bracket dropped. "" when
+ * a single word (too short to compare safely). Comparison only, never displayed.
+ */
+export function lawBaseTitle(title: unknown): string {
+  const s = foldTitle(docTitleOf(title))
+    .replace(/\s+الصادر(?:ه)?(?:\s.*)?$/u, "")
+    .replace(/\s*\([^()]*\)\s*$/u, "")
+    .trim();
+  // Two words at least («نظام» alone names no law).
+  return /\S\s+\S/u.test(s) ? s : "";
+}
+
+/** An item of the law being read (the same document). */
+export function isInternalRef(it: Pick<RefItem, "docKind" | "docId">, lawSlug: string): boolean {
+  return it.docKind === "law" && it.docId === lawSlug;
+}
+
+/**
+ * Owner file 07 §3 (the self link): the law being read, or ANOTHER COPY of it in
+ * the library (judiciary-law and law-of-the-judiciary-1428 hold the same law —
+ * their first articles are «similar» to each other). Used for the similar-meaning
+ * section only: a legal link to a law of the same name stays (a repealed law and
+ * its in-force successor share a name, and their «المقابل الساري» comes first).
+ */
+export function isSameLawOrCopy(it: Pick<RefItem, "docKind" | "docId" | "title">, lawSlug: string, lawBase: string): boolean {
+  if (it.docKind !== "law") return false;
+  if (it.docId === lawSlug) return true;
+  return !!lawBase && lawBaseTitle(it.title) === lawBase;
+}
+
+/** The article number in a library article id («judiciary-law__art-12» → 12); null when the id has none. */
+export function refArticleNumber(anchorId: string | null | undefined): number | null {
+  const m = /__art-(\d+)$/.exec(String(anchorId ?? ""));
+  return m ? Number(m[1]) : null;
+}
+
+/**
+ * Owner file 07 §5: a regulation (or other subsidiary legislation) item — the
+ * regulation article that implements this one, a regulation under this law, or
+ * an article whose document is named as a regulation («اللائحة …», «لوائح …»,
+ * «… التنفيذية», never a «نظام …»).
+ */
+export function isRegulationRef(it: Pick<RefItem, "kind" | "title" | "linkType" | "direction">): boolean {
+  if (it.linkType === "IMPLEMENTED_BY" && it.direction === "out") return true;
+  if (it.linkType === "PARENT_LAW" && it.direction === "in") return true;
+  if (it.kind !== "article" && it.kind !== "law") return false;
+  const f = foldTitle(docTitleOf(it.title));
+  if (!f || /^نظام(\s|$)/u.test(f)) return false;
+  return /^(?:ال)?(?:لائحه|لوائح)(?:\s|$)/u.test(f) || /(?:^|\s)التنفيذيه(?:\s|$)/u.test(f);
+}
+
+function statusRank(status: string | null): number {
+  if (status === "repealed") return 2;
+  if (status === "amended") return 1;
+  return 0;
+}
+
+type Orderable = Pick<RefItem, "docKind" | "docId" | "status" | "linkType" | "direction" | "anchorId">;
+
+/**
+ * The box's order of two items of one section (file 07 §4/§5): other documents
+ * before the law being read; the repealed last; then the link type
+ * (READER_DISPLAY_ORDER, out before in); then in force before amended; then the
+ * article number within one document. Anything else keeps the graph's order
+ * (the sort is stable): principles by weight, similar items closest first.
+ */
+export function compareRefItems(a: Orderable, b: Orderable, lawSlug: string): number {
+  const inner = Number(isInternalRef(a, lawSlug)) - Number(isInternalRef(b, lawSlug));
+  if (inner) return inner;
+  const gone = Number(a.status === "repealed") - Number(b.status === "repealed");
+  if (gone) return gone;
+  const type = groupRank(a.linkType, a.direction) - groupRank(b.linkType, b.direction);
+  if (type) return type;
+  const st = statusRank(a.status) - statusRank(b.status);
+  if (st) return st;
+  if (a.docKind === b.docKind && a.docId === b.docId) {
+    const na = refArticleNumber(a.anchorId);
+    const nb = refArticleNumber(b.anchorId);
+    if (na != null && nb != null && na !== nb) return na - nb;
+  }
+  return 0;
+}
+
+/** Items in the box's order (a stable sort — see compareRefItems). */
+export function sortRefItems<T extends Orderable>(items: readonly T[], lawSlug: string): T[] {
+  return [...items].sort((a, b) => compareRefItems(a, b, lawSlug));
+}
+
+/** Every legal section in the box's order — after the live statuses are applied (applyLiveRows). */
+export function orderRefs<T extends { sections: Record<LinkSection, { total: number; items: RefItem[] }> }>(refs: T, lawSlug: string): T {
+  const sections = {} as Record<LinkSection, { total: number; items: RefItem[] }>;
+  for (const s of LINK_SECTIONS) {
+    // The similar-meaning section keeps its closest-first order.
+    sections[s] = s === "similar" ? refs.sections[s] : { ...refs.sections[s], items: sortRefItems(refs.sections[s].items, lawSlug) };
+  }
+  return { ...refs, sections };
+}
+
+/**
+ * Owner file 07 §3 and §12 (rules 1, 5 and 9) on one article's answer:
+ *   * the article itself never appears, in any section;
+ *   * «مواد متقاربة في المعنى» drops the law being read and any other copy of
+ *     it (isSameLawOrCopy), and any item already listed as a legal link of the
+ *     article, then keeps the three closest; its total is what is shown.
+ * Legal sections lose only the article itself: their totals stay the graph's.
+ */
+export function cleanArticleRefs<T extends { sections: Record<LinkSection, { total: number; items: RefItem[] }> }>(
+  refs: T,
+  articleId: string,
+  lawSlug: string,
+  lawTitle: unknown,
+): T {
+  const self = centerKeyOf(articleId, lawSlug);
+  const base = lawBaseTitle(lawTitle);
+  const legal = new Set<string>();
+  for (const s of LINK_SECTIONS) {
+    if (s === "similar") continue;
+    for (const it of refs.sections[s].items) if (it.key !== self) legal.add(it.key);
+  }
+  const sections = {} as Record<LinkSection, { total: number; items: RefItem[] }>;
+  for (const s of LINK_SECTIONS) {
+    const src = refs.sections[s];
+    let items = src.items.filter((it) => it.key !== self);
+    let total = Math.max(items.length, src.total - (src.items.length - items.length));
+    if (s === "similar") {
+      items = items.filter((it) => !legal.has(it.key) && !isSameLawOrCopy(it, lawSlug, base)).slice(0, SIMILAR_MAX);
+      total = items.length;
+    }
+    sections[s] = { ...src, total, items };
+  }
+  return { ...refs, sections };
+}
+
+/**
+ * The same rules on the whole law's answer (?bulk=1): per article, its own key
+ * is dropped from every group (the group's total less it); the similar-meaning
+ * groups (out and in) become ONE group of at most SIMILAR_MAX items — closest
+ * first as the function ranked them, out before in — without this law, a copy
+ * of it, or an item already in a legal group of the article. An article left
+ * with nothing is left out, and so is a node no article lists any more.
+ */
+export function cleanLawLinks(bulk: LawLinks, lawSlug: string, lawTitle: unknown): LawLinks {
+  const base = lawBaseTitle(lawTitle);
+  const articles: Record<string, BulkGroup[]> = {};
+  for (const [id, groups] of Object.entries(bulk.articles)) {
+    const self = centerKeyOf(id, lawSlug);
+    const out: BulkGroup[] = [];
+    const legal = new Set<string>();
+    const similar: Array<[string, 0 | 1]> = [];
+    for (const [t, d, n, keys] of [...groups].sort((x, y) => groupRank(x[0], x[1]) - groupRank(y[0], y[1]))) {
+      const kept = keys.filter(([k]) => k !== self);
+      if (t === "SIMILAR_TO") {
+        for (const e of kept) if (!similar.some(([x]) => x === e[0])) similar.push(e);
+        continue;
+      }
+      if (kept.length === 0) continue;
+      for (const [k] of kept) legal.add(k);
+      out.push([t, d, Math.max(kept.length, n - (keys.length - kept.length)), kept]);
+    }
+    const sim = similar
+      .filter(([k]) => !legal.has(k) && !!bulk.items[k] && !isSameLawOrCopy(bulk.items[k], lawSlug, base))
+      .slice(0, SIMILAR_MAX);
+    if (sim.length > 0) out.push(["SIMILAR_TO", "out", sim.length, sim]);
+    if (out.length > 0) articles[id] = out;
+  }
+  const used = new Set<string>();
+  for (const gs of Object.values(articles)) for (const g of gs) for (const [k] of g[3]) used.add(k);
+  const items: Record<string, BulkItem> = {};
+  for (const [k, v] of Object.entries(bulk.items)) if (used.has(k)) items[k] = v;
+  return { ...bulk, items, articles };
+}
+
+/** One run of cards under one relation heading, after arrangeSection. */
+export interface ArrangedGroup {
+  group: RefGroupOut;
+  keys: string[];
+}
+
+/**
+ * One section as the box draws it (file 07 §4–§6, owner 23 Nov §15): first the
+ * items in OTHER documents, then — under «في هذا النظام», with no extra fold —
+ * those of the law being read. In each part the groups go in the box's order
+ * with the repealed items after all the others; within a group, in force
+ * before amended, then by article number.
+ */
+export function arrangeSection(
+  groups: readonly RefGroupOut[],
+  itemOf: (g: RefGroupOut, key: string) => RefItem | undefined,
+  lawSlug: string,
+): { outside: ArrangedGroup[]; inside: ArrangedGroup[] } {
+  const parts = {
+    outside: { live: [] as ArrangedGroup[], gone: [] as ArrangedGroup[] },
+    inside: { live: [] as ArrangedGroup[], gone: [] as ArrangedGroup[] },
+  };
+  for (const g of [...groups].sort((x, y) => groupRank(x.linkType, x.direction) - groupRank(y.linkType, y.direction))) {
+    const rows: Array<{ key: string; it: RefItem }> = [];
+    for (const key of g.keys) {
+      const it = itemOf(g, key);
+      if (it) rows.push({ key, it });
+    }
+    const sorted = [...rows].sort((a, b) => compareRefItems(a.it, b.it, lawSlug));
+    for (const where of ["outside", "inside"] as const) {
+      for (const gone of [false, true]) {
+        const keys = sorted
+          .filter((r) => isInternalRef(r.it, lawSlug) === (where === "inside") && (r.it.status === "repealed") === gone)
+          .map((r) => r.key);
+        if (keys.length > 0) parts[where][gone ? "gone" : "live"].push({ group: g, keys });
+      }
+    }
+  }
+  return { outside: [...parts.outside.live, ...parts.outside.gone], inside: [...parts.inside.live, ...parts.inside.gone] };
+}
+
+/** The panel's quick filters (file 07 §6.4): «الكل · لوائح · أحكام · معدِّلة · ملغاة». */
+export type RefFilter = "all" | "regulation" | "judicial" | "amending" | "repealed";
+export const REF_FILTERS: readonly RefFilter[] = ["all", "regulation", "judicial", "amending", "repealed"];
+
+export function refMatchesFilter(it: RefItem, f: RefFilter): boolean {
+  switch (f) {
+    case "all":
+      return true;
+    case "regulation":
+      return isRegulationRef(it);
+    case "judicial":
+      return it.section === "judicial";
+    case "amending":
+      return it.linkType === "AMENDS_ARTICLE";
+    case "repealed":
+      return it.status === "repealed";
+  }
 }

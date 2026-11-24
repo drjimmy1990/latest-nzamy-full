@@ -194,6 +194,28 @@ export const READER_QUERY_GROUPS: ReadonlyArray<{ section: LinkSection; types: r
 ];
 
 /**
+ * The order the reader LISTS groups in (batch l14, owner file 07 §4 — approved
+ * 23 Nov §15), separate from READER_QUERY_GROUPS (how the graph is asked, which
+ * stays as it is). Within «التشريعات»: what changes the article's meaning first
+ * (the in-force counterpart, the amendment), then the regulation that
+ * implements it, then reference, exception, «مع مراعاة», penalty, replacement
+ * of a law. Then the judicial links, then the similar-meaning ones.
+ */
+export const READER_DISPLAY_ORDER: readonly ShownLinkType[] = [
+  "REPLACED_BY",
+  "AMENDS_ARTICLE",
+  "IMPLEMENTED_BY",
+  "PARENT_LAW",
+  "CITES_ARTICLE",
+  "EXEMPTS_FROM",
+  "SUBJECT_TO",
+  "PENALIZES",
+  "SUPERSEDES_LAW",
+  "INTERPRETS_ARTICLE",
+  "SIMILAR_TO",
+];
+
+/**
  * An unreviewed automatic link (batch l12, owner library-Q4 / N12, RAW[56]):
  * a «إحالة» the system extracted from the text and nobody reviewed — origin
  * auto_watchdog, not read from the owner's own files (metadata.source
