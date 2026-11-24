@@ -104,8 +104,39 @@ export function safePhoneNext(raw: unknown): string | null {
     return null;
   }
   if (url.origin !== "https://same-origin.invalid") return null;
+  // `/.//x`, `/..//x`, `/%2e//x` normalise to the pathname `//x`, which a
+  // browser reads as another host: refused after normalising, not only before.
+  if (url.pathname.startsWith("//") || url.pathname.includes("\\")) return null;
   if (under(url.pathname, VERIFY_PHONE_PATH)) return null;
   return `${url.pathname}${url.search}`;
+}
+
+/**
+ * The same-origin /api/v1 path a browser fetch targets, or null (another
+ * origin, another path, an unparsable input). For the client handler that
+ * turns a 403 `phone_unverified` into a trip to /verify-phone.
+ */
+export function sameOriginApiV1Path(input: unknown, origin: string): string | null {
+  try {
+    const raw =
+      typeof input === "string" ? input
+      : input instanceof URL ? input.href
+      : input && typeof input === "object" && typeof (input as { url?: unknown }).url === "string" ? (input as { url: string }).url
+      : null;
+    if (raw === null) return null;
+    const url = new URL(raw, origin);
+    if (url.origin !== origin) return null;
+    return under(url.pathname, "/api/v1") ? url.pathname : null;
+  } catch {
+    return null;
+  }
+}
+
+/** /verify-phone?next=<where the user is now>, or null when already there. */
+export function verifyPhoneUrlFrom(pathname: string, search: string): string | null {
+  if (under(pathname, VERIFY_PHONE_PATH)) return null;
+  const next = safePhoneNext(`${pathname}${search}`);
+  return next ? `${VERIFY_PHONE_PATH}?next=${encodeURIComponent(next)}` : VERIFY_PHONE_PATH;
 }
 
 /** «…٤٥٦٧» style hint for the screen: the last four digits only. */

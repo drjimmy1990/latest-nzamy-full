@@ -19,8 +19,8 @@
 --      the screen, attempts (5), 10-minute expiry, delivery. Server-only: RLS
 --      on, no policies, no privilege for anon / authenticated.
 --   3. Three SECURITY DEFINER functions, service_role only:
---        phone_otp_issue(user, target hash, hint, code hash) → under an
---          advisory lock: 60 s between two codes, 5 per hour and 10 per 24 h
+--        phone_otp_issue(user, target hash, hint, code hash) → under the
+--          account's and the number's advisory locks: 60 s between two codes, 5 per hour and 10 per 24 h
 --          per account, 10 per 24 h to one number across ALL accounts. A code
 --          whose delivery failed counts for none of these (a provider outage
 --          must not use up a person's tries; the route's per-process limits
@@ -177,6 +177,9 @@ begin
     raise exception 'phone_otp_issue: bad arguments' using errcode = '22023';
   end if;
   perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended('phone_otp:' || p_user::text, 0));
+  -- The per-number cap counts across accounts: the number's own lock makes it
+  -- exact under concurrency (always user lock, then number lock — one order).
+  perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended('phone_otp_target:' || p_target_hash, 0));
 
   -- A code whose delivery failed reached nobody: it counts for no limit.
   select max(created_at) into v_last from public.phone_otp_challenges

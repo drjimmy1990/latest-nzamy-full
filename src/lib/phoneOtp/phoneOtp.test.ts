@@ -11,6 +11,8 @@ import {
   maskSaudiMobile,
   mayBeHeld,
   safePhoneNext,
+  sameOriginApiV1Path,
+  verifyPhoneUrlFrom,
   signupPhoneOtpFrom,
   signupPhoneOtpIssue,
 } from "./phoneOtpRules.ts";
@@ -161,6 +163,13 @@ test("rules: the post-verify destination is any path of this site, never another
   assert.equal(safePhoneNext("/login?from=/dashboard/client"), "/login?from=/dashboard/client");
   for (const bad of [
     "//evil.example",
+    "//evil.com",
+    "/\\evil.com",
+    "https://evil.com",
+    "/.//evil.com",
+    "/..//evil.com",
+    "/%2e//evil.com",
+    "/%2E%2E//evil.com",
     "https://evil.example",
     "/\\evil",
     "javascript:alert(1)",
@@ -174,6 +183,18 @@ test("rules: the post-verify destination is any path of this site, never another
   ]) {
     assert.equal(safePhoneNext(bad), null, String(bad));
   }
+});
+
+test("rules: the client handler only looks at same-origin /api/v1 calls", () => {
+  const o = "https://nezamy.example";
+  assert.equal(sameOriginApiV1Path("/api/v1/me/points", o), "/api/v1/me/points");
+  assert.equal(sameOriginApiV1Path(new URL("https://nezamy.example/api/v1/x?y=1"), o), "/api/v1/x");
+  assert.equal(sameOriginApiV1Path({ url: "https://nezamy.example/api/v1/z" }, o), "/api/v1/z");
+  assert.equal(sameOriginApiV1Path("https://other.example/api/v1/x", o), null);
+  assert.equal(sameOriginApiV1Path("/api/library/search", o), null);
+  assert.equal(sameOriginApiV1Path(42, o), null);
+  assert.equal(verifyPhoneUrlFrom("/laws/x", "?a=1"), "/verify-phone?next=%2Flaws%2Fx%3Fa%3D1");
+  assert.equal(verifyPhoneUrlFrom("/verify-phone", ""), null);
 });
 
 test("rules: the masked number shows the last four digits only", () => {

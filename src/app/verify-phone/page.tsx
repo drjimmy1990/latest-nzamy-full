@@ -145,7 +145,7 @@ export default function VerifyPhonePage() {
         }),
       });
       if (needsCaptcha) captcha.spend();
-      const body = (await res.json().catch(() => null)) as { ok?: boolean; error?: string; resendAfterSec?: number; retryAfterSec?: number; reason?: string } | null;
+      const body = (await res.json().catch(() => null)) as { ok?: boolean; error?: string; resendAfterSec?: number; retryAfterSec?: number; reason?: string; code?: string } | null;
       if (res.ok && body?.ok) {
         setSent(true);
         setChanging(false);
@@ -156,7 +156,7 @@ export default function VerifyPhonePage() {
         await refresh();
         return;
       }
-      if (res.status === 409 && body?.reason === "already") return void (await refresh());
+      if (res.status === 409 && (body?.reason === "already" || body?.code === "phone_otp_not_required")) return void (await refresh());
       if (body?.retryAfterSec) {
         setResendAt(Date.now() + body.retryAfterSec * 1000);
         setNow(Date.now());
@@ -187,7 +187,8 @@ export default function VerifyPhonePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ code: clean }),
       });
-      const body = (await res.json().catch(() => null)) as { ok?: boolean; home?: string; error?: string } | null;
+      const body = (await res.json().catch(() => null)) as { ok?: boolean; home?: string; error?: string; code?: string } | null;
+      if (res.status === 409 && body?.code === "phone_otp_not_required") return void (await refresh());
       if (res.ok && body?.ok) {
         setDone(true);
         setMessage({ ok: true, text: t("تمّ تأكيد رقم جوالك. جارٍ نقلك…", "Your mobile is confirmed. Taking you on…") });

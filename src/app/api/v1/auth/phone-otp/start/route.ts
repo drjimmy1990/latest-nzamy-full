@@ -14,8 +14,9 @@ import { turnstilePolicy, verifyTurnstileToken } from "@/lib/auth/turnstileServe
  *           the account and on a change of number.
  *
  * 200 { ok, masked, resendAfterSec, expiresInSec }
- * 400 bad number · 403 { code: "captcha" } · 409 already confirmed / number
- * taken · 429 limits (60 s, 5 an hour, 10 a day, per number) · 503 WhatsApp
+ * 400 bad number · 403 { code: "captcha" } · 409 { code:
+ * "phone_otp_not_required" } (switch off, an older / staff / test / confirmed
+ * account) / already confirmed / number taken · 429 limits (60 s, 5 an hour, 10 a day, per number) · 503 WhatsApp
  * could not send («تعذّر إرسال الرمز الآن، حاول بعد قليل») — never a fake success.
  */
 export const dynamic = "force-dynamic";
@@ -28,6 +29,15 @@ export async function POST(request: NextRequest) {
 
   try {
     const status = await readPhoneStatus(gate.svc, gate.user);
+    // Only an account the switch holds may ask for a code: nothing is sent
+    // (and nothing can be confirmed) while the switch is off, nor for an
+    // older, staff, test or already-confirmed account.
+    if (!status.required) {
+      return NextResponse.json(
+        { ok: false, code: "phone_otp_not_required", error: "لا يلزم حسابك تأكيد رقم الجوال." },
+        { status: 409, headers: NO_STORE },
+      );
+    }
     if (!status.sentBefore || newPhone !== null) {
       const secret = process.env.TURNSTILE_SECRET_KEY;
       const policy = turnstilePolicy(secret, process.env.NODE_ENV);

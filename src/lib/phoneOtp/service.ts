@@ -104,18 +104,23 @@ async function lastChallenge(svc: Svc, userId: string): Promise<{ created_at: st
   return (data as { created_at: string; delivery: string } | null) ?? null;
 }
 
-export async function readPhoneStatus(svc: Svc, user: User): Promise<PhoneStatus> {
-  const profile = await readProfile(svc, user.id);
-  const { data: gate, error } = await svc.rpc("phone_otp_gate", { p_user: user.id });
+/** public.phone_otp_gate: is this account held right now? Throws when it cannot be read. */
+export async function phoneOtpGated(svc: Svc, userId: string): Promise<boolean> {
+  const { data, error } = await svc.rpc("phone_otp_gate", { p_user: userId });
   if (error) {
     if (MISSING.has(error.code ?? "")) throw new PhoneOtpUnavailable("schema");
     throw new Error(`phone_otp_gate failed: ${error.code}`);
   }
-  const g = (gate ?? {}) as { gated?: unknown };
+  return (data as { gated?: unknown } | null)?.gated === true;
+}
+
+export async function readPhoneStatus(svc: Svc, user: User): Promise<PhoneStatus> {
+  const profile = await readProfile(svc, user.id);
+  const required = await phoneOtpGated(svc, user.id);
   const phone = normalizeSaudiMobile(profile?.phone ?? "");
   const last = await lastChallenge(svc, user.id);
   return {
-    required: g.gated === true,
+    required,
     verified: profile?.phone_verified_at != null,
     masked: phone.ok ? maskSaudiMobile(phone.e164) : null,
     hasPhone: phone.ok,

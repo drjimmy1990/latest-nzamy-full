@@ -285,7 +285,7 @@ const GATES: Array<{ file: string; method: string; action: StaffAction | "per-fi
   { file: "credits/route.ts", method: "POST", action: "credits.adjust", logs: 1 },
   { file: "settings/route.ts", method: "PATCH", action: "settings.write", logs: 1 },
   // Batch l15: «أرسل رمزًا تجريبيًا إلى جوالي» — super admin, audited.
-  { file: "phone-otp/test/route.ts", method: "POST", action: "settings.write", logs: 1 },
+  { file: "phone-otp/test-send/route.ts", method: "POST", action: "settings.write", logs: 1 },
   { file: "library/route.ts", method: "DELETE", action: "library.delete", logs: 1 },
   { file: "library/route.ts", method: "PATCH", action: "settings.write", logs: 1 },
   { file: "articles/[id]/route.ts", method: "DELETE", action: "content.delete", logs: 1 },

@@ -127,6 +127,9 @@ select pg_temp.expect('P4 failed deliveries do not count toward the per-number c
   (select public.phone_otp_issue('00000000-0000-0000-0000-0000000015b2',
      pg_temp.h('+966500000888'), '…88', pg_temp.h('code-555555')) ->> 'ok'), 'true');
 reset role;
+select pg_temp.expect('P4 the per-number cap is taken under the number''s own lock',
+  (pg_catalog.strpos(pg_catalog.pg_get_functiondef('public.phone_otp_issue(uuid,text,text,text)'::regprocedure),
+                     'phone_otp_target:') > 0)::text, 'true');
 
 -- P5 verifying
 set role service_role;

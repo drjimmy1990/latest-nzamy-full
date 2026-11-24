@@ -11,7 +11,7 @@
  *     their mobile; older accounts, staff and test accounts never do;
  *   - the diagnostic (GET /api/v1/admin/phone-otp): which server variables
  *     are set — never their values — and the template's name and language;
- *   - «أرسل رمزًا تجريبيًا إلى جوالي» (POST /api/v1/admin/phone-otp/test):
+ *   - «أرسل رمزًا تجريبيًا إلى جوالي» (POST /api/v1/admin/phone-otp/test-send):
  *     one code to the admin's own profile mobile, showing only «أُرسل» or
  *     Zernio's HTTP status. The operator's live check before switching on.
  */
@@ -95,7 +95,7 @@ export function SignupPhoneOtpCard() {
     setTesting(true);
     setTestLine(null);
     try {
-      const res = await fetch("/api/v1/admin/phone-otp/test", { method: "POST" });
+      const res = await fetch("/api/v1/admin/phone-otp/test-send", { method: "POST" });
       const body = (await res.json().catch(() => null)) as { result?: string; httpStatus?: number | null; error?: string } | null;
       if (!res.ok) {
         setTestLine({ ok: false, text: body?.error || "تعذّر الإرسال التجريبي الآن." });
