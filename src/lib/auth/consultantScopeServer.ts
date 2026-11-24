@@ -10,7 +10,8 @@
  * on that membership, so nothing here stands in its way.
  *
  * Reads through the caller's own RLS client (own rows only), never a service
- * client. Cost: one read for everyone, a second only for a consultant.
+ * client. Cost: one read for everyone, a second only for a consultant; the
+ * proxy keeps the answer briefly (readConsultantStandingCached, below).
  *
  * Failure rules, each deliberate:
  *   - practice_kind unreadable or a missing column → advocate (the existing
@@ -58,4 +59,73 @@ export async function readConsultantStanding(client: SupabaseClient, userId: str
     firmMember = false;
   }
   return { practiceKind: "consultant", firmMember, readFailed, scopeKind: firmMember ? "advocate" : "consultant" };
+}
+
+/**
+ * The proxy asks this on every page under /dashboard/lawyer and /ai and every
+ * /api/v1/lawyer call, for every lawyer, not only consultants. One RLS read
+ * per request (two for a consultant) is the cost the review of 23 Nov flagged,
+ * so the proxy keeps each answer for a short while, per process:
+ *   - keyed by the user id getUser() has just verified, never by anything the
+ *     browser sends, so nothing a client holds can change the answer;
+ *   - an answer lives CONSULTANT_STANDING_TTL_MS: a change of practice_kind or
+ *     of firm membership reaches the guard within that time in each process;
+ *   - a read that failed is never kept, so the next request reads again;
+ *   - the map holds at most CONSULTANT_STANDING_CACHE_MAX users and drops the
+ *     oldest first (a Map keeps insertion order).
+ * Pure apart from the read itself; the clock is passed in so a test drives it.
+ */
+export const CONSULTANT_STANDING_TTL_MS = 60_000;
+export const CONSULTANT_STANDING_CACHE_MAX = 5_000;
+
+export class ConsultantStandingCache {
+  private readonly entries = new Map<string, { standing: ConsultantStanding; expiresAt: number }>();
+  private readonly ttlMs: number;
+  private readonly maxEntries: number;
+
+  constructor(ttlMs: number = CONSULTANT_STANDING_TTL_MS, maxEntries: number = CONSULTANT_STANDING_CACHE_MAX) {
+    this.ttlMs = ttlMs;
+    this.maxEntries = maxEntries;
+  }
+
+  get(userId: string, now: number): ConsultantStanding | null {
+    const hit = this.entries.get(userId);
+    if (!hit) return null;
+    if (hit.expiresAt <= now) {
+      this.entries.delete(userId);
+      return null;
+    }
+    return hit.standing;
+  }
+
+  set(userId: string, standing: ConsultantStanding, now: number): void {
+    if (standing.readFailed) return;
+    this.entries.delete(userId);
+    this.entries.set(userId, { standing, expiresAt: now + this.ttlMs });
+    while (this.entries.size > this.maxEntries) {
+      const oldest = this.entries.keys().next().value;
+      if (oldest === undefined) break;
+      this.entries.delete(oldest);
+    }
+  }
+
+  get size(): number {
+    return this.entries.size;
+  }
+}
+
+const processCache = new ConsultantStandingCache();
+
+/** readConsultantStanding behind the per-process cache (see above). */
+export async function readConsultantStandingCached(
+  client: SupabaseClient,
+  userId: string,
+  cache: ConsultantStandingCache = processCache,
+  now: number = Date.now(),
+): Promise<ConsultantStanding> {
+  const hit = cache.get(userId, now);
+  if (hit) return hit;
+  const standing = await readConsultantStanding(client, userId);
+  cache.set(userId, standing, now);
+  return standing;
 }

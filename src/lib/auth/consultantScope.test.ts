@@ -16,6 +16,7 @@ import {
   isConsultantAllowedPath,
   isConsultantScopedApiPath,
   isConsultantScopedPagePath,
+  isIndependentConsultantSession,
 } from "./consultantScope.ts";
 
 test("the consultant's allowed pages: home, library, my library, notifications, settings, profile, join, marketplace", () => {
@@ -31,6 +32,8 @@ test("the consultant's allowed pages: home, library, my library, notifications, 
     "/dashboard/lawyer/join-office",
     "/marketplace",
     "/marketplace/post",
+    "/marketplace/order/abc",
+    "/marketplace/req-123",
     "/pricing",
   ]) {
     assert.equal(isConsultantAllowedPath(p), true, p);
@@ -116,4 +119,42 @@ test("the scope is the lawyer workspace: /api/v1/lawyers (the public directory) 
   assert.equal(isConsultantScopedPagePath("/dashboard/lawyer/cases"), true);
   assert.equal(isConsultantScopedPagePath("/dashboard/lawyers"), false);
   assert.equal(isConsultantScopedPagePath("/laws"), false);
+});
+
+// ── review of 23 Nov: the marketplace is his as a client only ─────────────────
+
+test("the provider side of the marketplace is closed to him; the client side stays open", () => {
+  for (const p of [
+    "/marketplace/collaborate",
+    "/marketplace/collaborate/",
+    "/marketplace/workspace",
+    "/marketplace/workspace/col-1",
+    "/marketplace/profile",
+    "/marketplace/req-1/offers",
+    "/marketplacex",
+  ]) {
+    assert.equal(isConsultantAllowedPath(p), false, p);
+  }
+  for (const p of ["/marketplace", "/marketplace/", "/marketplace/post", "/marketplace/order/o-1", "/marketplace/r-9?tab=offers"]) {
+    assert.equal(isConsultantAllowedPath(p), true, p);
+  }
+  // the proxy's verdict on the PROTECTED provider pages
+  assert.equal(consultantPageVerdict("/marketplace/collaborate", "consultant"), "redirect_home");
+  assert.equal(consultantPageVerdict("/marketplace/workspace/col-1", "consultant"), "redirect_home");
+  assert.equal(consultantPageVerdict("/marketplace/post", "consultant"), "allow");
+  assert.equal(consultantPageVerdict("/marketplace/order/o-1", "consultant"), "allow");
+  // an advocate is untouched there
+  assert.equal(consultantPageVerdict("/marketplace/collaborate", "advocate"), "allow");
+  assert.equal(isConsultantScopedPagePath("/marketplace/collaborate"), true);
+});
+
+test("the screen's 'independent consultant': a lawyer, exactly 'consultant', and no active firm membership", () => {
+  assert.equal(isIndependentConsultantSession("lawyer", "consultant", false), true);
+  assert.equal(isIndependentConsultantSession("lawyer", "consultant", true), false, "a firm member keeps his role's list");
+  for (const kind of [undefined, null, "", "advocate", "Consultant"]) {
+    assert.equal(isIndependentConsultantSession("lawyer", kind, false), false, JSON.stringify(kind));
+  }
+  for (const type of ["firm", "individual", "admin", "corporate", undefined]) {
+    assert.equal(isIndependentConsultantSession(type, "consultant", false), false, String(type));
+  }
 });

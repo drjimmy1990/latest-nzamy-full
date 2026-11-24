@@ -137,6 +137,7 @@ export function GlobalSearch() {
     simId ? simId.governmentRole : governmentRole, businessRole,
     simId ? simId.affiliationRole : affiliation?.role, isDemoBypass, country,
     simId ? simId.practiceKind : practiceKind, staffRole,
+    null, simId ? false : !!firmMembership,
   );
   // Art. 18: the same consultant filter SharedSidebar applies to a firm-drawn menu.
   const shownGroups = userType === "firm" && sessionUserType === "lawyer" && practiceKind === "consultant"

@@ -8,7 +8,12 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { readConsultantStanding } from "./consultantScopeServer.ts";
+import {
+  CONSULTANT_STANDING_TTL_MS,
+  ConsultantStandingCache,
+  readConsultantStanding,
+  readConsultantStandingCached,
+} from "./consultantScopeServer.ts";
 import { consultantApiVerdict, consultantPageVerdict } from "./consultantScope.ts";
 
 type Reply = { data?: unknown; error?: { code?: string } | null };
@@ -65,10 +70,18 @@ test("(c) the proxy refuses a consultant on /api/v1/lawyer (403, before the admi
   const api = proxy.indexOf("isConsultantScopedApiPath(pathname) && !isConsultantAllowedApiPath(pathname)");
   assert.ok(api > 0, "the API guard is missing");
   assert.ok(api < proxy.indexOf("if (isAdminApiPath(pathname))"), "the guard must sit inside the protected-API branch");
+  assert.match(proxy.slice(api, api + 900), /readConsultantStandingCached\(supabase, user\.id\)/, "the API guard reads through the cache");
   assert.match(proxy.slice(api, api + 900), /consultantApiVerdict\(pathname, standing\.scopeKind\) === "forbid"[\s\S]*status: 403/);
   assert.match(proxy.slice(api, api + 900), /standing\.readFailed[\s\S]*status: 503/, "an unreadable kind asks again");
-  assert.match(proxy, /knownType === "lawyer" && isConsultantScopedPagePath\(pathname\) && !isConsultantAllowedPath\(pathname\)/);
-  assert.match(proxy, /consultantPageVerdict\(pathname, standing\.scopeKind\) === "redirect_home"/);
+  const page = proxy.indexOf('knownType === "lawyer" && isConsultantScopedPagePath(pathname) && !isConsultantAllowedPath(pathname)');
+  assert.ok(page > 0, "the page guard is missing");
+  const pageGuard = proxy.slice(page, page + 700);
+  assert.match(pageGuard, /readConsultantStandingCached\(supabase, user\.id\)/, "the page guard reads through the cache");
+  // review of 23 Nov: a failed read is closed on pages too (his home, never the page asked for)
+  assert.match(pageGuard, /if \(standing\.readFailed \|\| consultantPageVerdict\(pathname, standing\.scopeKind\) === "redirect_home"\)/);
+  assert.match(pageGuard, /home\.pathname = CONSULTANT_HOME_PATH;/);
+  // no uncached read is left in the proxy
+  assert.doesNotMatch(proxy, /readConsultantStanding\(/);
 });
 
 test("the AI run path and tool-status read the same standing", () => {
@@ -78,9 +91,81 @@ test("the AI run path and tool-status read the same standing", () => {
 
 test("/dashboard/lawyer renders the library home for a consultant and the lawyer dashboard for everyone else", () => {
   const page = src("app/dashboard/lawyer/page.tsx");
-  assert.match(page, /if \(practiceKind === "consultant"\) return <ConsultantHome \/>;\n  return <LawyerDashboardContent \/>;/);
+  assert.match(page, /if \(isIndependentConsultantSession\(userType, practiceKind, !!firmMembership\)\) return <ConsultantHome \/>;\n  return <LawyerDashboardContent \/>;/);
 });
 
 test("the paid-term policy is gone", () => {
   assert.throws(() => readFileSync(join(process.cwd(), "src/lib/ai/consultantTerm.ts")), /ENOENT/);
+});
+
+// ── review of 23 Nov: the guard is asked on every lawyer page, so the answer is kept briefly ──
+
+/** A client that counts its lawyer_profiles reads and answers as given (the last reply repeats). */
+function countingClient(replies: Array<Reply | "throw">) {
+  let reads = 0;
+  const c = {
+    from: (t: string) => {
+      const chain: Record<string, unknown> = {};
+      const self = () => chain;
+      chain.select = self; chain.eq = self; chain.limit = self;
+      chain.maybeSingle = async () => {
+        if (t !== "lawyer_profiles") return { data: null, error: null };
+        const r = replies[Math.min(reads, replies.length - 1)];
+        reads += 1;
+        if (r === "throw") throw new Error("boom");
+        return { data: r.data ?? null, error: r.error ?? null };
+      };
+      return chain;
+    },
+  };
+  return { client: c as never, reads: () => reads };
+}
+
+test("an answer is kept for the TTL per user, then read again", async () => {
+  const cache = new ConsultantStandingCache();
+  const { client: c, reads } = countingClient([{ data: { practice_kind: "advocate" } }]);
+  const t0 = 1_000_000;
+  for (let i = 0; i < 5; i += 1) await readConsultantStandingCached(c, "u1", cache, t0 + i * 1000);
+  assert.equal(reads(), 1, "an advocate moving between pages pays one read");
+  await readConsultantStandingCached(c, "u2", cache, t0);
+  assert.equal(reads(), 2, "keyed per user");
+  await readConsultantStandingCached(c, "u1", cache, t0 + CONSULTANT_STANDING_TTL_MS);
+  assert.equal(reads(), 3, "read again once the TTL has passed");
+  assert.ok(CONSULTANT_STANDING_TTL_MS <= 60_000, "a change of kind or membership reaches the guard within a minute");
+});
+
+test("a consultant's answer is kept too, so the cache never opens what the read closed", async () => {
+  const cache = new ConsultantStandingCache();
+  const { client: c } = countingClient([{ data: { practice_kind: "consultant" } }]);
+  const first = await readConsultantStandingCached(c, "u", cache, 0);
+  const again = await readConsultantStandingCached(c, "u", cache, 10);
+  assert.equal(first.scopeKind, "consultant");
+  assert.equal(again.scopeKind, "consultant");
+  assert.equal(consultantApiVerdict("/api/v1/lawyer/cases", again.scopeKind), "forbid");
+  assert.equal(consultantPageVerdict("/marketplace/collaborate", again.scopeKind), "redirect_home");
+});
+
+test("a failed read is never kept: the next request reads again", async () => {
+  for (const bad of ["throw", { error: { code: "XX000" } }] as const) {
+    const cache = new ConsultantStandingCache();
+    const { client: c, reads } = countingClient([bad, { data: { practice_kind: "consultant" } }]);
+    const failed = await readConsultantStandingCached(c, "u", cache, 0);
+    assert.equal(failed.readFailed, true);
+    assert.equal(cache.size, 0);
+    const next = await readConsultantStandingCached(c, "u", cache, 1);
+    assert.equal(reads(), 2);
+    assert.deepEqual([next.readFailed, next.scopeKind], [false, "consultant"]);
+  }
+});
+
+test("the cache is bounded and drops the oldest user first", async () => {
+  const cache = new ConsultantStandingCache(60_000, 3);
+  const { client: c, reads } = countingClient([{ data: { practice_kind: "advocate" } }]);
+  for (const id of ["a", "b", "c", "d"]) await readConsultantStandingCached(c, id, cache, 0);
+  assert.equal(cache.size, 3);
+  assert.equal(reads(), 4);
+  await readConsultantStandingCached(c, "a", cache, 1);
+  assert.equal(reads(), 5, "the oldest (a) was dropped");
+  await readConsultantStandingCached(c, "d", cache, 1);
+  assert.equal(reads(), 5, "a recent one is still kept");
 });

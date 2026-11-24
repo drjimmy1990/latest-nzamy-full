@@ -51,6 +51,7 @@ import PendingInvitationsBanner from "@/components/dashboard/PendingInvitationsB
 
 // Local imports
 import ConsultantHome from "./_components/ConsultantHome";
+import { isIndependentConsultantSession } from "@/lib/auth/consultantScope";
 import AddCaseModal from "./_components/AddCaseModal";
 import AddTaskModal from "./_components/AddTaskModal";
 import QuickToolsCustomizer, { QUICK_TOOL_ICONS } from "./_components/QuickToolsCustomizer";
@@ -225,11 +226,13 @@ function shortRequestRef(requestId: string | undefined): string {
  * Owner decision (22-23 Nov 2026): the independent consultant's dashboard is
  * the library home, not the lawyer's. The proxy already keeps him off every
  * other page of this workspace; this is what /dashboard/lawyer itself shows.
+ * A consultant who is an active firm member is not the independent one (the
+ * proxy lets him in), so he keeps the lawyer dashboard.
  */
 export default function LawyerDashboardPage() {
-  const { practiceKind, loading } = useUser();
+  const { userType, practiceKind, firmMembership, loading } = useUser();
   if (loading) return <LawyerDashboardSkeleton />;
-  if (practiceKind === "consultant") return <ConsultantHome />;
+  if (isIndependentConsultantSession(userType, practiceKind, !!firmMembership)) return <ConsultantHome />;
   return <LawyerDashboardContent />;
 }
 

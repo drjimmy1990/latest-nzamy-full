@@ -426,8 +426,16 @@ export function getSidebarByUserType(
    * «قريباً» rows into their own section. Absent = every badge as written.
    */
   liveTools?: ReadonlySet<string> | null,
+  /**
+   * The session has an ACTIVE firm membership (useUser().firmMembership). A
+   * consultant who is a member keeps the lawyer menu minus the Art. 18 tools,
+   * as before; only the independent one gets the library-only menu, the same
+   * rule the proxy applies (consultantScopeServer.ts).
+   */
+  firmMember: boolean = false,
 ): SidebarGroup[] {
   const isConsultant = userType === "lawyer" && practiceKind === "consultant";
+  const isIndependentConsultant = isConsultant && !firmMember;
 
   // Arbitrator: provider with subRole = "arbitrator" gets a fully dedicated sidebar
   if (userType === "provider" && subRole === "arbitrator") return ARBITRATOR_SIDEBAR;
@@ -441,7 +449,7 @@ export function getSidebarByUserType(
     case "lawyer": {
       // Owner decision (22-23 Nov 2026): an independent consultant sees the
       // library only; the lawyer's list below never reaches him.
-      if (isConsultant) { base = CONSULTANT_SIDEBAR; break; }
+      if (isIndependentConsultant) { base = CONSULTANT_SIDEBAR; break; }
       base = LAWYER_SIDEBAR;
       if (country === "SA") {
         base = base.map(group => {
@@ -510,7 +518,7 @@ export function getSidebarByUserType(
   // ── Multi-Role Merge ──────────────────────────────────────────────────────
   // لو المستخدم عنده active_roles، ندمج الأقسام الفريدة من كل دور إضافي
   // K1 Fix: Prevent Lawyer roles from bleeding into Corporate UI
-  if (activeRoles && activeRoles.length > 0 && userType !== "corporate" && !isConsultant) {
+  if (activeRoles && activeRoles.length > 0 && userType !== "corporate" && !isIndependentConsultant) {
     const addons: SidebarGroup[] = [];
     if (activeRoles.includes("notary"))      addons.push(...NOTARY_ADDON_SECTIONS);
     if (activeRoles.includes("bailiff"))     addons.push(...BAILIFF_ADDON_SECTIONS);
@@ -556,7 +564,8 @@ export function getSidebarByUserType(
 
   // ── Art. 18: the consultant's sidebar has no pleading or hearings tools ───
   // Last, so it also covers anything the multi-role merge above added.
-  if (isConsultant) base = onlyConsultantAllowedItems(withoutConsultantBlockedItems(base));
+  if (isConsultant) base = withoutConsultantBlockedItems(base);
+  if (isIndependentConsultant) base = onlyConsultantAllowedItems(base);
 
   return base;
 }

@@ -256,3 +256,24 @@ test("the /ai hub drops the court tools from a consultant's grid", () => {
     "the /ai hub's allowedTools filter does not drop the court tools for a consultant",
   );
 });
+
+test("a consultant who is an active firm member keeps the lawyer menu minus the Art. 18 tools on his own lawyer pages (the proxy's rule)", () => {
+  for (const country of [null, "SA"]) {
+    const member = getSidebarByUserType("lawyer", "full", null, [], null, null, null, false, country, "consultant", null, null, true);
+    const expected = withoutConsultantBlockedItems(getSidebarByUserType("lawyer", "full", null, [], null, null, null, false, country, "advocate"));
+    assert.deepEqual(member, expected, String(country));
+    assert.notDeepEqual(hrefsOf(member), LIBRARY_ONLY_HREFS);
+    for (const h of hrefsOf(member)) assert.equal(isConsultantBlockedPath(h), false, h);
+  }
+  // without the membership flag he is the independent one
+  assert.deepEqual(
+    hrefsOf(getSidebarByUserType("lawyer", "full", null, [], null, null, null, false, null, "consultant", null, null, false)),
+    LIBRARY_ONLY_HREFS,
+  );
+});
+
+test("the consultant's marketplace rows are the client side only", () => {
+  const hrefs = hrefsOf(lawyerSidebar("full", "consultant", "SA")).filter((h) => h.startsWith("/marketplace"));
+  assert.deepEqual(hrefs, ["/marketplace", "/marketplace/post"]);
+  for (const h of hrefs) assert.equal(isConsultantAllowedPath(h), true, h);
+});

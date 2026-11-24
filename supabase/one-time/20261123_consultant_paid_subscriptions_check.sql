@@ -30,3 +30,15 @@ select
   )) as consultants_who_are_firm_members
 from public.lawyer_profiles lp
 where lp.practice_kind = 'consultant';
+
+-- 4) Online payments (Moyasar, since 22 Oct 2026) are recorded in payment_orders, not only in
+--    subscriptions: a consultant's paid, not refunded plan or library order, newest first.
+--    If 20261022_10_payments_core.sql has not run, this one query errors; 1-3 above still answer.
+select po.user_id, po.kind, po.item_id, po.billing, po.total_halalas, po.paid_at, po.live
+from public.payment_orders po
+join public.lawyer_profiles lp on lp.user_id = po.user_id
+where lp.practice_kind = 'consultant'
+  and po.kind in ('plan', 'library')
+  and po.status = 'paid'
+  and coalesce(po.refunded_halalas, 0) < po.total_halalas
+order by po.paid_at desc nulls last;
