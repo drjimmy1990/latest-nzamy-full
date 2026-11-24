@@ -157,3 +157,8 @@ test("owner ٢٠٦: the refund line is true to the rules it states, and stands b
   assert.equal(topup.at(-1), TOPUP_SPEND_REFUND_LINE_AR);
   assert.equal(checkoutItemNotes(PAYABLE_ITEMS["lib-q1"]).includes(TOPUP_SPEND_REFUND_LINE_AR), false, "top-ups only");
 });
+
+test("refund review: a bundle order counts as including the library (the 5-full-text line; refund policy «والباقات المدمجة»)", async () => {
+  const { orderIncludesLibrary } = await import("./refundEligibility.ts");
+  assert.equal(orderIncludesLibrary({ kind: "plan", item_id: "lawyer-bundle" }), true);
+});

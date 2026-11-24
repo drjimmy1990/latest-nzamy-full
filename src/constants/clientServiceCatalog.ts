@@ -183,14 +183,15 @@ export const CLIENT_SERVICE_CATALOG: ClientServiceCatalogItem[] = [
     categoryId: "consultation",
     label: "سؤال AI فوري",
     description: "إجابة قانونية ذكية بدون حجز موعد",
-    // Batch l14 (owner 23 Nov, §حادي عشر #8 «بالنقاط»): no riyal price. The
-    // free questions are owner ٣٠ / ١٨١'s five per account in «مساعد نظامي»
-    // (freeQuestion.ts), not a daily one; a paid question's points are shown
-    // by the tool before it runs (quick-answer's price is open, #12), so the
-    // note names no number. 20261204_20 writes the same to the DB row.
+    // Batch l14 (owner 23 Nov, §حادي عشر #8 «بالنقاط»): no riyal price and no
+    // «سؤال مجاني يومياً» (owner ٣٠ / ١٨١ replaced it with free questions once
+    // per account, whose count and tool are admin settings). A question's
+    // points are shown by the tool before it runs (quick-answer's price is
+    // open, #12), so the note names no number; /ai/consult itself is not live
+    // for individuals yet — «قيد التفعيل». 20261204_20 writes the same row.
     basePrice: 0,
     priceMode: "points",
-    priceNote: "لك ٥ أسئلة مجانية في «مساعد نظامي»، وبعدها بالنقاط ويظهر سعر السؤال قبل إرساله",
+    priceNote: "بالنقاط، ويظهر سعر السؤال قبل إرساله (قيد التفعيل)",
     route: "/ai/consult",
     icon: "Robot",
     receiverType: "ai_workspace",

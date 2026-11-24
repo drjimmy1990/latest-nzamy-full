@@ -58,9 +58,9 @@ test("#8: the individuals' AI cards are in points — no riyal price, no plan in
   }
   assert.match(byId("contract-analyze").priceNote!, /٢٥٠ نقطة \(قيد التفعيل\)/);
   assert.match(byId("ai-case-eval").priceNote!, /٧٥ نقطة \(قيد التفعيل\)/);
-  // owner ٣٠ / ١٨١: five free questions per account in «مساعد نظامي», not one a day
-  assert.match(byId("ai-consult").priceNote!, /٥ أسئلة مجانية في «مساعد نظامي»/);
-  assert.doesNotMatch(byId("ai-consult").priceNote!, /يوميا/);
+  // owner ٣٠ / ١٨١ ended the daily free question; the count and tool of the free ones are settings, so the card names neither
+  assert.match(byId("ai-consult").priceNote!, /^بالنقاط، ويظهر سعر السؤال قبل إرساله \(قيد التفعيل\)$/);
+  assert.doesNotMatch(byId("ai-consult").priceNote!, /يوميا|مجان/);
   // ai-letter stays a free template (no model runs there)
   assert.equal(byId("ai-letter").priceMode, "free");
 });

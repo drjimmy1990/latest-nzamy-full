@@ -242,7 +242,7 @@ update public.admin_pricing_catalog c
        metadata   = (c.metadata || jsonb_build_object('priceNote', v.note, 'owner_l14', '20261204_20')) - 'includedByPlan',
        updated_at = now()
   from (values
-    ('ai-consult',       49::numeric, 'لك ٥ أسئلة مجانية في «مساعد نظامي»، وبعدها بالنقاط ويظهر سعر السؤال قبل إرساله'),
+    ('ai-consult',       49::numeric, 'بالنقاط، ويظهر سعر السؤال قبل إرساله (قيد التفعيل)'),
     ('contract-analyze', 79,          'التحليل المفصّل ٢٥٠ نقطة (قيد التفعيل)'),
     ('ai-case-eval',     79,          'التقييم المفصّل ٧٥ نقطة (قيد التفعيل)')
   ) as v(service_id, old_price, note)
