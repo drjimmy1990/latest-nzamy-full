@@ -88,6 +88,8 @@ export const ADMIN_NAV_SECTIONS: readonly AdminNavSection[] = [
       { href: "/dashboard/admin/platform", label: "مركز تحكم المنصة", labelEn: "Platform Control", icon: "Globe" },
       { href: "/dashboard/admin/content/laws", label: "المكتبة القانونية", labelEn: "Library", icon: "BookOpen" },
       { href: "/dashboard/admin/library-issue-reports", label: "بلاغات المكتبة", labelEn: "Library Reports", icon: "Flag" },
+      // l14 (owner file 07 §2, approved 23 Nov): where the library's links are poor
+      { href: "/dashboard/admin/library-links-coverage", label: "تغطية الإحالات", labelEn: "Links Coverage", icon: "TreeStructure" },
       { href: "/dashboard/admin/content/articles", label: "المدونة القانونية", labelEn: "Articles", icon: "Article" },
       // l13 (owner Q190–Q195): «المجلة التشريعية» — entries, approval, the monthly issue
       { href: "/dashboard/admin/journal", label: "المجلة التشريعية", labelEn: "Legislative Journal", icon: "Article" },
