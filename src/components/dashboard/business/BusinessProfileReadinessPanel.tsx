@@ -4,9 +4,8 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowClockwise, Buildings, Warning } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
-import { createClient } from "@/lib/supabase/client";
 import {
-  toCompanyIdentityFields,
+  companyIdentityFromProfileResponse,
   type CompanyIdentityField,
 } from "@/lib/services/businessOverview";
 
@@ -79,41 +78,16 @@ export function BusinessProfileReadinessPanel({ compact = false }: BusinessProfi
      * checkable by reading rather than by hoping.
      */
     async function read(): Promise<CompanyIdentityField[]> {
-      const supabase = createClient();
-      const { data: auth, error: authError } = await supabase.auth.getUser();
-      if (authError || !auth?.user) {
-        // Not "this company has no record" — we could not establish who is
-        // asking. Those two must never render the same sentence, so this is an
-        // error rather than an empty result.
-        throw authError ?? new Error("no session");
-      }
-
-      const { data, error } = await supabase
-        .from("business_profiles")
-        // `select("*")`, not a named column list. `legal_rep_name` and
-        // `legal_rep_capacity` only exist where 20260826 has run; naming them
-        // on a database where it has not turns the whole query into a 42703
-        // and takes the company's own NAME down with two columns that were
-        // merely absent. The mapper reads every field defensively anyway.
-        .select("*")
-        .eq("owner_user_id", auth.user.id)
-        // Deterministic, and never somebody else's company. RLS alone would
-        // also admit an admin (who may read every row) and an active
-        // business_member, so an unfiltered `.limit(1)` would hand an admin an
-        // arbitrary company's CR number — precisely the defect this panel was
-        // rewritten to remove. The ordering makes the choice stable if a
-        // duplicate row ever exists; the signup trigger's `ON CONFLICT DO
-        // NOTHING` names no unique target, so that is possible.
-        .order("created_at", { ascending: true })
-        .limit(1)
-        .maybeSingle();
-
-      if (error) throw error;
-
-      // `data` is null when the account owns no business_profiles row at all.
-      // The mapper turns that into an empty list, and the empty state below
-      // says so plainly.
-      return toCompanyIdentityFields(data);
+      // Live check of 13 Nov, row 13: this used to select the
+      // business_profiles row whose owner_user_id is the viewer, so a
+      // company's legal manager or other member — who owns no row — always
+      // saw «no record». GET /api/v1/business/profile resolves the viewer's
+      // company (owner, registered delegate or member) and reads it through
+      // their own RLS client; companyIdentityFromProfileResponse decides what
+      // its answer means (404 = no company, any other failure = error).
+      const res = await fetch("/api/v1/business/profile", { cache: "no-store" });
+      const body: unknown = res.status === 404 ? null : await res.json().catch(() => null);
+      return companyIdentityFromProfileResponse(res.status, body);
     }
 
     read()
@@ -123,8 +97,8 @@ export function BusinessProfileReadinessPanel({ compact = false }: BusinessProfi
         setState("ready");
       })
       .catch((e) => {
-        // createClient() throws outright when the Supabase env vars are absent
-        // (a demo build), so this is a real path, not defensive padding.
+        // A network failure or a refused read lands here: an error, never
+        // the «no record» empty state.
         if (cancelled) return;
         console.error("[business overview] company profile read failed:", e);
         setState("error");

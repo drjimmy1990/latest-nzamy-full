@@ -238,6 +238,31 @@ export function toCompanyIdentityFields(row: unknown): CompanyIdentityField[] {
   return fields;
 }
 
+/**
+ * The identity lines from a `GET /api/v1/business/profile` answer, or a throw
+ * when the answer cannot tell what the company holds.
+ *
+ * Live check of 13 Nov, row 13: the panel read `business_profiles` by
+ * `owner_user_id = auth.uid()`, so a company's legal manager (a member, not
+ * the owner) always saw an empty record. The route resolves the caller's
+ * company for the owner, a delegate and a member alike.
+ *
+ *   404               — the account belongs to no company: no lines (the
+ *                       panel's honest empty state).
+ *   any other non-2xx — unknown, so an error, never «no record».
+ *   200 with a row    — its lines, even if the delegation lookup beside it
+ *                       failed (that only affects who may edit).
+ *   200 without a row but `roleProfileReadFailed` — the read failed: error.
+ */
+export function companyIdentityFromProfileResponse(status: number, body: unknown): CompanyIdentityField[] {
+  if (status === 404) return [];
+  if (status < 200 || status >= 300) throw new Error(`business profile HTTP ${status}`);
+  const record = isRecord(body) ? body : {};
+  if (isRecord(record.businessProfile)) return toCompanyIdentityFields(record.businessProfile);
+  if (record.roleProfileReadFailed === true) throw new Error("business profile read failed");
+  return [];
+}
+
 // ─── Document vault ───────────────────────────────────────────────────────────
 
 /**
