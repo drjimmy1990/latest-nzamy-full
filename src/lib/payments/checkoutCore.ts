@@ -129,6 +129,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { MoyasarClient } from "./moyasarClient.ts";
 import { buyerAllowed, PAYABLE_ITEMS, quote, resolveItem, type Billing, type PayableItem } from "./catalog.ts";
 import { checkMinTopup } from "./minTopup.ts";
+import { readConsultantStanding } from "../auth/consultantScopeServer.ts";
 import { LIBRARY_ACCOUNT_LOCKED_AR, LIBRARY_ACCOUNT_LOCKED_CODE } from "../library/accountAccess.ts";
 import { isMissingPaymentsObject } from "./fulfillDecision.ts";
 import { MOYASAR_DISABLED_MESSAGE_AR } from "./moyasarConfig.ts";
@@ -185,6 +186,9 @@ import {
 
 export const CHECKOUT_FAILED_AR = "تعذّر بدء عملية الدفع، حاول مرة أخرى بعد قليل";
 export const AUDIENCE_REFUSED_AR = "هذه الباقة غير متاحة لنوع حسابك";
+/** l14: an independent consultant's account is library-only (owner, 23 Nov). */
+export const CONSULTANT_PLAN_REFUSED_AR = "حساب المستشار القانوني المستقل للمكتبة وحدها، فلا تُشترى له «إدارة المكتب». وتبقى باقات المكتبة متاحة لك.";
+const CONSULTANT_REFUSED_PLAN_IDS: ReadonlySet<string> = new Set(["lawyer-pro", "lawyer-bundle"]);
 export const UNKNOWN_ITEM_AR = "هذا المنتج غير متاح للدفع الإلكتروني";
 export const BILLING_NOT_OFFERED_AR = "مدة الاشتراك هذه غير متاحة لهذا المنتج";
 export { NOT_FOR_SALE_AR };
@@ -519,6 +523,15 @@ export async function startCheckoutWith(deps: CheckoutDeps, input: CheckoutInput
     if (!open) return { status: 403, body: { error: LIBRARY_ACCOUNT_LOCKED_AR, code: LIBRARY_ACCOUNT_LOCKED_CODE } };
   }
   if (!buyerAllowed(known, userType)) return fail(403, AUDIENCE_REFUSED_AR);
+  // 2c (l14 integration, owner 23 Nov: «المستشار المستقل = المكتبة فقط»). An
+  // independent consultant (practice_kind 'consultant', no active firm
+  // membership — readConsultantStanding, the proxy's rule) cannot buy «إدارة
+  // المكتب» or the office + library bundle; the library itself stays open to
+  // him. A read that fails counts as an advocate (the existing rule).
+  if (userType === "lawyer" && CONSULTANT_REFUSED_PLAN_IDS.has(known.id)) {
+    const standing = await readConsultantStanding(admin, user.id);
+    if (standing.scopeKind === "consultant") return fail(403, CONSULTANT_PLAN_REFUSED_AR);
+  }
 
   // 3. the price — on the request's clock, so a launch price (owner ٣٠٣) is
   // charged while its campaign runs and never after

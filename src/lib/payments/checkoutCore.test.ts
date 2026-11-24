@@ -13,6 +13,7 @@ import { createCouponAttemptBudget } from "./couponAttempts.ts";
 import { COUPON_PENDING_AR } from "./couponServer.ts";
 import {
   AUDIENCE_REFUSED_AR,
+  CONSULTANT_PLAN_REFUSED_AR,
   CHECKOUT_FAILED_AR,
   NOT_FOR_SALE_AR,
   startCheckoutWith as startCheckoutWithBook,
@@ -1548,4 +1549,26 @@ test("F13: the first-touch attribution is stored as metadata.attribution (any it
   await startCheckoutWith({ admin, client: moyasar().client, now: () => NOW }, input({ attribution: null }));
   const meta = (inserts(log)[0].payload as { metadata?: Record<string, unknown> }).metadata ?? {};
   assert.ok(!("attribution" in meta));
+});
+
+test("l14: an independent consultant cannot buy «إدارة المكتب» or the bundle; an advocate and a firm-member consultant can", async () => {
+  const as = (kind: string, member: boolean) =>
+    db("lawyer", (q) => {
+      if (q.table === "lawyer_profiles") return { data: { practice_kind: kind } };
+      if (q.table === "firm_members") return { data: member ? { id: "m1" } : null };
+      return undefined;
+    });
+  for (const itemId of ["lawyer-pro", "lawyer-bundle"]) {
+    const alone = as("consultant", false);
+    const m = moyasar();
+    const r = await startCheckoutWith({ admin: alone.client, client: m.client, now: () => NOW }, input({ itemId, billing: "yearly" }));
+    assert.deepEqual(r, { status: 403, body: { error: CONSULTANT_PLAN_REFUSED_AR } }, itemId);
+    assert.equal(inserts(alone.log).length, 0, "no order for a refused consultant");
+    assert.equal(m.intents.length, 0);
+  }
+  for (const [kind, member] of [["advocate", false], ["consultant", true]] as const) {
+    const ok = as(kind, member);
+    const r = await startCheckoutWith({ admin: ok.client, client: moyasar().client, now: () => NOW }, input({ itemId: "lawyer-pro", billing: "yearly" }));
+    assert.notEqual((r.body as { error?: string } | null)?.error, CONSULTANT_PLAN_REFUSED_AR, `${kind} member=${member}`);
+  }
 });
