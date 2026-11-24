@@ -5,7 +5,6 @@ import {
   Stack, BookOpen, Scroll, CalendarBlank, Buildings, Tag, FolderSimple, Lock, Crown, CaretDown
 } from "@phosphor-icons/react";
 import type { LawSystem, LawArticle } from "../data";
-import { SubLegislationSection } from "./_sub-legislation";
 import { lawStatusPresentation } from "../law-status";
 import { OfficialMetaLockedRow } from "../components/OfficialMetaLockedRow";
 import { dbOfficialRowsUnderCard, gazetteIssueLabel, type LawOfficialMeta } from "./_official-meta";
@@ -72,13 +71,6 @@ interface SidebarPanelProps {
    * chip filter that hides it).
    */
   onRegulationCardJump?: (cardId: string) => void;
-  /**
-   * O13 (batch l11): the sidebar lists the law's sub-legislation too (the
-   * main column's «التشريعات الفرعية», l10-children): a merged regulation
-   * opens the regulation view on it through this; a linked document opens
-   * its own page. Not set: the section is not drawn.
-   */
-  onOpenMergedRegulation?: (name: string) => void;
 }
 
 export default function SidebarPanel({
@@ -102,7 +94,6 @@ export default function SidebarPanel({
   officialMeta,
   regulationAnchorFor,
   onRegulationCardJump,
-  onOpenMergedRegulation,
 }: SidebarPanelProps) {
   const muted = isDark ? "text-zinc-500" : "text-slate-400";
   // Two-level contents: level-1 groups the reader has folded (by chapter id).
@@ -994,21 +985,6 @@ export default function SidebarPanel({
           )}
         </div>
       </div>
-
-      {/* O13 (batch l11): the sub-legislation beside the index — merged
-          regulations, then documents linked by parent_law_id; the first
-          three, then «عرض المزيد». Titles only, public like the catalogue. */}
-      {onOpenMergedRegulation && (
-        <SubLegislationSection
-          key={law.slug}
-          subLegislation={law.subLegislation}
-          mergedNames={(law.regulationIndex ?? []).map((g) => g.name)}
-          onOpenMerged={onOpenMergedRegulation}
-          isDark={isDark}
-          isRTL={isRTL}
-          placement="sidebar"
-        />
-      )}
 
       {/* CTA — file 16 §2: only when the server said this viewer has no
           library entitlement. It was keyed on the account type: an admin, a
