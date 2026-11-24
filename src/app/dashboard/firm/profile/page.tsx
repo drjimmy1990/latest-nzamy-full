@@ -6,8 +6,10 @@ import { Buildings, FloppyDisk, Globe, MapPin, SealCheck, Users, WarningCircle }
 import { useTheme } from "@/components/ThemeProvider";
 import { FIRM_PRACTICE_MODEL_LABEL, FIRM_SIZE_LABEL, FIRM_STRUCTURE_LABEL } from "@/constants/firmProfileReadiness";
 import { useAdminSettings } from "@/hooks/useAdminSettings";
+import { isDemoMode } from "@/lib/runtimeMode";
+import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
 
-export default function FirmProfilePage() {
+function FirmProfilePageDemo() {
   const { isDark } = useTheme();
   const { currentFirmFeatures } = useAdminSettings();
   const [name, setName] = useState("شركة السند للمحاماة والاستشارات");
@@ -78,7 +80,7 @@ export default function FirmProfilePage() {
               <span className="rounded-xl bg-white/10 p-3">النقاط: {currentFirmFeatures.availablePoints.toLocaleString("ar-SA")}</span>
             </div>
           </div>
-          <p className={`mt-4 text-xs leading-relaxed ${muted}`}>هذه بطاقة معاينة فقط. النشر العام، التوثيق، الشارات، ومراجعة الأدمن تحتاج backend وحالة اعتماد حقيقية.</p>
+          <p className={`mt-4 text-xs leading-relaxed ${muted}`}>هذه بطاقة معاينة فقط. النشر العام والتوثيق والشارات ومراجعة الإدارة غير متاحة بعد.</p>
         </div>
       </div>
     </div>
@@ -97,4 +99,22 @@ function Info({ icon: Icon, label, value, isDark }: { icon: React.ElementType; l
       <p className={`mt-1 text-sm font-black ${isDark ? "text-white" : "text-slate-800"}`}>{value}</p>
     </div>
   );
+}
+
+// Old note ب4 («حذف البيانات الوهمية من اللوحات», file 15 row 27 pattern):
+// this page opened every firm's profile on an invented firm («شركة السند…»)
+// with an invented headline, and nothing behind it saves or reads a real
+// firm profile. Outside demo mode it is now «قريباً», like the departments
+// and branches pages; the demo screen above is kept for demo mode only.
+export default function FirmProfilePage() {
+  if (!isDemoMode) {
+    return (
+      <DashboardComingSoon
+        title="الملف المهني للمكتب"
+        description="هذه الصفحة غير متاحة حالياً. لا يوجد بعدُ حفظ حقيقي لملف المكتب المهني، فلا تُعرض بيانات افتراضية مكانه."
+        backHref="/dashboard/firm"
+      />
+    );
+  }
+  return <FirmProfilePageDemo />;
 }

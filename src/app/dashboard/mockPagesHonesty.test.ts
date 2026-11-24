@@ -17,7 +17,7 @@ const GATED = [
   "ngo/contracts", "ngo/finance", "ngo/programs", "ngo/reports",
   "micro/cases", "micro/documents",
   "firm/achievements", "firm/team/attendance", "firm/team/trainees", "firm/health-check",
-  "firm/analytics", "firm/client-portal", "firm/departments", "firm/branches", "firm/of-counsel", "firm/shared-rooms",
+  "firm/analytics", "firm/client-portal", "firm/departments", "firm/branches", "firm/of-counsel", "firm/shared-rooms", "firm/profile",
   "admin/disputes", "admin/payouts", "admin/celebrities", "admin/celebrities/referrals", "admin/celebrities/upgrade",
 ];
 
