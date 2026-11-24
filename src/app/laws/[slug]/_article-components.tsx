@@ -36,9 +36,8 @@ import { PreviousVersionText } from "./_word-diff";
 import { OWN_DOCUMENT_REFS_AS_TEXT, linkCitationsHtml } from "./_cite-links";
 import { useCitations } from "./_citation-popover";
 import { articleNumberOf } from "./_cite-status";
-import { ArticleRefsInline, useRefBox } from "./_ref-box";
+import { ArticleRefsButton, ArticleRefsInline, useRefBox } from "./_ref-box";
 import { regulationNameFromRefs } from "@/lib/library/regulationName";
-import SendToDrafterNotesButton from "@/components/draft/SendToDrafterNotesButton"; // l6-tools Q485
 import { DraftToggleIcon, DraftToggleLabel } from "@/components/draft/DraftToggleIcon"; // l12 lib02 «New 2»
 
 const NO_TERMS: readonly HighlightTerm[] = [];
@@ -1095,7 +1094,11 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
               </button>
             )}
 
-            {!isLocked && !isRepealed && viewMode !== "regulation" && <SendToDrafterNotesButton text={article.text} sourceLabel={`${lawName} — ${article.numberText || article.num}`} isDark={isDark} className="px-1" />}
+            {/* Batch l14 (owner file 07 §7): «الإحالات (N)» where «أرسل إلى الصائغ» was — for
+                everyone, repealed and locked articles too (a repealed article's in-force
+                counterpart is its most useful link); sending to the drafter stays in the
+                draft drawer («إرسال إلى الصائغ القانوني»). */}
+            {viewMode !== "regulation" && refBox && <ArticleRefsButton articleId={article.id} />}
             {/* File 03 L12: touch targets of at least 44 px, with Arabic names. */}
             <button
               onClick={mainOnCopy}
