@@ -26,6 +26,8 @@ test("row 57: plain text is left alone", () => {
 test("row 57: the card draws the parsed blocks as elements, never as HTML", () => {
   const view = readFileSync(new URL("./CaseGraphView.tsx", import.meta.url), "utf8");
   assert.match(view, /<CardMarkdownView\s+text=\{node\.desc\}/);
+  // A focused box stays a box while its owner types marks into it.
+  assert.match(view, /onFocus=\{\(\) => setEditingDescId\(node\.id\)\}/);
   assert.doesNotMatch(view, /dangerouslySetInnerHTML/);
   const extras = readFileSync(new URL("./CaseGraphCardExtras.tsx", import.meta.url), "utf8");
   assert.match(extras, /parseCardMarkdown\(text\)\.map/);

@@ -39,6 +39,7 @@ test("row 51: the view fades cards and arrows outside the hovered card's neighbo
   const view = readFileSync(new URL("./CaseGraphView.tsx", import.meta.url), "utf8");
   assert.match(view, /const focusNodeId = drawingEdgeFrom \? null : hoveredNodeId;/);
   assert.match(view, /firstNeighbours\(edges, focusNodeId\)/);
-  assert.match(view, /edgeInFocus\(edge, focusNodeId\)/);
+  assert.match(view, /neighbourhood && neighbourhood\.size > 1 \? neighbourhood : null/);
+  assert.match(view, /edgeInFocus\(edge, focusIds \? focusNodeId : null\)/);
   assert.match(view, /opacity: focusIds && !focusIds\.has\(node\.id\) \? 0\.35 : 1/);
 });

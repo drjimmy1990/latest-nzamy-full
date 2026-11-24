@@ -120,7 +120,9 @@ export default function CaseGraphView({
   // neighbours and the arrows between them stay full strength, the rest fades.
   // Off while an arrow is being drawn (the pointer is choosing a target then).
   const focusNodeId = drawingEdgeFrom ? null : hoveredNodeId;
-  const focusIds = firstNeighbours(edges, focusNodeId);
+  // A card with no arrows has no neighbourhood to show: nothing fades.
+  const neighbourhood = firstNeighbours(edges, focusNodeId);
+  const focusIds = neighbourhood && neighbourhood.size > 1 ? neighbourhood : null;
 
   const [showImport, setShowImport] = useState(false);
   const canImport = enableCaseImport && !!caseId;
@@ -666,7 +668,7 @@ export default function CaseGraphView({
                       stroke={edgeColor} 
                       strokeWidth={String(edgeWidth)} 
                       strokeDasharray={cnf.dash || "none"}
-                      opacity={edgeInFocus(edge, focusNodeId) ? 0.6 : 0.12}
+                      opacity={edgeInFocus(edge, focusIds ? focusNodeId : null) ? 0.6 : 0.12}
                     />
                   </g>
                 );
@@ -837,6 +839,9 @@ export default function CaseGraphView({
                       <textarea
                         value={node.desc}
                         autoFocus={editingDescId === node.id}
+                        // Typing a mark into a plain card must not swap the box away
+                        // under the cursor: a focused box counts as being edited.
+                        onFocus={() => setEditingDescId(node.id)}
                         onChange={e => handleNodeTextChange(node.id, "desc", e.target.value)}
                         onBlur={() => { if (editingDescId === node.id) setEditingDescId(null); }}
                         onPointerDown={e => e.stopPropagation()}
