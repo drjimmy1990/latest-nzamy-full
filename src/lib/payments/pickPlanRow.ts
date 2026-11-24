@@ -19,7 +19,7 @@
  * Pure: relative imports only, so `node --test` loads it directly.
  */
 
-import { sellableItem } from "./catalog.ts";
+import { resolveItem, sellableItem } from "./catalog.ts";
 
 export function pickPlanRow(
   rows: ReadonlyArray<{ id: string | null | undefined }> | null | undefined,
@@ -27,6 +27,9 @@ export function pickPlanRow(
   const ids = (rows ?? [])
     .map((r) => r?.id)
     .filter((id): id is string => typeof id === "string" && id.length > 0)
+    // Batch l14: a bundle row (a plan that also brings a library pass, e.g.
+    // lawyer-bundle) is never a grant target — a tier grant gives no library.
+    .filter((id) => !resolveItem(id)?.libraryByBilling)
     .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
   if (ids.length === 0) return null;
   const sold = ids.find((id) => sellableItem(id) !== undefined);

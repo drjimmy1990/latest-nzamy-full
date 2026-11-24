@@ -26,7 +26,7 @@ import type { LibraryAccountKey } from "../library/accountAccess.ts";
 /** The plan cards /pricing shows with a book price, per audience (pricing.individuals / lawyers / firms). */
 export const ASSISTANT_PLAN_IDS = Object.freeze({
   individuals: Object.freeze(["ind-ai"]),
-  lawyers: Object.freeze(["lawyer-pro"]),
+  lawyers: Object.freeze(["lawyer-pro", "lawyer-bundle"]),
   firms: Object.freeze(["firm-basic", "firm-enterprise"]),
 } as const);
 

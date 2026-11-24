@@ -183,16 +183,20 @@ export const CLIENT_SERVICE_CATALOG: ClientServiceCatalogItem[] = [
     categoryId: "consultation",
     label: "سؤال AI فوري",
     description: "إجابة قانونية ذكية بدون حجز موعد",
-    basePrice: 49,
-    priceMode: "free",
-    priceNote: "لك سؤال واحد مجانا يوميا أو 49 ر.س إضافي",
+    // Batch l14 (owner 23 Nov, §حادي عشر #8 «بالنقاط»): no riyal price. The
+    // free questions are owner ٣٠ / ١٨١'s five per account in «مساعد نظامي»
+    // (freeQuestion.ts), not a daily one; a paid question's points are shown
+    // by the tool before it runs (quick-answer's price is open, #12), so the
+    // note names no number. 20261204_20 writes the same to the DB row.
+    basePrice: 0,
+    priceMode: "points",
+    priceNote: "لك ٥ أسئلة مجانية في «مساعد نظامي»، وبعدها بالنقاط ويظهر سعر السؤال قبل إرساله",
     route: "/ai/consult",
     icon: "Robot",
     receiverType: "ai_workspace",
     requestType: "consultation",
     betaVisibility: "public",
     requiresPayment: false,
-    includedByPlan: "free_daily",
     tag: "الأسرع",
     aiPowered: true,
   },
@@ -366,16 +370,18 @@ export const CLIENT_SERVICE_CATALOG: ClientServiceCatalogItem[] = [
     categoryId: "contracts",
     label: "تحليل عقد وكشف المخاطر",
     description: "ارفع عقدك ونحلله ونحدد البنود الخطرة ومواطن الضعف",
-    basePrice: 79,
-    priceMode: "included",
-    priceNote: "أو 79 ر.س للتحليل المفصل",
+    // Batch l14 (§حادي عشر #8): the approved doc's 250 points (§7ب.6), not
+    // 79 riyals; no plan includes it. The detailed analysis is not running
+    // for individuals yet, hence «قيد التفعيل».
+    basePrice: 0,
+    priceMode: "points",
+    priceNote: "التحليل المفصّل ٢٥٠ نقطة (قيد التفعيل)",
     route: "/ai/analyze?mode=doc",
     icon: "Scan",
     receiverType: "ai_workspace",
     requestType: "ai_draft",
     betaVisibility: "public",
     requiresPayment: false,
-    includedByPlan: "ai_individual",
     aiPowered: true,
   },
   {
@@ -428,16 +434,17 @@ export const CLIENT_SERVICE_CATALOG: ClientServiceCatalogItem[] = [
     categoryId: "case-study",
     label: "تقييم أولي بالذكاء الاصطناعي",
     description: "أدخل تفاصيل قضيتك ونحلل نقاط القوة والضعف ومؤشرات قوة الأسانيد والمخاطر الإجرائية",
-    basePrice: 79,
-    priceMode: "free",
-    priceNote: "مشمول في الباقة أو 79 ر.س",
+    // Batch l14 (§حادي عشر #8): the approved doc's 75 points (§7ب.5), not
+    // 79 riyals. The detailed evaluation is not running yet: «قيد التفعيل».
+    basePrice: 0,
+    priceMode: "points",
+    priceNote: "التقييم المفصّل ٧٥ نقطة (قيد التفعيل)",
     route: "/ai/analyze?mode=eval",
     icon: "Robot",
     receiverType: "ai_workspace",
     requestType: "ai_draft",
     betaVisibility: "public",
     requiresPayment: false,
-    includedByPlan: "free_daily",
     tag: "جديد",
     aiPowered: true,
   },
@@ -446,9 +453,12 @@ export const CLIENT_SERVICE_CATALOG: ClientServiceCatalogItem[] = [
     categoryId: "case-study",
     label: "دراسة قضية كاملة",
     description: "محام متخصص يدرس ملف قضيتك ويبيّن قوة الأسانيد والمخاطر الإجرائية",
-    basePrice: 1600,
+    // Batch l14 (owner 23 Nov, §حادي عشر #7): the approved pricing doc of
+    // 25 Oct (§7ب) — no later owner decision backs the higher number. The
+    // «2x …» note meant nothing beside it. 20261204_20 writes the DB row.
+    basePrice: 1500,
     priceMode: "starting_from",
-    priceNote: "2x سعر المحامي الأساسي",
+    priceNote: "يُؤكَّد السعر بعد الاطلاع على الملف",
     route: "/dashboard/client/requests/new?type=case-study",
     icon: "Scales",
     receiverType: "lawyer",
@@ -495,9 +505,12 @@ export const CLIENT_SERVICE_CATALOG: ClientServiceCatalogItem[] = [
     categoryId: "legal-filing",
     label: "لائحة دعوى ابتدائية",
     description: "تحرير لائحة دعوى جديدة أمام المحكمة المختصة",
-    basePrice: 1600,
+    // Batch l14 (owner 23 Nov, §حادي عشر #7): the approved pricing doc of
+    // 25 Oct (§7ب) — no later owner decision backs the higher number. The
+    // «2x …» note meant nothing beside it. 20261204_20 writes the DB row.
+    basePrice: 600,
     priceMode: "starting_from",
-    priceNote: "2x سعر المحامي الأساسي",
+    priceNote: "يُؤكَّد السعر بعد الاطلاع على الملف",
     route: "/dashboard/client/requests/new?type=file-lawsuit",
     icon: "Gavel",
     receiverType: "lawyer",
@@ -511,9 +524,12 @@ export const CLIENT_SERVICE_CATALOG: ClientServiceCatalogItem[] = [
     categoryId: "legal-filing",
     label: "مذكرة استئناف",
     description: "تحرير مذكرة استئناف على حكم صادر من محكمة أدنى درجة",
-    basePrice: 2000,
+    // Batch l14 (owner 23 Nov, §حادي عشر #7): the approved pricing doc of
+    // 25 Oct (§7ب) — no later owner decision backs the higher number. The
+    // «2x …» note meant nothing beside it. 20261204_20 writes the DB row.
+    basePrice: 1800,
     priceMode: "starting_from",
-    priceNote: "2x سعر المحامي",
+    priceNote: "يُؤكَّد السعر بعد الاطلاع على الملف",
     route: "/dashboard/client/requests/new?type=appeal",
     icon: "Scales",
     receiverType: "lawyer",
@@ -529,9 +545,12 @@ export const CLIENT_SERVICE_CATALOG: ClientServiceCatalogItem[] = [
     categoryId: "legal-filing",
     label: "مذكرة نقض / التماس",
     description: "تحرير مذكرة نقض أمام المحكمة العليا أو التماس إعادة النظر",
-    basePrice: 3000,
+    // Batch l14 (owner 23 Nov, §حادي عشر #7): the approved pricing doc of
+    // 25 Oct (§7ب) — no later owner decision backs the higher number. The
+    // «2x …» note meant nothing beside it. 20261204_20 writes the DB row.
+    basePrice: 2500,
     priceMode: "starting_from",
-    priceNote: "2x سعر المحامي",
+    priceNote: "يُؤكَّد السعر بعد الاطلاع على الملف",
     route: "/dashboard/client/requests/new?type=cassation",
     icon: "Scales",
     receiverType: "lawyer",
@@ -672,7 +691,9 @@ export const CLIENT_SERVICE_CATALOG: ClientServiceCatalogItem[] = [
     categoryId: "special",
     label: "متابعة تنفيذ حكم",
     description: "رفع طلب تنفيذ حكم قضائي صادر + متابعة الإجراءات أمام قلم التنفيذ",
-    basePrice: 1200,
+    // Batch l14 (owner 23 Nov, §حادي عشر #7): the approved pricing doc of
+    // 25 Oct (§7ب) — no later owner decision backs the higher number. 20261204_20 writes the DB row.
+    basePrice: 950,
     priceMode: "starting_from",
     priceNote: "إجراء تنفيذي - يختلف عن الصياغة",
     route: "/dashboard/client/requests/new?type=enforce-judgment",

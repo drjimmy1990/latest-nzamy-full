@@ -22,8 +22,8 @@ import {
   isActiveFounder,
 } from "@/lib/payments/founderDiscount";
 import { FOUNDER_TERMS_VERSION } from "@/lib/founder/founderTerms";
-import { activeLibraryGrantPlanRefs } from "@/lib/libraryAccessServer";
-import { GATED_LIBRARY_PLAN_REFS } from "@/lib/library/pointsGate";
+import { activeLibraryGrantPlanRefs, hasActiveFounderInviteTrial } from "@/lib/libraryAccessServer";
+import { FOUNDER_INVITE_TRIAL_PLAN_REF, GATED_LIBRARY_PLAN_REFS } from "@/lib/library/pointsGate";
 import { readLibraryMinPoints } from "@/lib/library/pointsGateServer";
 import { aiToolPointRange } from "@/lib/ai/toolPointsDisplay";
 import {
@@ -156,7 +156,8 @@ export default async function CheckoutPage({ searchParams }: { searchParams: Sea
   // lock the library. A failed read shows no extra line.
   let libraryMinPoints: number | null = null;
   // Owner 06 ج6 + ٩٣ (batch l12): a library plan's checkout states the 50-point rule.
-  if (item.kind === "library") {
+  // Batch l14: the ERP + library bundle brings a library grant, so the same rule.
+  if (item.kind === "library" || (item.kind === "plan" && item.libraryByBilling)) {
     try {
       libraryMinPoints = await readLibraryMinPoints();
     } catch {
@@ -166,12 +167,20 @@ export default async function CheckoutPage({ searchParams }: { searchParams: Sea
   if (item.kind === "topup") {
     try {
       const refs = await activeLibraryGrantPlanRefs(user.id);
-      if (refs?.some((r) => GATED_LIBRARY_PLAN_REFS.includes(r))) libraryMinPoints = await readLibraryMinPoints();
+      // Owner ٢٠١ (أ), batch l14: a running founder-invite trial is outside the gate — no lock line.
+      if (refs?.some((r) => GATED_LIBRARY_PLAN_REFS.includes(r))) {
+        const trial = refs.includes(FOUNDER_INVITE_TRIAL_PLAN_REF) && (await hasActiveFounderInviteTrial(user.id));
+        if (!trial) libraryMinPoints = await readLibraryMinPoints();
+      }
     } catch {
       console.warn("[checkout] reading the library grants threw");
     }
   }
-  const notes = checkoutItemNotes(item, { libraryMinPoints, libraryQuestionPoints: aiToolPointRange("library-assistant")[1] });
+  const notes = checkoutItemNotes(item, {
+    libraryMinPoints,
+    libraryQuestionPoints: aiToolPointRange("library-assistant")[1],
+    billing: parsed.billing,
+  });
 
   // l6-pay: before paying, what the POST will take off — the same server
   // functions checkout prices with (upgradeProration / founderDiscount). A

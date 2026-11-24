@@ -137,7 +137,7 @@ test("happy path: the quote's price, a created order, the intent, the guarded st
     clientSecret: "cs_secret_new",
     publishableKey: "pk_test_x",
     amountHalalas: q.totalHalalas,
-    descriptionAr: "NEZAMY — المحامي المحترف",
+    descriptionAr: "NEZAMY — إدارة المكتب",
     saveCard: true,
     quote: { net: q.netHalalas, vat: q.vatHalalas, total: q.totalHalalas, vatMode: "exclusive" },
     callbackUrl: `https://nezamy.sa/payments/result?order=${NEW_ORDER}`,
@@ -165,7 +165,7 @@ test("happy path: the quote's price, a created order, the intent, the guarded st
   assert.deepEqual(m.intents, [
     {
       amountHalalas: 458850,
-      description: "NEZAMY — المحامي المحترف",
+      description: "NEZAMY — إدارة المكتب",
       callbackUrl: `https://nezamy.sa/payments/result?order=${NEW_ORDER}`,
       metadata: { order_id: NEW_ORDER },
     },
@@ -397,10 +397,10 @@ test("a retired CYCLE (lawyer-pro monthly, owner 26 Oct) is refused with 410 fro
   assert.equal(m.intents.length, 0, "no intent");
 });
 
-test("a cycle the item is not sold in (quarterly before P2) is refused with 400", async () => {
+test("a cycle the item is not sold in (consultant-independent quarterly; lawyer-pro is sold quarterly since l14) is refused with 400", async () => {
   const { client: admin, log } = db("lawyer");
   const m = moyasar();
-  const r = await startCheckoutWith({ admin, client: m.client, now: () => NOW }, input({ billing: "quarterly" }));
+  const r = await startCheckoutWith({ admin, client: m.client, now: () => NOW }, input({ itemId: "consultant-independent", billing: "quarterly" }));
   assert.equal(r.status, 400);
   assert.equal(inserts(log).length, 0);
 });

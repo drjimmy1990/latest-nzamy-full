@@ -34,11 +34,11 @@ const RECEIPT = `/dashboard/billing/receipt/${order.id}`;
 
 test("granted: «تم الدفع وتفعيل …», the receipt number and the receipt link", () => {
   const v = paymentResultView({ outcome: "granted", receiptNumber: "NZ-2026-000001" }, order);
-  const notice = fulfilmentNoticeAr({ kind: "plan", labelAr: "المحامي المحترف", receiptNumber: "NZ-2026-000001", alreadyEntitled: false });
+  const notice = fulfilmentNoticeAr({ kind: "plan", labelAr: "إدارة المكتب", receiptNumber: "NZ-2026-000001", alreadyEntitled: false });
   assert.equal(v.tone, "success");
   assert.equal(v.title, notice.title);
   assert.equal(v.body, notice.body);
-  assert.match(v.body, /^تم الدفع وتفعيل «المحامي المحترف»/);
+  assert.match(v.body, /^تم الدفع وتفعيل «إدارة المكتب»/);
   assert.equal(v.receiptHref, RECEIPT);
   assert.equal(v.retryHref, undefined);
   assert.equal(v.refresh, false);
@@ -70,7 +70,7 @@ test("a founder membership order is labelled «باقة المحامي المؤ�
 
 test("already_entitled: paid, nothing replaced — the refund-review copy, never «تم الدفع وتفعيل»", () => {
   const v = paymentResultView({ outcome: "already_done", reason: "already_entitled", receiptNumber: "NZ-2026-000002" }, order);
-  const notice = fulfilmentNoticeAr({ kind: "plan", labelAr: "المحامي المحترف", receiptNumber: "NZ-2026-000002", alreadyEntitled: true });
+  const notice = fulfilmentNoticeAr({ kind: "plan", labelAr: "إدارة المكتب", receiptNumber: "NZ-2026-000002", alreadyEntitled: true });
   assert.equal(v.tone, "review");
   assert.equal(v.title, notice.title);
   assert.equal(v.body, notice.body);

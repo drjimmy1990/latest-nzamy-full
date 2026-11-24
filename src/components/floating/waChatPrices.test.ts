@@ -87,8 +87,12 @@ test("task 6 I3: a service whose route is a beta-gated tool reads «قريباً
 test("finding 6: an «included» service never reads «مشمول في الباقة» to a viewer the chat cannot tell has the plan — the catalogue price, or «يُحدَّد بعد المراجعة»", () => {
   // contract-analyze's real route is gated (previous test); give it an open
   // one so this rule is still exercised on an «included» row.
+  // l14 (§حادي عشر #8) moved the real row to points, so the fixture puts back
+  // an «included» row at a riyal price — the rule under test, not the row.
   const CLIENT_SERVICE_CATALOG = CATALOG.map((s) =>
-    s.serviceId === "contract-analyze" ? { ...s, route: "/dashboard/client/requests/new?type=contract-analyze" } : s,
+    s.serviceId === "contract-analyze"
+      ? { ...s, route: "/dashboard/client/requests/new?type=contract-analyze", priceMode: "included" as const, basePrice: 79 }
+      : s,
   );
   const entry = getClientServiceById("contract-analyze", CLIENT_SERVICE_CATALOG);
   assert.equal(entry.priceMode, "included");

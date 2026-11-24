@@ -128,7 +128,8 @@ test("wiring: the gate covers every entry point the brief names", () => {
   }
   // every /api/library route that does not call libraryAccountGate itself calls libraryGate()
   const checkout = read("../payments/checkoutCore.ts");
-  assert.match(checkout, /known\.kind === "library" && deps\.libraryAccountAllowed/);
+  // l14: the ERP + library bundle (a plan carrying a library pass) is locked the same way
+  assert.match(checkout, /\(known\.kind === "library" \|\| known\.libraryByBilling\) && deps\.libraryAccountAllowed/);
   assert.match(read("../../app/api/v1/payments/checkout/route.ts"), /libraryAccountAllowed: async \(userId\) => \(await readLibraryAccountAccess\(userId\)\)\.allowed/);
 });
 

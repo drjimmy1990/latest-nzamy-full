@@ -108,9 +108,9 @@ test("services cards: no typed price; contracts and case study read the catalogu
   assert.match(src("constants/servicesData.ts"), /dualAudiencePriceLabel\(serviceId, CLIENT_SERVICE_CATALOG, lang\)/);
   assert.equal(dualAudiencePriceLabel("contract-review", CLIENT_SERVICE_CATALOG, "ar"), "يبدأ من ٦٠٠ ر.س للأفراد · يبدأ من ٨٠٠ ر.س للأعمال");
   assert.equal(dualAudiencePriceLabel("contract-review", CLIENT_SERVICE_CATALOG, "en"), "From 600 SAR (individuals) · From 800 SAR (business)");
-  assert.equal(dualAudiencePriceLabel("case-study", CLIENT_SERVICE_CATALOG, "ar"), "يبدأ من ١٬٦٠٠ ر.س");
-  assert.equal(catalogPriceLabel("case-study", CLIENT_SERVICE_CATALOG, "ar"), "يبدأ من ١٬٦٠٠ ر.س");
-  assert.equal(catalogPriceLabel("case-study", CLIENT_SERVICE_CATALOG, "en"), "From 1,600 SAR");
+  assert.equal(dualAudiencePriceLabel("case-study", CLIENT_SERVICE_CATALOG, "ar"), "يبدأ من ١٬٥٠٠ ر.س");
+  assert.equal(catalogPriceLabel("case-study", CLIENT_SERVICE_CATALOG, "ar"), "يبدأ من ١٬٥٠٠ ر.س");
+  assert.equal(catalogPriceLabel("case-study", CLIENT_SERVICE_CATALOG, "en"), "From 1,500 SAR");
   // No catalogue row → null (the card's own "after assessment"), never «طلب عام»'s price.
   assert.equal(catalogPriceLabel("notary", CLIENT_SERVICE_CATALOG, "ar"), null);
   // The human services claim no AI behind them.

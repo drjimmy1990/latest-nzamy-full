@@ -155,11 +155,29 @@ export interface BookEntry {
   /** Priced but not launched: the price is stored, never shown or sold (owner L446). */
   readonly comingSoon?: true;
   readonly launchPrices?: readonly LaunchPrice[];
+  /**
+   * Batch l14 (owner 23 Nov 2026, §عاشرًا): a PLAN that also brings the
+   * library — the combined «إدارة المكتب + المكتبة القانونية» bundle. Per
+   * cycle, the library pass the order grants with the plan (the same grant a
+   * lib-q1 / lib-q2 / lib-annual order makes, with its library-assistant
+   * points). Absent on every other entry.
+   */
+  readonly libraryByCycle?: Readonly<Partial<Record<Cycle, LibraryPart>>>;
+}
+
+/** The library half of a bundle cycle: the library plan it grants and for how many days. */
+export interface LibraryPart {
+  readonly planRef: LibraryPlanRef;
+  readonly days: number;
 }
 
 function freezeEntry(entry: BookEntry): BookEntry {
   for (const p of Object.values(entry.prices)) if (p) Object.freeze(p);
   Object.freeze(entry.prices);
+  if (entry.libraryByCycle) {
+    for (const part of Object.values(entry.libraryByCycle)) if (part) Object.freeze(part);
+    Object.freeze(entry.libraryByCycle);
+  }
   if (Array.isArray(entry.buyers)) Object.freeze(entry.buyers);
   if (entry.launchPrices) {
     for (const lp of entry.launchPrices) {
@@ -194,6 +212,34 @@ function plan(
     buyers: [...buyers],
     ...(launchPrices.length > 0 ? { launchPrices: launchPrices.map((lp) => ({ ...lp, prices: { ...lp.prices } })) } : {}),
   });
+}
+
+/**
+ * A plan that also grants a library pass per cycle (batch l14: the combined
+ * ERP + library bundle). Professionals only, so no monthly cycle.
+ */
+function bundle(
+  id: string,
+  labelAr: string,
+  prices: Partial<Record<Exclude<Cycle, "monthly">, number>>,
+  tier: ServerTierLiteral,
+  buyers: readonly string[],
+  libraryByCycle: Partial<Record<Exclude<Cycle, "monthly">, LibraryPart>>,
+): BookEntry {
+  const base = plan(id, labelAr, prices, tier, buyers);
+  const parts: Partial<Record<Cycle, LibraryPart>> = {};
+  for (const c of CYCLES) {
+    if (c === "monthly") continue;
+    const part = libraryByCycle[c];
+    if (part) parts[c] = { planRef: part.planRef, days: part.days };
+  }
+  return freezeEntry({ ...base, prices: { ...base.prices }, buyers: [...(base.buyers as readonly string[])], libraryByCycle: parts });
+}
+
+/** The library half of a bundle cycle, for (entry, billing); null when the entry brings no library in it. */
+export function bundleLibraryPart(entry: Pick<BookEntry, "libraryByCycle">, billing: string): LibraryPart | null {
+  if (!entry.libraryByCycle || !isCycle(billing)) return null;
+  return Object.hasOwn(entry.libraryByCycle, billing) ? (entry.libraryByCycle[billing] ?? null) : null;
 }
 
 /** An entry no longer sold at all (l12: topup-50); still resolvable for its orders. */
@@ -307,12 +353,44 @@ function membership(id: string, labelAr: string, sar: number, buyers: readonly s
  * Owner package of 1 Nov 2026 (§6.2.1, q329 — Wave 1 task 5): individuals
  * buy yearly only. ind-ai is sold yearly at 249 with no launch price;
  * ind-preventive and ind-litigation are retired in every cycle.
- * Still waiting (the doc's own numbers need the owner): lawyer-pro and
- * consultant-independent → erp-* / bundle-* (P2), the 365 legal-protection
- * plan and its 496-seat founder offer (٤٢٠).
+ * Batch l14 (owner 23 Nov 2026, package 01 §عاشرًا and §حادي عشر #1 / #2):
+ *   - «إدارة المكتب» (the doc's ERP, `erp-q1` / `erp-q2` / `erp-annual`) IS
+ *     lawyer-pro: since l12 (owner ٨٩) that plan is practice management only
+ *     — no library, no points — and its yearly 3,990 is the doc's
+ *     erp-annual. It keeps its id (orders and subscriptions point at it),
+ *     takes the name «إدارة المكتب» and gains the doc's quarterly 1,200 and
+ *     half-yearly 2,190.
+ *   - the combined bundle `lawyer-bundle` («إدارة المكتب + المكتبة
+ *     القانونية», the doc's bundle-q1 / q2 / annual): 15 % off the sum of
+ *     the two — 3,190 → 2,711.5, rounded UP to 2,712 (the book holds whole
+ *     riyals; the owner is told) / 5,980 → 5,083 / 10,980 → 9,333. Tier pro
+ *     like lawyer-pro, plus the matching library pass (lib-q1 90 days /
+ *     lib-q2 180 / lib-annual 365) with that pass's library-assistant points.
+ *   The old bundle prices of 25 Oct (1,990 / 3,790 / 6,990) are void.
+ * Still waiting: consultant-independent (the consultant row of l14), the 365
+ * legal-protection plan and its 496-seat founder offer (٤٢٠, «قريباً»).
  */
 export const PRICE_BOOK: Readonly<Record<string, BookEntry>> = Object.freeze({
-  "lawyer-pro": plan("lawyer-pro", "المحامي المحترف", { monthly: 399, yearly: 3990 }, "pro", ["lawyer"], ["monthly"]),
+  "lawyer-pro": plan(
+    "lawyer-pro",
+    "إدارة المكتب",
+    { monthly: 399, quarterly: 1200, semiannual: 2190, yearly: 3990 },
+    "pro",
+    ["lawyer"],
+    ["monthly"],
+  ),
+  "lawyer-bundle": bundle(
+    "lawyer-bundle",
+    "إدارة المكتب + المكتبة القانونية",
+    { quarterly: 2712, semiannual: 5083, yearly: 9333 },
+    "pro",
+    ["lawyer"],
+    {
+      quarterly: { planRef: "lib-q1", days: 90 },
+      semiannual: { planRef: "lib-q2", days: 180 },
+      yearly: { planRef: "lib-annual", days: 365 },
+    },
+  ),
   "consultant-independent": plan("consultant-independent", "المستشار القانوني المستقل", { monthly: 399, yearly: 3990 }, "pro", ["lawyer", "provider"], ["monthly"]),
   "firm-basic": plan(
     "firm-basic",

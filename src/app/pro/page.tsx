@@ -59,13 +59,27 @@ const features = {
 // No plan bundles points (owner ٢٩١, 26 Oct 2026): points come from top-ups.
 const plans = [
   {
-    name: { ar: "المحامي المحترف", en: "Professional Lawyer" },
+    // Batch l14 (owner 23 Nov, §حادي عشر #2): lawyer-pro is «إدارة المكتب»,
+    // sold quarterly / half-yearly / yearly.
+    name: { ar: "إدارة المكتب", en: "Office Management" },
     price: { ar: bookPriceText("lawyer-pro", "yearly", "ar"), en: bookPriceText("lawyer-pro", "yearly", "en") },
     unit: { ar: "ر.س/سنة", en: "SAR/yr" },
     desc: { ar: "للمحامي المرخّص", en: "For a licensed lawyer" },
     features: {
-      ar: ["القضايا والجلسات والمهل", "الموكّلون والاستشارات والعقود", "النقاط بحزم الشحن المستقلة"],
-      en: ["Cases, hearings and deadlines", "Clients, consultations and contracts", "Points from separate top-ups"],
+      ar: [
+        "القضايا والجلسات والمهل",
+        "الموكّلون والاستشارات والعقود",
+        `أو ${bookPriceText("lawyer-pro", "quarterly", "ar")} ر.س لثلاثة أشهر، و${bookPriceText("lawyer-pro", "semiannual", "ar")} ر.س لستة أشهر`,
+        `مع المكتبة القانونية: ${bookPriceText("lawyer-bundle", "yearly", "ar")} ر.س/سنة (خصم ١٥٪)`,
+        "النقاط بحزم الشحن المستقلة",
+      ],
+      en: [
+        "Cases, hearings and deadlines",
+        "Clients, consultations and contracts",
+        `Or SAR ${bookPriceText("lawyer-pro", "quarterly", "en")} for 3 months, SAR ${bookPriceText("lawyer-pro", "semiannual", "en")} for 6 months`,
+        `With the legal library: SAR ${bookPriceText("lawyer-bundle", "yearly", "en")}/yr (15% off)`,
+        "Points from separate top-ups",
+      ],
     },
     highlight: false,
   },

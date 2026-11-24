@@ -43,12 +43,13 @@ export const plans = {
     },
     {
       id: "ai",
-      name: "المحامي المحترف",
-      // §2 rule 1 (25 Oct): professionals are offered yearly (quarterly / half-yearly from P2), not monthly.
+      // Batch l14 (owner 23 Nov, §حادي عشر #2): lawyer-pro is «إدارة المكتب»,
+      // sold quarterly / half-yearly / yearly; the yearly price is shown.
+      name: "إدارة المكتب",
       price: bookPriceText("lawyer-pro", "yearly", "ar"),
       period: "ر.س / سنة",
-      desc: "اشتراك سنوي بنقاط لأدوات الذكاء الاصطناعي",
-      features: ["كل مميزات إدارة الممارسة", "النقاط بحزم الشحن فقط", `حزم شحن من ${bookPriceText("topup-500", "once", "ar")} ر.س`, "أسعار الأدوات بالنقاط حسب قائمة الأسعار"],
+      desc: `اشتراك إدارة المكتب، أو ${bookPriceText("lawyer-pro", "quarterly", "ar")} ر.س لثلاثة أشهر و${bookPriceText("lawyer-pro", "semiannual", "ar")} ر.س لستة أشهر`,
+      features: ["كل مميزات إدارة الممارسة", `مع المكتبة القانونية: ${bookPriceText("lawyer-bundle", "yearly", "ar")} ر.س سنوياً (خصم ١٥٪)`, "النقاط بحزم الشحن فقط", `حزم شحن من ${bookPriceText("topup-500", "once", "ar")} ر.س`, "أسعار الأدوات بالنقاط حسب قائمة الأسعار"],
       cta: "اشترك الآن",
       highlighted: true,
     },
@@ -76,11 +77,11 @@ export const plans = {
     },
     {
       id: "ai",
-      name: "Professional Lawyer",
+      name: "Office Management",
       price: bookPriceText("lawyer-pro", "yearly", "en"),
       period: "SAR / year",
-      desc: "Yearly subscription with AI tool points",
-      features: ["All practice-management features", "Points from top-ups only", `Top-ups from SAR ${bookPriceText("topup-500", "once", "en")}`, "Tool prices in points per the price list"],
+      desc: `Office management, or SAR ${bookPriceText("lawyer-pro", "quarterly", "en")} for 3 months and SAR ${bookPriceText("lawyer-pro", "semiannual", "en")} for 6 months`,
+      features: ["All practice-management features", `With the legal library: SAR ${bookPriceText("lawyer-bundle", "yearly", "en")} a year (15% off)`, "Points from top-ups only", `Top-ups from SAR ${bookPriceText("topup-500", "once", "en")}`, "Tool prices in points per the price list"],
       cta: "Subscribe",
       highlighted: true,
     },
