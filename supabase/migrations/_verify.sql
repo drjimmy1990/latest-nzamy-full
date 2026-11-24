@@ -8471,24 +8471,6 @@ select 'Case map insert limited to the case''s workers (run 20261203_95)' as che
 -- Batch l14 «links» (owner file 07 §2/§12, «تغطية الإحالات»): run 20261204_40 any time, before or after the deploy. Read-only.
 select 'l14 links: graph_rag_link_coverage present, SECURITY INVOKER, empty search_path, service role only (run 20261204_40)' as check,
        coalesce((select not p.prosecdef and p.proconfig @> array['search_path=""']
--- >>> verify:l14_pricing
--- Batch l14 pricing (owner package of 23 Nov 2026: 01 §عاشرًا / §حادي عشر, ٢٠١). 20261204_20 runs
--- BEFORE the deploy. Before it runs the checks below answer ok = false («run 20261204_20»).
-select 'l14 pricing: lawyer-pro is «إدارة المكتب» 399 (retired) / 1,200 / 2,190 / 3,990 and lawyer-bundle (tier pro, lawyer) 0 / 2,712 / 5,083 / 9,333 (run 20261204_20)' as check,
-       coalesce((select count(*) = 2 and bool_and(
-                          (p.price_monthly, p.price_quarterly, p.price_semiannual, p.price_yearly, p.tier, p.audience, p.name_ar)
-                          is not distinct from
-                          (case p.id when 'lawyer-pro' then 399::numeric else 0::numeric end,
-                           case p.id when 'lawyer-pro' then 1200::numeric else 2712::numeric end,
-                           case p.id when 'lawyer-pro' then 2190::numeric else 5083::numeric end,
-                           case p.id when 'lawyer-pro' then 3990::numeric else 9333::numeric end,
-                           'pro'::text, 'lawyer'::text,
-                           case p.id when 'lawyer-pro' then 'إدارة المكتب' else 'إدارة المكتب + المكتبة القانونية' end))
-                   from public.subscription_plans p where p.id in ('lawyer-pro', 'lawyer-bundle')), false) as ok;
-select 'l14 pricing: a refunded PLAN order closes the library grant it made (the bundle), service role only (run 20261204_20)' as check,
-       coalesce((select pg_catalog.strpos(pg_catalog.pg_get_functiondef(p.oid), 'o.kind in (''plan'', ''library'')') > 0
-                        and pg_catalog.strpos(pg_catalog.pg_get_functiondef(p.oid), 'set ends_at = greatest(starts_at + interval ''1 second'', now_at)') > 0
-                        and p.prosecdef
                         and not has_function_privilege('anon', p.oid, 'EXECUTE')
                         and not has_function_privilege('authenticated', p.oid, 'EXECUTE')
                         and has_function_privilege('service_role', p.oid, 'EXECUTE')
@@ -8567,6 +8549,28 @@ begin
   raise notice '_verify: 20261204_60 OK — coupons carry a purpose, the ceiling is 100 %% (above 25 only with a purpose), the library device limit is one or two';
 end $$;
 -- <<< verify:l14_paygate
+-- >>> verify:l14_pricing
+-- Batch l14 pricing (owner package of 23 Nov 2026: 01 §عاشرًا / §حادي عشر, ٢٠١). 20261204_20 runs
+-- BEFORE the deploy. Before it runs the checks below answer ok = false («run 20261204_20»).
+select 'l14 pricing: lawyer-pro is «إدارة المكتب» 399 (retired) / 1,200 / 2,190 / 3,990 and lawyer-bundle (tier pro, lawyer) 0 / 2,712 / 5,083 / 9,333 (run 20261204_20)' as check,
+       coalesce((select count(*) = 2 and bool_and(
+                          (p.price_monthly, p.price_quarterly, p.price_semiannual, p.price_yearly, p.tier, p.audience, p.name_ar)
+                          is not distinct from
+                          (case p.id when 'lawyer-pro' then 399::numeric else 0::numeric end,
+                           case p.id when 'lawyer-pro' then 1200::numeric else 2712::numeric end,
+                           case p.id when 'lawyer-pro' then 2190::numeric else 5083::numeric end,
+                           case p.id when 'lawyer-pro' then 3990::numeric else 9333::numeric end,
+                           'pro'::text, 'lawyer'::text,
+                           case p.id when 'lawyer-pro' then 'إدارة المكتب' else 'إدارة المكتب + المكتبة القانونية' end))
+                   from public.subscription_plans p where p.id in ('lawyer-pro', 'lawyer-bundle')), false) as ok;
+select 'l14 pricing: a refunded PLAN order closes the library grant it made (the bundle), service role only (run 20261204_20)' as check,
+       coalesce((select pg_catalog.strpos(pg_catalog.pg_get_functiondef(p.oid), 'o.kind in (''plan'', ''library'')') > 0
+                        and pg_catalog.strpos(pg_catalog.pg_get_functiondef(p.oid), 'set ends_at = greatest(starts_at + interval ''1 second'', now_at)') > 0
+                        and p.prosecdef
+                        and not has_function_privilege('anon', p.oid, 'EXECUTE')
+                        and not has_function_privilege('authenticated', p.oid, 'EXECUTE')
+                        and has_function_privilege('service_role', p.oid, 'EXECUTE')
+                   from pg_catalog.pg_proc p
                   where p.oid = to_regprocedure('public.finish_payment_refund(uuid,text,text)')), false) as ok;
 select 'l14 pricing (owner ٢٠١): founder-invite trial points are the library assistant''s only — setting, reader and lots (run 20261204_20)' as check,
        coalesce((select pg_catalog.strpos(pg_catalog.pg_get_functiondef(p.oid), '''library_agent''::text,') > 0
