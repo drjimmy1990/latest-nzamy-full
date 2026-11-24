@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import Navbar from "@/components/Navbar";
-import Footer from "@/components/Footer";
+import AccountDashboardShell from "@/components/dashboard/AccountDashboardShell";
 import { DeleteCardButton } from "@/components/payments/BillingControls";
 import { CurrentPlanCard } from "@/components/payments/CurrentPlanCard";
 import { createClient } from "@/lib/supabase/server";
@@ -24,9 +23,9 @@ export default async function BillingPage() {
     if (result.status === 200) data = result.body as BillingData;
   } catch { /* The page keeps a useful unavailable state while configuration is missing. */ }
   const groups = data ? pointsByType(data.lots) : [];
-  return <>
-    <Navbar />
-    <main dir="rtl" className="min-h-[75dvh] bg-zinc-50 px-4 pb-20 pt-32 text-zinc-900 dark:bg-[#0A0A0A] dark:text-zinc-100">
+  // Live check row 12: the viewer's own dashboard sidebar, not the site navbar.
+  return <AccountDashboardShell>
+    <main dir="rtl" className="min-h-[75dvh] bg-zinc-50 px-4 pb-20 pt-8 text-zinc-900 dark:bg-[#0A0A0A] dark:text-zinc-100">
       <div className="mx-auto max-w-5xl space-y-6">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div><p className="mb-2 text-sm text-zinc-500">حسابك في نظامي</p><h1 className="text-3xl font-extrabold">الفوترة والمدفوعات</h1></div>
@@ -60,6 +59,5 @@ export default async function BillingPage() {
         </>}
       </div>
     </main>
-    <Footer />
-  </>;
+  </AccountDashboardShell>;
 }
