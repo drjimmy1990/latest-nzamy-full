@@ -5,7 +5,7 @@ import { useParams, usePathname, useRouter, useSearchParams } from "next/navigat
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowRight, ArrowUp, Crown, Stack, Check, Copy, BookOpen, Bookmark, Scales, Printer,
-  ListBullets, X, Lock, Prohibit, Info, Clock, ArrowSquareOut
+  ListBullets, X, Lock, Prohibit, Info, Clock
 } from "@phosphor-icons/react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
@@ -40,7 +40,8 @@ import {
 import FolderSelectionModal from "@/components/laws/FolderSelectionModal";
 import SidebarPanel from "./_sidebar";
 import { LawSummaryBox } from "./_summary-box";
-import { SubLegislationSection } from "./_sub-legislation";
+import { SubLegislationOptions } from "./_sub-legislation";
+import { regulationOptions, showRegulationOptions } from "./_regulation-options";
 import { buildChapterTree } from "./_chapter-tree";
 import { READER_SCROLL_MARGIN_TOP, buildRegulationAnchors, jumpToReaderAnchor, regulationCardId } from "./_reader-anchors";
 import { ResearchWorkspace } from "@/components/ResearchWorkspace";
@@ -112,9 +113,6 @@ function ReaderArrivalScroll({ query, deps }: { query: string; deps: readonly un
  * (the index's last articles, the tools card) scroll clear of them.
  */
 const READER_ASIDE_FAB_CLEARANCE = "pb-24";
-
-/** Owner file 16 §7: sub-legislation chips shown before «عرض المزيد» («بحد أقصى 2 أو 3»). */
-const REG_CHIPS_SHOWN = 3;
 
 function LawSystemPageContent() {
   const { isDark, isRTL }  = useTheme();
@@ -229,8 +227,6 @@ function LawSystemPageContent() {
   const initialViewMode = (searchParams?.get("viewMode") as "all" | "law" | "regulation" | "appendix") || "all";
   const [viewMode, setViewMode] = useState<"all" | "law" | "regulation" | "appendix">(initialViewMode);
   const [selectedRegName, setSelectedRegName] = useState<string | null>(null); // فلتر اللائحة المختارة عند تعددها
-  // Owner file 16 §7: the first REG_CHIPS_SHOWN sub-legislations, then «عرض المزيد».
-  const [showAllRegChips, setShowAllRegChips] = useState(false);
 
   useEffect(() => {
     const mode = searchParams?.get("viewMode");
@@ -243,9 +239,13 @@ function LawSystemPageContent() {
   // (T28-09). A catalogue chip can still arrive with ?viewMode=regulation or
   // appendix; with the switcher gone that would leave an empty list and no
   // way back, so such a law always shows «عرض الكل» (independent review m3).
+  // Owner spec 06 (l14): the documents linked by parent_law_id count too — the
+  // permanent «التشريعات الفرعية (N)» box is gone, so the tab is their way in.
+  const hasLinkedSubLegislation = (law?.subLegislation?.children?.length ?? 0) > 0;
   const hasViewModeChoices = !!law && (
     law.chapters.some(ch => ch.articles.some(a => a.regulations && a.regulations.length > 0)) ||
     (law.regulationInstrumentsLocked ?? 0) > 0 ||
+    hasLinkedSubLegislation ||
     (law.appendices?.length ?? 0) > 0
   );
   useEffect(() => {
@@ -631,7 +631,8 @@ function LawSystemPageContent() {
   const regulationTabLabel = useMemo(() => {
     // إذا كان هناك نوع واحد فقط → نسميه باسمه (مثل "اللائحة التنفيذية فقط" أو "الضوابط فقط")
     // إذا كان هناك أكثر من نوع → "التشريعات الفرعية" (شامل)
-    if (availableRegNames.length === 1) {
+    // وكذلك إذا رُبطت بالنظام ملفات مستقلة (parent_law_id): التبويب يجمعها كلها.
+    if (availableRegNames.length === 1 && !hasLinkedSubLegislation) {
       const name = availableRegNames[0];
       // اسم قصير → نضيف "فقط"
       if (name.length <= 25) return isRTL ? `${name} فقط` : "Sub-legislation Only";
@@ -639,15 +640,16 @@ function LawSystemPageContent() {
       return isRTL ? "التشريعات الفرعية" : "Sub-legislation";
     }
     return isRTL ? "التشريعات الفرعية" : "Sub-legislation";
-  }, [availableRegNames, isRTL]);
+  }, [availableRegNames, hasLinkedSubLegislation, isRTL]);
 
   // ── The flat «التشريعات الفرعية» view (law.regulationInstruments) renders
   // regulation cards, not نظام articles. Its cards carry ids, and each نظام
   // article maps to the first card of its own rows, so the contents list can
   // jump there (owner report 2026-10-03; _reader-anchors.ts). The instrument
   // filter is applied: a hidden card is not an anchor.
-  const flatRegulationView = !!law && viewMode === "regulation" &&
+  const flatRegulationData = !!law &&
     ((law.regulationInstruments?.length ?? 0) > 0 || (law.regulationInstrumentsLocked ?? 0) > 0);
+  const flatRegulationView = flatRegulationData && viewMode === "regulation";
   const regulationAnchors = useMemo(
     () => buildRegulationAnchors(
       law?.regulationInstruments ?? [],
@@ -674,17 +676,17 @@ function LawSystemPageContent() {
     },
     [regulationAnchors],
   );
-  // «التشريعات الفرعية» (main column and, O13, the sidebar): a merged regulation
-  // opens the regulation view on that instrument. A fully locked one is not a
-  // chip (regulationInstruments), so the view opens on all of them.
-  const openMergedRegulation = useCallback(
-    (name: string) => {
-      const inst = (law?.regulationInstruments ?? []).find((i) => (i.label || i.ref) === name);
-      setViewMode("regulation");
-      setSelectedRegName(inst ? inst.ref : null);
-      if (inst) setShowAllRegChips(true);
-    },
-    [law],
+  // Owner spec 06 (l14): the «التشريعات الفرعية» tab's options, drawn directly
+  // under the tabs — «الكل», the merged regulations (the flat view's
+  // instruments; the names read off the articles for an old payload), then
+  // the documents linked by parent_law_id. See _regulation-options.ts.
+  const regOptions = useMemo(
+    () => regulationOptions(
+      flatRegulationData
+        ? { instruments: law?.regulationInstruments, index: law?.regulationIndex, children: law?.subLegislation?.children }
+        : { legacyNames: availableRegNames, children: law?.subLegislation?.children },
+    ),
+    [law, flatRegulationData, availableRegNames],
   );
 
   // ــ Intersection Observer: تحديث activeId عند السكرول تلقائياً ــــــــــــــــــ
@@ -1209,19 +1211,38 @@ function LawSystemPageContent() {
                 viewMode={viewMode as any}
                 regulationAnchorFor={flatRegulationView ? regulationAnchorFor : undefined}
                 onRegulationCardJump={flatRegulationView ? onRegulationCardJump : undefined}
-                onOpenMergedRegulation={openMergedRegulation}
               />
             </aside>
           )}
 
           {/* CENTER COLUMN: Articles list */}
           <div className={`nzamy-reader-container col-span-12 min-w-0 space-y-4 ${isReadingMode ? "max-w-3xl mx-auto w-full" : "lg:col-span-6"}`}>
+            {/* Owner spec 06 (23 Nov, batch l14) — the middle column, top to bottom:
+                ١ the search in the law's full text; ٢ the tabs «عرض الكل · النظام فقط ·
+                التشريعات الفرعية»; ٣ directly under them, the chosen tab's options
+                («الكل» then each sub-legislation by name); ٤ the rest (موجز, preamble,
+                articles). The permanent «التشريعات الفرعية (N)» box is gone (the
+                library card's «+N» and this tab carry it). */}
+
+            {/* N2.6: search inside this law with the library's operators; the
+                matching articles stack here in full (paywall applied by the route).
+                Shown in every view, so the tabs under it never move. */}
+            <ScopedSearchPanel
+              key={`law:${law.slug || slug}`}
+              scope={`law:${law.slug || decodeURIComponent(apiSlug(slug))}`}
+              documentLabel="هذا النظام"
+              isDark={isDark}
+              onAddToDraft={addScopedEntry}
+              inDraft={(id) => cart.some(e => e.articleId === id && e.isArticleAdded)}
+              onLocked={() => setShowPaywall(true)}
+            />
+
             {/* View Mode Switcher (Tabs) — only when there is something to switch
                 to. A law with no regulation (unlocked or withheld) and no
                 appendix showed «عرض الكل | النظام فقط», two buttons that render
                 the same list (owner test 2026-09-28, T28-09). */}
             {!isReadingMode && hasViewModeChoices && (
-              <div className={`flex items-center gap-1.5 p-1 rounded-xl border ${isDark ? "bg-zinc-900 border-white/[0.07]" : "bg-white border-slate-200 shadow-sm"} w-fit mb-4 print:hidden`}>
+              <div className={`flex flex-wrap items-center gap-1.5 p-1 rounded-xl border ${isDark ? "bg-zinc-900 border-white/[0.07]" : "bg-white border-slate-200 shadow-sm"} w-fit max-w-full print:hidden`}>
                 <button
                   onClick={() => setViewMode("all")}
                   className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
@@ -1246,9 +1267,11 @@ function LawSystemPageContent() {
                     only, so a law whose every regulation-bearing article sits past
                     the free limit would lose the tab itself — not just its content.
                     The withheld count keeps the entry point (and the upgrade
-                    affordance behind it) reachable. */}
+                    affordance behind it) reachable. Owner spec 06 (l14): so do
+                    the documents linked by parent_law_id. */}
                 {(law.chapters.some(ch => ch.articles.some(a => a.regulations && a.regulations.length > 0)) ||
-                  (law.regulationInstrumentsLocked ?? 0) > 0) && (
+                  (law.regulationInstrumentsLocked ?? 0) > 0 ||
+                  hasLinkedSubLegislation) && (
                   <button
                     onClick={() => setViewMode("regulation")}
                     className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
@@ -1275,38 +1298,24 @@ function LawSystemPageContent() {
               </div>
             )}
 
-            {/* N2.1: the موجز, lifted out of the preamble (it no longer repeats there). */}
-            {viewMode !== "appendix" && (
-              <LawSummaryBox summary={law.summary} label={law.summaryLabel} isDark={isDark} isRTL={isRTL} />
-            )}
-
-            {/* Owner file 16 §7 + library agent §1.8 (l10): «التشريعات الفرعية» — merged
-                regulations, then documents linked by parent_law_id; the first three, then
-                «عرض المزيد (N)»; hidden when the law has none. */}
-            {viewMode !== "appendix" && (
-              <SubLegislationSection
+            {/* Owner spec 06 §٤: «التشريعات الفرعية»'s options — «الكل», the merged
+                regulations by name (each filters the view), then the files linked by
+                parent_law_id (each opens its page); three, then «عرض المزيد». */}
+            {viewMode === "regulation" && showRegulationOptions(regOptions) && (
+              <SubLegislationOptions
                 key={law.slug}
-                subLegislation={law.subLegislation}
-                // File 16 §7: the merged regulations first (the index names, every viewer).
-                mergedNames={(law.regulationIndex ?? []).map((g) => g.name)}
-                onOpenMerged={openMergedRegulation}
+                options={regOptions}
+                selectedKey={selectedRegName}
+                onSelect={setSelectedRegName}
+                onLocked={() => setShowPaywall(true)}
                 isDark={isDark}
                 isRTL={isRTL}
               />
             )}
 
-            {/* N2.6: search inside this law with the library's operators; the
-                matching articles stack here in full (paywall applied by the route). */}
+            {/* N2.1: the موجز, lifted out of the preamble (it no longer repeats there). */}
             {viewMode !== "appendix" && (
-              <ScopedSearchPanel
-                key={`law:${law.slug || slug}`}
-                scope={`law:${law.slug || decodeURIComponent(apiSlug(slug))}`}
-                documentLabel="هذا النظام"
-                isDark={isDark}
-                onAddToDraft={addScopedEntry}
-                inDraft={(id) => cart.some(e => e.articleId === id && e.isArticleAdded)}
-                onLocked={() => setShowPaywall(true)}
-              />
+              <LawSummaryBox summary={law.summary} label={law.summaryLabel} isDark={isDark} isRTL={isRTL} />
             )}
 
             {/* Owner note ٠٦: search colours over the reader (preamble → articles →
@@ -1389,79 +1398,25 @@ function LawSystemPageContent() {
                   // would otherwise silently shrink — or come up empty for a
                   // law whose every regulation sits past the free limit.
                   const lockedRegCount = law.regulationInstrumentsLocked ?? 0;
-                  // O13 (batch l11): the instrument chips (2 or more, as before) and
-                  // the linked sub-legislation (l10-children) share the «3 then
-                  // عرض المزيد» budget; the merged ones come first.
-                  const instChips = instruments.length > 1 ? instruments : [];
-                  const linkedChildren = law.subLegislation?.children ?? [];
-                  const chipTotal = instChips.length + linkedChildren.length;
+                  // The chips that filter this list now sit directly under the
+                  // tabs (owner spec 06, l14: SubLegislationOptions, regOptions).
 
                   return (
                     <>
-                      {(instruments.length > 1 || linkedChildren.length > 0) && (
-                        <div className={`flex flex-wrap gap-1.5 p-2 rounded-xl border ${isDark ? "bg-zinc-900 border-white/[0.07]" : "bg-white border-slate-200 shadow-sm"}`}>
-                          {instChips.length > 0 && (
-                          <button
-                            onClick={() => setSelectedRegName(null)}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                              selectedRegName === null
-                                ? isDark ? "bg-[#0B3D2E] text-[#C8A762]" : "bg-[#0B3D2E] text-white shadow-sm"
-                                : isDark ? "text-zinc-500 hover:text-zinc-300" : "text-slate-500 hover:text-slate-700"
-                            }`}
-                          >
-                            {isRTL ? "الكل" : "All"}
-                          </button>
-                          )}
-                          {instChips
-                            // File 16 §7: 2–3 sub-legislations, then «عرض المزيد»; a chosen one always stays visible.
-                            .filter((inst, i) => showAllRegChips || i < REG_CHIPS_SHOWN || inst.ref === selectedRegName)
-                            .map((inst) => (
-                            <button
-                              key={inst.ref}
-                              onClick={() => setSelectedRegName(inst.ref)}
-                              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                                selectedRegName === inst.ref
-                                  ? isDark ? "bg-[#C8A762] text-[#0B3D2E]" : "bg-amber-100 text-amber-800 border border-amber-300"
-                                  : isDark ? "text-zinc-500 hover:text-zinc-300" : "text-slate-500 hover:text-slate-700"
-                              }`}
-                            >
-                              {inst.label || inst.ref}
-                            </button>
-                          ))}
-                          {/* O13 (batch l11): the documents linked by parent_law_id (l10-children)
-                              are files of their own: a chip opens the file's page, it filters nothing. */}
-                          {linkedChildren
-                            .filter((_c, j) => showAllRegChips || instChips.length + j < REG_CHIPS_SHOWN)
-                            .map((child) => (
-                            <Link
-                              key={`child:${child.slug}`}
-                              href={`/laws/${encodeURIComponent(child.slug)}`}
-                              title={isRTL ? "ملف مستقل في المكتبة" : "A separate file in the library"}
-                              className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border border-dashed ${
-                                isDark ? "border-white/[0.12] text-zinc-400 hover:text-zinc-200" : "border-slate-300 text-slate-500 hover:text-slate-800"
-                              }`}
-                            >
-                              {child.title || child.slug}
-                              <ArrowSquareOut size={11} weight="bold" aria-hidden />
-                            </Link>
-                          ))}
-                          {!showAllRegChips && chipTotal > REG_CHIPS_SHOWN && (
-                            <button
-                              type="button"
-                              onClick={() => setShowAllRegChips(true)}
-                              className={`px-3 py-1.5 rounded-lg text-xs font-bold underline-offset-2 hover:underline ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}
-                            >
-                              {isRTL ? `عرض المزيد (${chipTotal - REG_CHIPS_SHOWN})` : `Show more (${chipTotal - REG_CHIPS_SHOWN})`}
-                            </button>
-                          )}
-                        </div>
-                      )}
                       {visible.map((inst) => {
                         // Ids from the position in the FULL list, so the
                         // instrument filter never renumbers them (_reader-anchors.ts).
                         const instIndex = instruments.indexOf(inst);
                         return (
                           <div key={inst.ref} className="space-y-3">
+                            {/* Owner spec 06 §٤-٣: «مدمجة في هذا الملف» left the list and
+                                stays here, in the heading of the opened sub-legislation. */}
+                            <h3 className={`flex flex-wrap items-baseline gap-x-2 gap-y-0.5 px-1 text-[12.5px] font-bold ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}>
+                              {inst.label || inst.ref}
+                              <span className={`text-[10.5px] font-normal ${isDark ? "text-zinc-400" : "text-slate-500"}`}>
+                                {isRTL ? "مدمجة في هذا الملف" : "Merged in this file"}
+                              </span>
+                            </h3>
                             {inst.articles.map((a, i) => {
                               const cardId = regulationCardId(instIndex, i);
                               const isActiveCard = regulationAnchors.articleIdByCardId.get(cardId) === activeId;
@@ -1510,35 +1465,8 @@ function LawSystemPageContent() {
               </div>
             ) : viewMode === "regulation" ? (
               <div className="space-y-4">
-                {/* ── اختيار اللائحة عند تعدد اللوائح (نمط تراجعي: بيانات قديمة بلا regulationInstruments) ── */}
-                {availableRegNames.length > 1 && (
-                  <div className={`flex flex-wrap gap-1.5 p-2 rounded-xl border ${isDark ? "bg-zinc-900 border-white/[0.07]" : "bg-white border-slate-200 shadow-sm"}`}>
-                    <button
-                      onClick={() => setSelectedRegName(null)}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                        selectedRegName === null
-                          ? isDark ? "bg-[#0B3D2E] text-[#C8A762]" : "bg-[#0B3D2E] text-white shadow-sm"
-                          : isDark ? "text-zinc-500 hover:text-zinc-300" : "text-slate-500 hover:text-slate-700"
-                      }`}
-                    >
-                      {isRTL ? "الكل" : "All"}
-                    </button>
-                    {availableRegNames.map((name) => (
-                      <button
-                        key={name}
-                        onClick={() => setSelectedRegName(name)}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                          selectedRegName === name
-                            ? isDark ? "bg-[#C8A762] text-[#0B3D2E]" : "bg-amber-100 text-amber-800 border border-amber-300"
-                            : isDark ? "text-zinc-500 hover:text-zinc-300" : "text-slate-500 hover:text-slate-700"
-                        }`}
-                      >
-                        {name}
-                      </button>
-                    ))}
-                  </div>
-                )}
-
+                {/* اختيار اللائحة عند تعدد اللوائح (نمط تراجعي: بيانات قديمة بلا
+                    regulationInstruments) صار تحت التبويبات مباشرة (مواصفة ٠٦، l14). */}
                 {(() => {
                   // ── تحويل الأعداد الترتيبية العربية اللفظية إلى أرقام تسلسلية للترتيب ──
                   const parseArabicNumeral = (numStr: string): number => {
@@ -1686,6 +1614,21 @@ function LawSystemPageContent() {
                     })
                     // ── ترتيب تسلسلي
                     .sort((a, b) => extractRegNum(a) - extractRegNum(b));
+
+                  // Owner spec 06 (l14): a law whose sub-legislation is only files
+                  // linked by parent_law_id has nothing to list here — say where they are.
+                  if (regArticles.length === 0 && hasLinkedSubLegislation) {
+                    return (
+                      <p
+                        role="note"
+                        className={`rounded-xl border p-4 text-[12.5px] leading-relaxed ${isDark ? "bg-zinc-900 border-white/[0.07] text-zinc-300" : "bg-white border-slate-200 shadow-sm text-slate-600"}`}
+                      >
+                        {isRTL
+                          ? "التشريعات الفرعية لهذا النظام ملفات مستقلة في المكتبة؛ اختر أحدها من الأعلى لفتحه."
+                          : "This law's sub-legislation is kept as separate files in the library; choose one above to open it."}
+                      </p>
+                    );
+                  }
 
                   return regArticles.map(article => (
                     <ArticleBlock
@@ -1903,7 +1846,6 @@ function LawSystemPageContent() {
                   viewerIsSubscriber={viewerIsSubscriber} mode="index" viewMode={viewMode as any}
                   regulationAnchorFor={flatRegulationView ? regulationAnchorFor : undefined}
                   onRegulationCardJump={flatRegulationView ? onRegulationCardJump : undefined}
-                  onOpenMergedRegulation={(name) => { setShowIndexSheet(false); openMergedRegulation(name); }}
                 />
               </div>
             </motion.div>

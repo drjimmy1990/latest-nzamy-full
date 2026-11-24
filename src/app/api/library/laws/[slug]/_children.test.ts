@@ -185,23 +185,22 @@ test("source: /api/library/init counts the page's children in chunked in (…) r
   assert.match(init, /\.\.\.\(childCount > 0 \? \{ sub_legislation_count: childCount \} : \{\}\),/);
 });
 
-test("source: the law page keeps subLegislation through its whitelist and mounts the section", () => {
+test("source: the law page keeps subLegislation through its whitelist and lists it under the «التشريعات الفرعية» tab", () => {
   const page = read("../../../../laws/[slug]/page.tsx");
   const data = read("../../../../laws/data.ts");
   const section = read("../../../../laws/[slug]/_sub-legislation.tsx");
+  const options = read("../../../../laws/[slug]/_regulation-options.ts");
   assert.match(data, /subLegislation\?: \{\n\s*count: number;\n\s*children: Array<\{ slug: string; title: string; type: string; status: LawStatus; issueDate\?: string \}>;/);
   assert.match(page, /subLegislation: data\.subLegislation && Array\.isArray\(data\.subLegislation\.children\)/);
-  assert.match(page, /<SubLegislationSection\s+key=\{law\.slug\}\s+subLegislation=\{law\.subLegislation\}/);
-  // file 16 §7 (acceptance: نظام القضاء, whose sub-legislation is merged today): the merged ones first
-  assert.match(page, /mergedNames=\{\(law\.regulationIndex \?\? \[\]\)\.map\(\(g\) => g\.name\)\}/);
-  assert.match(page, /setViewMode\("regulation"\);\s*setSelectedRegName\(inst \? inst\.ref : null\);/);
-  assert.match(section, /\.\.\.Array\.from\(new Set\(mergedNames[\s\S]*?kind: "merged"[\s\S]*?\.\.\.\(subLegislation\?\.children \?\? \[\]\)/, "merged first, then linked");
-  // hidden when there is none; three, then «عرض المزيد (N)»; each linked child opens its page
-  assert.match(section, /if \(entries\.length === 0\) return null;/);
-  assert.match(section, /export const SUB_LEGISLATION_SHOWN = 3;/);
+  // Owner spec 06 (l14): no permanent box; the tab's options carry the list (merged first, then linked).
+  assert.doesNotMatch(page, /<SubLegislationSection\b/);
+  assert.match(page, /children: law\?\.subLegislation\?\.children/);
+  assert.match(page, /<SubLegislationOptions\s+key=\{law\.slug\}\s+options=\{regOptions\}/);
+  assert.match(options, /if \(instruments\.length > 0 \|\| index\.length > 0\) \{[\s\S]*?kind: "merged"[\s\S]*?for \(const child of input\.children \?\? \[\]\)/, "merged first, then linked");
+  // three, then «عرض المزيد (N)»; each linked child opens its page
+  assert.match(options, /export const REG_OPTIONS_SHOWN = 3;/);
   assert.match(section, /`عرض المزيد \(\$\{more\}\)`/);
-  assert.match(section, /`التشريعات الفرعية \(\$\{entries\.length\}\)`/);
-  assert.match(section, /href=\{`\/laws\/\$\{encodeURIComponent\(child\.slug\)\}`\}/);
+  assert.match(section, /href=\{`\/laws\/\$\{encodeURIComponent\(o\.slug\)\}`\}/);
   assert.doesNotMatch(section, /text-gray-(?:100|200)\b/, "dark-mode gray-token trap");
 });
 
