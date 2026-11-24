@@ -8595,3 +8595,38 @@ select 'l14 pricing: no lawyer-service or AI-card row is left at the price 20261
                           as e(service_id, price, mode, old_price)
                    left join public.admin_pricing_catalog c on c.service_id = e.service_id), false) as ok;
 -- <<< verify:l14_pricing
+-- >>> verify:l15_phone_otp
+-- Batch l15 (user decisions 2026-11-24): the WhatsApp sign-up code. 20261205_10 runs BEFORE the
+-- deploy. Before it runs the checks below answer ok = false («run 20261205_10»).
+select 'l15 phone otp: profiles.phone_verified_at exists and no session role may write it; the guard trigger is on (run 20261205_10)' as check,
+       coalesce((select not has_column_privilege('authenticated', 'public.profiles', 'phone_verified_at', 'UPDATE')
+                        and not has_column_privilege('anon', 'public.profiles', 'phone_verified_at', 'UPDATE')
+                   from information_schema.columns
+                  where table_schema = 'public' and table_name = 'profiles' and column_name = 'phone_verified_at'), false)
+       and coalesce((select count(*) = 1 from pg_catalog.pg_trigger
+                       where tgrelid = 'public.profiles'::regclass and tgname = 'trg_phone_verified_guard' and not tgisinternal), false) as ok;
+select 'l15 phone otp: the codes table is server-only (RLS on, no policy, no anon/authenticated privilege) (run 20261205_10)' as check,
+       coalesce((select c.relrowsecurity
+                        and not exists (select 1 from pg_catalog.pg_policy p where p.polrelid = c.oid)
+                        and not has_table_privilege('anon', c.oid, 'SELECT')
+                        and not has_table_privilege('authenticated', c.oid, 'SELECT')
+                        and not has_table_privilege('authenticated', c.oid, 'INSERT')
+                        and not has_table_privilege('authenticated', c.oid, 'UPDATE')
+                   from pg_catalog.pg_class c where c.oid = to_regclass('public.phone_otp_challenges')), false) as ok;
+select 'l15 phone otp: issue / verify / gate are SECURITY DEFINER, service_role only (run 20261205_10)' as check,
+       coalesce((select count(*) = 3
+                        and bool_and(p.prosecdef
+                                     and not has_function_privilege('anon', p.oid, 'EXECUTE')
+                                     and not has_function_privilege('authenticated', p.oid, 'EXECUTE')
+                                     and has_function_privilege('service_role', p.oid, 'EXECUTE'))
+                   from pg_catalog.pg_proc p
+                  where p.oid in (to_regprocedure('public.phone_otp_issue(uuid,text,text,text)'),
+                                  to_regprocedure('public.phone_otp_verify(uuid,text,text,text)'),
+                                  to_regprocedure('public.phone_otp_gate(uuid)'))), false) as ok;
+select 'l15 phone otp: the switch row exists, and while on it carries the first switch-on time (run 20261205_10)' as check,
+       coalesce((select pg_catalog.jsonb_typeof(s.value -> 'enabled') = 'boolean'
+                        and ((s.value ->> 'enabled') = 'false' or (s.value ->> 'enabled_at') is not null)
+                   from public.platform_settings s where s.key = 'signup_phone_otp'), false)
+       and coalesce((select count(*) = 1 from pg_catalog.pg_trigger
+                       where tgrelid = 'public.platform_settings'::regclass and tgname = 'trg_signup_phone_otp_setting' and not tgisinternal), false) as ok;
+-- <<< verify:l15_phone_otp
