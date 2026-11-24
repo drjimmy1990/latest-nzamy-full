@@ -1,7 +1,8 @@
 /**
  * couponAdminRules.test.ts — the admin coupons page cannot put a discount
  * coupon live without the owner's rules (P7 review, finding 2): a minimum
- * order net > 0, a cap ≤ 25 %, top-ups always excluded; and a PATCH cannot
+ * order net > 0, a cap ≤ 100 % (l14; default 25, a percentage never above
+ * the code's cap), top-ups always excluded; and a PATCH cannot
  * switch on a discount coupon whose minimum is 0.
  */
 import { test } from "node:test";
@@ -33,6 +34,7 @@ import {
   MAX_PCT_AR,
   MIN_ORDER_REQUIRED_AR,
   VALUE_REQUIRED_AR,
+  VALUE_ABOVE_CAP_AR,
 } from "./couponAdminRules.ts";
 
 const ROOT = join(import.meta.dirname, "..", "..", "..");
@@ -49,10 +51,17 @@ test("create: a discount coupon without a minimum (missing, 0, negative, text) i
   }
 });
 
-test("create: the cap — max_discount_pct ≤ 25 (default 25), a percentage value ≤ 25, a value > 0", () => {
-  assert.deepEqual(adminDiscountFields("fixed", { value: 50, minOrderAmount: 200, maxDiscountPct: 30 }, ON), { ok: false, error: MAX_PCT_AR });
+test("create: the cap — max_discount_pct in (0, 100] (l14; default 25), a percentage value ≤ the code's cap, a value > 0", () => {
+  assert.deepEqual(adminDiscountFields("fixed", { value: 50, minOrderAmount: 200, maxDiscountPct: 101 }, ON), { ok: false, error: MAX_PCT_AR });
   assert.deepEqual(adminDiscountFields("fixed", { value: 50, minOrderAmount: 200, maxDiscountPct: 0 }, ON), { ok: false, error: MAX_PCT_AR });
-  assert.deepEqual(adminDiscountFields("percentage", { value: 26, minOrderAmount: 200 }, ON), { ok: false, error: MAX_PCT_AR });
+  // a percentage above the default cap (25) without a higher cap
+  assert.deepEqual(adminDiscountFields("percentage", { value: 26, minOrderAmount: 200 }, ON), { ok: false, error: VALUE_ABOVE_CAP_AR });
+  assert.deepEqual(adminDiscountFields("percentage", { value: 101, minOrderAmount: 200, maxDiscountPct: 100 }, ON), { ok: false, error: MAX_PCT_AR });
+  // l14: a full-discount code (100 % with a 100 % cap)
+  const full = adminDiscountFields("percentage", { value: 100, minOrderAmount: 1, maxDiscountPct: 100 }, ON);
+  assert.deepEqual(full, { ok: true, fields: { discount_value: 100, min_order_amount: 1, max_discount_pct: 100, excluded_kinds: ["topup"] } });
+  // before 20261026_20 (no cap column) the old 25 % ceiling still holds
+  assert.deepEqual(adminDiscountFields("fixed", { value: 50, minOrderAmount: 200, maxDiscountPct: 30 }, { withNewColumns: false }), { ok: false, error: MAX_PCT_AR });
   assert.deepEqual(adminDiscountFields("fixed", { value: 0, minOrderAmount: 200 }, ON), { ok: false, error: VALUE_REQUIRED_AR });
   const r = adminDiscountFields("percentage", { value: 25, minOrderAmount: 300 }, ON);
   assert.deepEqual(r, { ok: true, fields: { discount_value: 25, min_order_amount: 300, max_discount_pct: 25, excluded_kinds: ["topup"] } });
@@ -90,7 +99,11 @@ test("patch: no minimum of 0, no percentage above 25, and a discount coupon with
   const nz = { discount_type: "fixed", min_order_amount: "200.00", active: true };
   assert.deepEqual(adminDiscountPatch(nz, { minOrderAmount: 0 }, undefined), { ok: false, error: MIN_ORDER_REQUIRED_AR });
   assert.deepEqual(adminDiscountPatch(nz, { minOrderAmount: 250 }, undefined), { ok: true, fields: { min_order_amount: 250 } });
-  assert.deepEqual(adminDiscountPatch({ discount_type: "percentage", min_order_amount: 100, active: true }, { value: 40 }, undefined), { ok: false, error: MAX_PCT_AR });
+  // l14: a percentage never above the code's cap (the stored one, else the default 25)
+  assert.deepEqual(adminDiscountPatch({ discount_type: "percentage", min_order_amount: 100, active: true }, { value: 40 }, undefined), { ok: false, error: VALUE_ABOVE_CAP_AR });
+  assert.deepEqual(adminDiscountPatch({ discount_type: "percentage", min_order_amount: 100, active: true, max_discount_pct: "50.00" }, { value: 40 }, undefined), { ok: true, fields: {} });
+  assert.deepEqual(adminDiscountPatch({ discount_type: "percentage", min_order_amount: 100, active: true, discount_value: 40, max_discount_pct: 50 }, { maxDiscountPct: 30 }, undefined), { ok: false, error: VALUE_ABOVE_CAP_AR });
+  assert.deepEqual(adminDiscountPatch({ discount_type: "percentage", min_order_amount: 100, active: true }, { value: 101 }, undefined), { ok: false, error: MAX_PCT_AR });
   assert.deepEqual(adminDiscountPatch({ discount_type: "points_grant", min_order_amount: 0, active: false }, {}, true), { ok: true, fields: {} });
 });
 
@@ -130,7 +143,9 @@ test("S6: PATCH may change the cap and the excluded kinds", () => {
     ok: true,
     fields: { max_discount_pct: 20, excluded_kinds: ["topup", "plan"] },
   });
-  assert.deepEqual(adminDiscountPatch(existing, { maxDiscountPct: 30 }, undefined), { ok: false, error: MAX_PCT_AR });
+  // l14: up to 100 (a purpose is checked separately — adminPurposePatch)
+  assert.deepEqual(adminDiscountPatch(existing, { maxDiscountPct: 100 }, undefined), { ok: true, fields: { max_discount_pct: 100 } });
+  assert.deepEqual(adminDiscountPatch(existing, { maxDiscountPct: 101 }, undefined), { ok: false, error: MAX_PCT_AR });
   assert.deepEqual(adminDiscountPatch(existing, { maxDiscountPct: 0 }, undefined), { ok: false, error: MAX_PCT_AR });
   assert.deepEqual(adminDiscountPatch(existing, { maxDiscountPct: "abc" }, undefined), { ok: false, error: MAX_PCT_AR });
   assert.deepEqual(adminDiscountPatch(existing, { excludedKinds: ["x"] }, undefined), { ok: false, error: KINDS_AR });

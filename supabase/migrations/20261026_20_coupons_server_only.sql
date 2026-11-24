@@ -381,8 +381,10 @@ begin
      not like '%20261026_20%' then
     missing := missing || ' coupons.excluded_kinds is missing or lacks its comment;';
   end if;
-  if exists (select 1 from public.coupons where max_discount_pct > 25 or not ('topup' = any (excluded_kinds))) then
-    missing := missing || ' a coupon exceeds the 25 % cap or applies to top-ups;';
+  -- 20261204_60 (batch l14) raised the ceiling to 100 % (its own CHECK keeps
+  -- a cap above 25 tied to a purpose); a re-run of this file accepts that
+  if exists (select 1 from public.coupons where max_discount_pct > 100 or not ('topup' = any (excluded_kinds))) then
+    missing := missing || ' a coupon exceeds the 100 % ceiling or applies to top-ups;';
   end if;
 
   if to_regclass('public.coupon_usage_coupon_user_key') is null

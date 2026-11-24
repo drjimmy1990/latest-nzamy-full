@@ -353,7 +353,15 @@ export function isUuidString(value: unknown): value is string {
   return typeof value === "string" && UUID_RE.test(value);
 }
 
-/** The admin's device-limit settings patch: { enabled?, limit? }. */
+/**
+ * The allowed numbers of devices (batch l14, owner package of 23 Nov, ٢٠٧ /
+ * 00 §٢-٣: «جهاز واحد أو جهازان»; the database's
+ * library_monitor_settings_device_limit_check says the same since 20261204_60).
+ */
+export const DEVICE_LIMIT_CHOICES: readonly number[] = Object.freeze([1, 2]);
+export const DEVICE_LIMIT_CHOICE_AR = "عدد الأجهزة جهاز واحد أو جهازان";
+
+/** The admin's device-limit settings patch: { enabled?, limit? } — limit 1 or 2 (l14). */
 export function parseDeviceSettingsPatch(
   body: unknown,
 ): { ok: true; columns: { device_limit_enabled?: boolean; device_limit?: number } } | { ok: false; error: string } {
@@ -365,8 +373,8 @@ export function parseDeviceSettingsPatch(
     columns.device_limit_enabled = b.enabled;
   }
   if ("limit" in b) {
-    if (typeof b.limit !== "number" || !Number.isInteger(b.limit) || b.limit < 1 || b.limit > 10) {
-      return { ok: false, error: "عدد الأجهزة يجب أن يكون بين 1 و 10" };
+    if (typeof b.limit !== "number" || !DEVICE_LIMIT_CHOICES.includes(b.limit)) {
+      return { ok: false, error: DEVICE_LIMIT_CHOICE_AR };
     }
     columns.device_limit = b.limit;
   }

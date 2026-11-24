@@ -11,6 +11,10 @@ import { staffMaySee } from "@/lib/auth/adminNavAccess";
  * (library_monitor_settings.device_limit_enabled / device_limit, 20261108_20),
  * read and written through /api/v1/admin/library-monitor/devices.
  * Saving is settings.write (super admin); every admin may read. Ships OFF.
+ * Batch l14 (owner ٢٠٧ / 00 §٢-٣): the number is one device or two — a
+ * choice, not a free number (deviceLimit.DEVICE_LIMIT_CHOICES, the server and
+ * 20261204_60's CHECK refuse anything else). The switch stays as the admin
+ * left it (OFF by default).
  * A user's devices are reset from his page (المستخدمون ← الأمان).
  */
 type Props = { isDark: boolean; card: string };
@@ -118,16 +122,21 @@ export default function LibraryDevicesPanel({ isDark, card }: Props) {
           </label>
           <label className={`flex items-center gap-2 text-[12px] ${tp}`}>
             عدد الأجهزة المصرّحة لكل حساب
-            <input
-              type="number"
-              min={1}
-              max={10}
-              value={limit}
+            <select
+              value={limit === 1 ? 1 : 2}
               disabled={!canWrite || saving}
-              onChange={(e) => setLimit(Math.max(1, Math.min(10, Math.trunc(Number(e.target.value) || 1))))}
-              className={`w-20 rounded-lg border px-2 py-1 text-[12px] ${isDark ? "border-white/[0.08] bg-zinc-800 text-white" : "border-slate-200 bg-white text-slate-800"}`}
-            />
+              onChange={(e) => setLimit(Number(e.target.value) === 1 ? 1 : 2)}
+              className={`rounded-lg border px-2 py-1 text-[12px] ${isDark ? "border-white/[0.08] bg-zinc-800 text-white" : "border-slate-200 bg-white text-slate-800"}`}
+            >
+              <option value={1}>جهاز واحد</option>
+              <option value={2}>جهازان</option>
+            </select>
           </label>
+          {limit !== 1 && limit !== 2 && (
+            <p className={`text-[11px] leading-6 ${isDark ? "text-amber-300" : "text-amber-700"}`}>
+              العدد المحفوظ حاليًا {limit}، والمسموح جهاز واحد أو جهازان. اختر أحدهما ثم احفظ.
+            </p>
+          )}
           {canWrite && (
             <button
               type="button"

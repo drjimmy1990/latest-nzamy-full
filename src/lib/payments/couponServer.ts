@@ -37,6 +37,10 @@
  *     3c — the founder discount off the listed price against what the coupon
  *     saves, the larger wins — and, when the founder discount wins, answers
  *     its figures with `source: "founder"` (the coupon is not used).
+ *     Batch l14: a code that leaves less than 1 SAR to pay (a full
+ *     discount) answers checkout's 409 (card_required /
+ *     full_discount_pending — fullDiscount.ts), never a 200 the pay button
+ *     could not honour.
  *   - recordCouponUsage — fulfilment's half: one coupon_usage row for a paid
  *     LIVE order that carried a coupon and was granted, idempotent (unique
  *     order_id, 20261026_20). It never blocks what the buyer paid for.
@@ -75,6 +79,7 @@ import {
   isActiveFounder,
 } from "./founderDiscount.ts";
 import type { TierRankTable } from "../entitlementGrantRules.ts";
+import { fullDiscountDecision, hasUsableSavedCard, isFullDiscount } from "./fullDiscount.ts";
 
 export const COUPON_COLUMNS =
   "id, code, discount_type, discount_value, min_order_amount, eligible_user_types, max_uses, used_count, valid_from, valid_until, active, max_discount_pct, excluded_kinds, metadata";
@@ -399,6 +404,12 @@ export interface ValidateInput {
   code: string;
   itemId: string;
   billing: Billing;
+  /**
+   * Batch l14: the gateway's mode (getMoyasarConfig) — a full-discount code
+   * needs a saved card of this mode (fullDiscount.ts). Absent → no card
+   * counts, so the preview says a card is required.
+   */
+  gatewayMode?: "test" | "live";
 }
 
 export interface ValidateDeps {
@@ -428,7 +439,7 @@ export type ValidateReply =
         quote: { listNet: number; discount: number; net: number; vat: number; total: number };
       };
     }
-  | { status: 400 | 403 | 429 | 503; body: { error: string } };
+  | { status: 400 | 403 | 409 | 429 | 503; body: { error: string; code?: string } };
 
 const PREVIEW_FAILED_AR = "تعذّر التحقق من كود الخصم، حاول مرة أخرى بعد قليل";
 
@@ -506,6 +517,16 @@ export async function validateCouponWith(deps: ValidateDeps, input: ValidateInpu
   }
 
   const d = priced.quote;
+  // batch l14 (owner item 67ب): checkout's step 3f — a code that leaves less
+  // than 1 SAR to pay is told before the pay button: a saved card is
+  // required, and the full activation is not built yet
+  if (isFullDiscount(d.totalHalalas)) {
+    const decision = fullDiscountDecision(await hasUsableSavedCard(admin, input.userId, input.gatewayMode, now));
+    if (!decision.ok) {
+      return { status: decision.status, body: { error: decision.error, ...(decision.code ? { code: decision.code } : {}) } };
+    }
+    return { status: 503, body: { error: PREVIEW_FAILED_AR } };
+  }
   return {
     status: 200,
     body: {

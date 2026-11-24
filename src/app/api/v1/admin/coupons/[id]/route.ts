@@ -7,6 +7,7 @@ import {
   BAD_BODY_AR,
   adminCouponMetadataPatch,
   adminDiscountPatch,
+  adminPurposePatch,
   buildCouponPatchMetadata,
   couponAudience,
   couponBodyObject,
@@ -30,7 +31,8 @@ import {
  *   eligibleRoles?: string[]  — eligible_user_types (client => individual,
  *                               business => corporate; [] = everyone)
  *   minOrderAmount?: number   — min_order_amount (> 0 on a discount coupon)
- *   maxDiscountPct?: number   — max_discount_pct (0 < pct <= 25)          (S6-T11)
+ *   maxDiscountPct?: number   — max_discount_pct (0 < pct <= 100; was 25) (S6-T11, l14)
+ *   purpose?: string          — coupons.purpose «الغرض», 3–500 characters (l14)
  *   excludedKinds?: string[]  — excluded_kinds (topup always in)           (S6-T11)
  *   firstPaidOrderOnly?: bool — metadata.first_paid_order_only (٣٠٥)      (S6-T11)
  *   excludedItems?: string[]  — metadata.excluded_items (price-book ids)   (S6-T11)
@@ -39,6 +41,10 @@ import {
  * percentage above 25, and is never switched ON while its minimum is 0 (the
  * old seed's LAUNCH2026, or a code made before the rule) —
  * couponAdminRules.adminDiscountPatch, 400 with the reason.
+ *
+ * Batch l14 (20261204_60): a percentage never above the code's own cap, a
+ * purpose may be set or changed but never cleared, and a cap above 25 %
+ * needs a purpose (adminPurposePatch, 400 with the reason).
  *
  * S6-T11: metadata is built ONCE (buildCouponPatchMetadata): the stored keys
  * (owner_rules, rules, first_order_rule …), then the flags, then the status —
@@ -126,6 +132,16 @@ export async function PATCH(
       );
     }
     Object.assign(updateData, discount.fields);
+
+    // l14: the purpose (never cleared; a cap above 25 % needs one)
+    const purpose = adminPurposePatch(prior, body);
+    if (!purpose.ok) {
+      return NextResponse.json({ error: purpose.error }, { status: 400 });
+    }
+    if ("purpose" in purpose.fields && !("purpose" in prior)) {
+      return NextResponse.json({ error: "حقل «الغرض» غير متاح قبل ترحيل 20261204_60 — لم يتغيّر شيء." }, { status: 503 });
+    }
+    Object.assign(updateData, purpose.fields);
 
     if (body.value !== undefined) {
       updateData.discount_value = Number(body.value) || 0;

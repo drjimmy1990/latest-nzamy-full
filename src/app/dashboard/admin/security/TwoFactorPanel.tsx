@@ -59,11 +59,14 @@ export default function TwoFactorPanel({ isDark, card }: { isDark: boolean; card
               {status.enrolled ? "التحقق بخطوتين مفعّل لحسابك" : "التحقق بخطوتين غير مفعّل لحسابك"}
             </p>
           </div>
-          <p className={`text-[12px] leading-6 ${muted}`}>
-            {status.mode === "required"
-              ? "الإلزام مفعّل: لا يدخل أي حساب إدارة إلى اللوحة دون تطبيق مصادقة."
-              : "الإلزام غير مفعّل بعد: حساب الإدارة الذي لم يربط تطبيق مصادقة يدخل بكلمة المرور وحدها. بعد أن تفعّله لحسابك يُشغَّل الإلزام من إعداد الخادم ADMIN_MFA_ENFORCE=required."}
-          </p>
+          {/* l14: the OFF state is an amber block, never a muted line */}
+          {status.mode === "required" ? (
+            <p className={`text-[12px] leading-6 ${muted}`}>الإلزام مفعّل: لا يدخل أي حساب إدارة إلى اللوحة دون تطبيق مصادقة.</p>
+          ) : (
+            <p className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[12px] font-bold leading-6 text-amber-300">
+              الإلزام متوقف: حساب الإدارة الذي لم يربط تطبيق مصادقة يدخل بكلمة المرور وحدها. بعد أن تفعّله لحسابك يُشغَّل الإلزام من إعداد الخادم ADMIN_MFA_ENFORCE=required.
+            </p>
+          )}
           {status.enrolled && (
             <p className={`text-[12px] ${muted}`}>
               {status.backupCodesLeft === null

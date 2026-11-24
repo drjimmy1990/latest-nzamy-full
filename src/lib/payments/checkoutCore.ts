@@ -72,6 +72,10 @@
  *       left → 409 UPGRADE_CREDIT_TOO_BIG_AR. metadata.proration;
  *       quote.prorationCredit. A second open / paid order crediting the same
  *       plans hits payment_orders_proration_once_key → 409 UPGRADE_PENDING_AR.
+ *   3f. (batch l14) A coupon that leaves less than 1 SAR to pay (a full
+ *       discount, fullDiscount.ts) → 409 before any order: code
+ *       "card_required" without a usable saved card, else
+ *       "full_discount_pending" (the zero-amount activation is not built).
  *   5c. A LIMITED coupon (max_uses) is reserved for the order (the
  *       coupon_reserve RPC, 20261126_60) before any intent: exhausted → 400
  *       (the generic sentence), an RPC error → 503; the order is cancelled
@@ -137,6 +141,7 @@ import {
   type OpenCouponOrderRow,
 } from "./couponServer.ts";
 import { applyDiscount, COUPON_INVALID_AR, COUPONS_UNAVAILABLE_AR } from "./couponRules.ts";
+import { fullDiscountDecision, hasUsableSavedCard, isFullDiscount } from "./fullDiscount.ts";
 import {
   isProrationOrderConflict,
   netAfterCredit,
@@ -634,6 +639,21 @@ export async function startCheckoutWith(deps: CheckoutDeps, input: CheckoutInput
     ({ netHalalas: net, vatHalalas: vat, totalHalalas: total } = d);
     prorationMeta = prorationMetadata(upgrade, q.netHalalas);
     prorationQuote = { listNet: q.netHalalas, prorationCredit: d.discountHalalas };
+  }
+
+  // 3f (batch l14, owner item 67ب — fullDiscount.ts). a coupon that leaves
+  // less than Moyasar's smallest charge never reaches Moyasar and is never
+  // granted without a saved card: no card → 409 card_required; a card → 409
+  // full_discount_pending while the zero-amount activation is not built.
+  // Before any order is written; no coupon try is spent (the code is valid).
+  if (couponMeta && isFullDiscount(total)) {
+    const decision = fullDiscountDecision(await hasUsableSavedCard(admin, user.id, input.gatewayMode, now));
+    if (!decision.ok) {
+      return { status: decision.status, body: { error: decision.error, ...(decision.code ? { code: decision.code } : {}) } };
+    }
+    // FULL_DISCOUNT_ACTIVATION_READY true without the zero-amount path: still never an intent of < 1 SAR
+    console.error("[payments/checkout] a full-discount order reached checkout without an activation path:", user.id);
+    return fail(503, CHECKOUT_FAILED_AR);
   }
 
   // 4. earlier open orders for the same item

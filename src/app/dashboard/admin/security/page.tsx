@@ -9,6 +9,7 @@ import LibraryActivityPanel from "./LibraryActivityPanel";
 import LibraryDevicesPanel from "./LibraryDevicesPanel";
 import LibraryProtectionPanel from "./LibraryProtectionPanel";
 import TwoFactorPanel from "./TwoFactorPanel";
+import AdminMfaOffBanner from "@/components/admin/AdminMfaOffBanner";
 
 // "library_activity" (20261031_10) and "library_locks" (owner note ١٣ C09,
 // public.library_security_locks) are real and read the database. The other
@@ -56,6 +57,9 @@ export default function SecurityPage() {
         <h1 className={`text-xl font-bold mb-1 ${isDark?"text-white":"text-slate-800"}`}>الأمان والحماية</h1>
         <p className={`text-[12px] ${isDark?"text-zinc-500":"text-slate-400"}`}>نشاط المكتبة وأقفالها؛ بقية الأقسام قريباً</p>
       </motion.div>
+
+      {/* l14: admin two-step sign-in not enforced — shown above every tab */}
+      <AdminMfaOffBanner showLink={tab !== "two_factor"} />
 
       {/* Tabs */}
       <div className={`flex gap-1 overflow-x-auto border-b pb-0.5 ${isDark?"border-white/[0.06]":"border-slate-100"}`}>

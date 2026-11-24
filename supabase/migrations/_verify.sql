@@ -4201,8 +4201,10 @@ begin
   if not exists (select 1 from information_schema.columns
                   where table_schema = 'public' and table_name = 'coupons' and column_name = 'excluded_kinds') then
     missing := missing || ' coupons.excluded_kinds is missing;';
-  elsif exists (select 1 from public.coupons where max_discount_pct > 25 or not ('topup' = any (excluded_kinds))) then
-    missing := missing || ' a coupon exceeds the 25 % cap or applies to top-ups;';
+  -- 20261204_60 (batch l14): the ceiling is 100 % (a cap above 25 needs a
+  -- purpose — its own verify block checks that); a top-up is never discounted
+  elsif exists (select 1 from public.coupons where max_discount_pct > 100 or not ('topup' = any (excluded_kinds))) then
+    missing := missing || ' a coupon exceeds the 100 % ceiling or applies to top-ups;';
   end if;
   if to_regclass('public.coupon_usage_coupon_user_key') is null then
     missing := missing || ' the unique (coupon_id, user_id) guard is missing;';
@@ -4250,7 +4252,7 @@ begin
   if p is not null then
     raise notice '_verify: 20261026_20 — active codes besides NZAMY50 / NEWCLIENT (checkout honours them): %', p;
   end if;
-  raise notice '_verify: 20261026_20 OK — coupons and coupon_usage are server only; 25 %% cap and top-up exclusion hold; once per user / once per order / one open order per (buyer, coupon) guarded; used_count follows coupon_usage; the owner''s two codes received his rules';
+  raise notice '_verify: 20261026_20 OK — coupons and coupon_usage are server only; the cap ceiling (100 %% since 20261204_60) and top-up exclusion hold; once per user / once per order / one open order per (buyer, coupon) guarded; used_count follows coupon_usage; the owner''s two codes received his rules';
 end $$;
 -- <<< verify:coupons_server_only
 
@@ -8460,3 +8462,71 @@ select 'Case map insert limited to the case''s workers (run 20261203_95)' as che
                   and permissive = 'RESTRICTIVE' and cmd = 'INSERT'
                   and coalesce(with_check, '') like '%case_board_open%') as ok;
 -- <<< verify:l13_case_graph_insert
+
+-- >>> verify:l14_paygate — supabase/tests/rls/l14_paygate.test.sql
+-- 2026-11-24 — 20261204_60_l14_paygate.sql (batch l14, owner package of
+-- 23 Nov §٤ / §٢-٣; BEFORE the deploy). Read-only, safe to repeat. NOTICEs
+-- while the file has not run (no coupons.purpose): the admin coupon routes
+-- then refuse to save a code (503). RAISES when it ran but the purpose
+-- column or one of its two CHECKs is gone, the cap ceiling is not 0 < x <= 100,
+-- a coupon above 25 % has no purpose, the library device limit allows more
+-- than 2 (or a row holds one), or a session privilege came back on coupons.
+-- Never reads device_limit_enabled (the admin's switch). A MANUAL check:
+-- deploy.sh does not run this file.
+do $$
+declare
+  def     text;
+  missing text := '';
+  r       text;
+  p       text;
+begin
+  if to_regclass('public.coupons') is null then
+    raise notice '_verify: 20261204_60 skipped — public.coupons not present';
+    return;
+  end if;
+  if not exists (select 1 from information_schema.columns
+                  where table_schema = 'public' and table_name = 'coupons' and column_name = 'purpose') then
+    raise notice '_verify: 20261204_60 is not applied yet — the admin coupons page cannot save a code until it runs. Run 20261204_60_l14_paygate.sql';
+    return;
+  end if;
+  select pg_get_constraintdef(oid) into def from pg_constraint
+   where conrelid = 'public.coupons'::regclass and conname = 'coupons_max_discount_pct_check';
+  if coalesce(def, '') not like '%max_discount_pct > %0%max_discount_pct <= %100%' then
+    missing := missing || format(' coupons_max_discount_pct_check is not 0 < x <= 100 (%s);', coalesce(def, 'missing'));
+  end if;
+  select pg_get_constraintdef(oid) into def from pg_constraint
+   where conrelid = 'public.coupons'::regclass and conname = 'coupons_high_discount_purpose_check';
+  if coalesce(def, '') not like '%max_discount_pct <= %25%purpose IS NOT NULL%' then
+    missing := missing || ' coupons_high_discount_purpose_check (a cap above 25 needs a purpose) is missing;';
+  end if;
+  select pg_get_constraintdef(oid) into def from pg_constraint
+   where conrelid = 'public.coupons'::regclass and conname = 'coupons_purpose_check';
+  if coalesce(def, '') not like '%purpose IS NULL%char_length%btrim%purpose%3%500%' then
+    missing := missing || ' coupons_purpose_check (3–500 characters) is missing;';
+  end if;
+  if exists (select 1 from public.coupons where coalesce(max_discount_pct, 25) > 25 and purpose is null) then
+    missing := missing || ' a coupon above 25 % has no purpose;';
+  end if;
+  foreach r in array array['anon', 'authenticated'] loop
+    foreach p in array array['SELECT', 'INSERT', 'UPDATE', 'DELETE'] loop
+      if has_table_privilege(r, 'public.coupons', p) then
+        missing := missing || format(' %s holds %s on public.coupons;', r, p);
+      end if;
+    end loop;
+  end loop;
+  if to_regclass('public.library_monitor_settings') is not null then
+    select pg_get_constraintdef(oid) into def from pg_constraint
+     where conrelid = 'public.library_monitor_settings'::regclass and conname = 'library_monitor_settings_device_limit_check';
+    if coalesce(def, '') not like '%device_limit >= 1%device_limit <= 2%' then
+      missing := missing || format(' the library device limit is not 1–2 (%s) — 20261108_20 re-run before the l14 fix?;', coalesce(def, 'missing'));
+    end if;
+    if exists (select 1 from public.library_monitor_settings where coalesce(device_limit, 0) not between 1 and 2) then
+      missing := missing || ' a library settings row holds a device limit outside 1–2;';
+    end if;
+  end if;
+  if missing <> '' then
+    raise exception '_verify: 20261204_60 —% run 20261204_60_l14_paygate.sql again', missing;
+  end if;
+  raise notice '_verify: 20261204_60 OK — coupons carry a purpose, the ceiling is 100 %% (above 25 only with a purpose), the library device limit is one or two';
+end $$;
+-- <<< verify:l14_paygate

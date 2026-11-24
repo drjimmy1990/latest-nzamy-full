@@ -14,6 +14,7 @@ import ERPTab         from "./tabs/ERPTab";
 import TeamTab        from "./tabs/TeamTab";
 import CorporateTab   from "./tabs/CorporateTab";
 import Link           from "next/link";
+import AdminMfaOffBanner from "@/components/admin/AdminMfaOffBanner";
 
 // ─── Shortcuts ────────────────────────────────────────────────────────────────
 // The overview, «المستخدمون», «الإيرادات» and «مدير AI» tabs were literals
@@ -55,6 +56,8 @@ export default function AdminDashboard() {
 
   return (
     <div className="p-5 md:p-7 space-y-5 min-h-screen text-zinc-100" dir="rtl">
+      {/* l14: admin two-step sign-in not enforced (ADMIN_MFA_ENFORCE) — said plainly */}
+      <AdminMfaOffBanner />
 
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
