@@ -16,7 +16,8 @@ import { cardPosCenteredAt, curveMidpoint, curvePath, edgeCurve, tempLinePath } 
 import { EDGE_LABEL_LIST_ID, EDGE_LABEL_PRESETS, edgeInFocus, firstNeighbours } from "./_graph-focus";
 import { useCaseGraphState } from "./_use-case-graph-state";
 import { SidebarLauncher, AiAnalysisPanel, OverlaysBundle } from "./CaseGraphOverlays";
-import { LinkCardBody, ChecklistCardBody } from "./CaseGraphCardExtras";
+import { LinkCardBody, ChecklistCardBody, CardMarkdownView } from "./CaseGraphCardExtras";
+import { hasCardMarkdown } from "./_graph-markdown";
 import CaseImportDrawer from "./CaseImportDrawer";
 import { normalizeLoadedBoard } from "./_graph-sanitize";
 import { candidatesToNodes, type ImportCandidate } from "./_graph-import";
@@ -165,6 +166,8 @@ export default function CaseGraphView({
   }
 
   const [expandedNoteId, setExpandedNoteId] = useState<string | null>(null);
+  // Row 57: a card whose text carries Markdown shows it drawn until clicked.
+  const [editingDescId, setEditingDescId] = useState<string | null>(null);
   // No legend existed for the six node-type colours or the three edge-line
   // styles (EDGE_CONFIG) — a lawyer reading someone else's board had to guess
   // what a colour meant. Off by default so it does not sit on top of a small
@@ -821,17 +824,27 @@ export default function CaseGraphView({
                       />
                     )}
 
-                    {/* Desc textarea */}
+                    {/* Desc: drawn Markdown (row 57) until clicked, else the textarea */}
                     <div className="relative px-3 pt-1.5 pb-2 flex-1 flex flex-col gap-1.5">
+                      {editingDescId !== node.id && hasCardMarkdown(node.desc) ? (
+                        <CardMarkdownView
+                          text={node.desc}
+                          onEdit={() => setEditingDescId(node.id)}
+                          className={`w-full text-[10px] leading-relaxed flex-1 ${node.customColor ? "text-white/80" : isDark ? "text-zinc-400" : "text-zinc-600"}`}
+                        />
+                      ) : (
                       <textarea
                         value={node.desc}
+                        autoFocus={editingDescId === node.id}
                         onChange={e => handleNodeTextChange(node.id, "desc", e.target.value)}
+                        onBlur={() => { if (editingDescId === node.id) setEditingDescId(null); }}
                         onPointerDown={e => e.stopPropagation()}
                         placeholder="اكتب التفاصيل..."
                         rows={isCustom ? 3 : 2}
                         className={`w-full text-[10px] leading-relaxed bg-transparent outline-none resize-none cursor-text placeholder-zinc-400 flex-1
                           ${node.customColor ? "text-white/80" : isDark ? "text-zinc-400" : "text-zinc-600"}`}
                       />
+                      )}
                       {/* Notes Field (Sticky Note Style) */}
                       {(() => {
                         const hasContent = !!(node.notes && node.notes.length > 0);
