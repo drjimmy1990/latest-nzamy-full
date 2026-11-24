@@ -796,11 +796,18 @@ export default function ConsultationsPage() {
             <p className={`text-[12px] ${isDark ? "text-zinc-500" : "text-slate-500"}`}>حجوزاتك واستشارات العملاء المُسندة إليك</p>
           </div>
         </div>
-        <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
-          onClick={() => setShowBooking(true)}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-[#0B3D2E] text-[#C8A762] hover:bg-[#0a3328] transition-colors">
-          <Plus size={15} weight="bold" /> استشارة جديدة
-        </motion.button>
+        <div className="flex items-center gap-2">
+          {/* ب8: the clients' messages — the lawyer's side of the request chat rooms (not a sidebar row: the owner keeps the menu as it is). */}
+          <Link href="/dashboard/lawyer/messages"
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold border transition-colors ${isDark ? "border-white/10 text-zinc-200 hover:bg-white/[0.05]" : "border-slate-200 text-slate-700 hover:bg-slate-50"}`}>
+            <ChatDots size={15} weight="bold" /> رسائل العملاء
+          </Link>
+          <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
+            onClick={() => setShowBooking(true)}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-[#0B3D2E] text-[#C8A762] hover:bg-[#0a3328] transition-colors">
+            <Plus size={15} weight="bold" /> استشارة جديدة
+          </motion.button>
+        </div>
       </motion.div>
 
       {/* KPIs — withheld while loading/unreadable; a claimed zero over a

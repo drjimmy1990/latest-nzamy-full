@@ -72,6 +72,10 @@
  *       left → 409 UPGRADE_CREDIT_TOO_BIG_AR. metadata.proration;
  *       quote.prorationCredit. A second open / paid order crediting the same
  *       plans hits payment_orders_proration_once_key → 409 UPGRADE_PENDING_AR.
+ *   3f. (batch l14) A coupon that leaves less than 1 SAR to pay (a full
+ *       discount, fullDiscount.ts) → 409 before any order: code
+ *       "card_required" without a usable saved card, else
+ *       "full_discount_pending" (the zero-amount activation is not built).
  *   5c. A LIMITED coupon (max_uses) is reserved for the order (the
  *       coupon_reserve RPC, 20261126_60) before any intent: exhausted → 400
  *       (the generic sentence), an RPC error → 503; the order is cancelled
@@ -125,6 +129,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { MoyasarClient } from "./moyasarClient.ts";
 import { buyerAllowed, PAYABLE_ITEMS, quote, resolveItem, type Billing, type PayableItem } from "./catalog.ts";
 import { checkMinTopup } from "./minTopup.ts";
+import { readConsultantStanding } from "../auth/consultantScopeServer.ts";
 import { LIBRARY_ACCOUNT_LOCKED_AR, LIBRARY_ACCOUNT_LOCKED_CODE } from "../library/accountAccess.ts";
 import { isMissingPaymentsObject } from "./fulfillDecision.ts";
 import { MOYASAR_DISABLED_MESSAGE_AR } from "./moyasarConfig.ts";
@@ -137,6 +142,7 @@ import {
   type OpenCouponOrderRow,
 } from "./couponServer.ts";
 import { applyDiscount, COUPON_INVALID_AR, COUPONS_UNAVAILABLE_AR } from "./couponRules.ts";
+import { fullDiscountDecision, hasUsableSavedCard, isFullDiscount } from "./fullDiscount.ts";
 import {
   isProrationOrderConflict,
   netAfterCredit,
@@ -180,6 +186,9 @@ import {
 
 export const CHECKOUT_FAILED_AR = "تعذّر بدء عملية الدفع، حاول مرة أخرى بعد قليل";
 export const AUDIENCE_REFUSED_AR = "هذه الباقة غير متاحة لنوع حسابك";
+/** l14: an independent consultant's account is library-only (owner, 23 Nov). */
+export const CONSULTANT_PLAN_REFUSED_AR = "حساب المستشار القانوني المستقل للمكتبة وحدها، فلا تُشترى له «إدارة المكتب». وتبقى باقات المكتبة متاحة لك.";
+const CONSULTANT_REFUSED_PLAN_IDS: ReadonlySet<string> = new Set(["lawyer-pro", "lawyer-bundle"]);
 export const UNKNOWN_ITEM_AR = "هذا المنتج غير متاح للدفع الإلكتروني";
 export const BILLING_NOT_OFFERED_AR = "مدة الاشتراك هذه غير متاحة لهذا المنتج";
 export { NOT_FOR_SALE_AR };
@@ -503,7 +512,8 @@ export async function startCheckoutWith(deps: CheckoutDeps, input: CheckoutInput
   // 2b (l8, owner item 9). a library plan (and the library-assistant points it
   // carries) for an account whose library is locked for its type: the owner's
   // message, before the audience check, before any price — nothing written
-  if (known.kind === "library" && deps.libraryAccountAllowed) {
+  // Batch l14: the ERP + library bundle carries a library pass, so the same lock.
+  if ((known.kind === "library" || known.libraryByBilling) && deps.libraryAccountAllowed) {
     let open = false;
     try {
       open = (await deps.libraryAccountAllowed(user.id)) === true;
@@ -513,6 +523,15 @@ export async function startCheckoutWith(deps: CheckoutDeps, input: CheckoutInput
     if (!open) return { status: 403, body: { error: LIBRARY_ACCOUNT_LOCKED_AR, code: LIBRARY_ACCOUNT_LOCKED_CODE } };
   }
   if (!buyerAllowed(known, userType)) return fail(403, AUDIENCE_REFUSED_AR);
+  // 2c (l14 integration, owner 23 Nov: «المستشار المستقل = المكتبة فقط»). An
+  // independent consultant (practice_kind 'consultant', no active firm
+  // membership — readConsultantStanding, the proxy's rule) cannot buy «إدارة
+  // المكتب» or the office + library bundle; the library itself stays open to
+  // him. A read that fails counts as an advocate (the existing rule).
+  if (userType === "lawyer" && CONSULTANT_REFUSED_PLAN_IDS.has(known.id)) {
+    const standing = await readConsultantStanding(admin, user.id);
+    if (standing.scopeKind === "consultant") return fail(403, CONSULTANT_PLAN_REFUSED_AR);
+  }
 
   // 3. the price — on the request's clock, so a launch price (owner ٣٠٣) is
   // charged while its campaign runs and never after
@@ -634,6 +653,21 @@ export async function startCheckoutWith(deps: CheckoutDeps, input: CheckoutInput
     ({ netHalalas: net, vatHalalas: vat, totalHalalas: total } = d);
     prorationMeta = prorationMetadata(upgrade, q.netHalalas);
     prorationQuote = { listNet: q.netHalalas, prorationCredit: d.discountHalalas };
+  }
+
+  // 3f (batch l14, owner item 67ب — fullDiscount.ts). a coupon that leaves
+  // less than Moyasar's smallest charge never reaches Moyasar and is never
+  // granted without a saved card: no card → 409 card_required; a card → 409
+  // full_discount_pending while the zero-amount activation is not built.
+  // Before any order is written; no coupon try is spent (the code is valid).
+  if (couponMeta && isFullDiscount(total)) {
+    const decision = fullDiscountDecision(await hasUsableSavedCard(admin, user.id, input.gatewayMode, now));
+    if (!decision.ok) {
+      return { status: decision.status, body: { error: decision.error, ...(decision.code ? { code: decision.code } : {}) } };
+    }
+    // FULL_DISCOUNT_ACTIVATION_READY true without the zero-amount path: still never an intent of < 1 SAR
+    console.error("[payments/checkout] a full-discount order reached checkout without an activation path:", user.id);
+    return fail(503, CHECKOUT_FAILED_AR);
   }
 
   // 4. earlier open orders for the same item

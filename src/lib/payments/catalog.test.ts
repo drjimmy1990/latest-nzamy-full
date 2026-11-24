@@ -35,6 +35,7 @@ void _tierIsServerTier;
 
 const EXPECTED_IDS = [
   "lawyer-pro",
+  "lawyer-bundle",
   "consultant-independent",
   "firm-basic",
   "firm-enterprise",
@@ -145,8 +146,11 @@ test("unknown ids, inherited object keys and unoffered billing are refused", () 
   assert.deepEqual(quote("lib-q1", "monthly"), { ok: false, error: "billing_not_offered" });
   assert.deepEqual(quote("topup-100", "yearly"), { ok: false, error: "billing_not_offered" });
   assert.deepEqual(quote("lawyer-pro", "once"), { ok: false, error: "billing_not_offered" });
-  // the new cycles only where the revised doc prices them (the two firm plans; ind-ai's are retired)
-  assert.deepEqual(quote("lawyer-pro", "quarterly"), { ok: false, error: "billing_not_offered" });
+  // the new cycles only where a doc prices them (the two firm plans; l14: «إدارة المكتب» and its bundle; ind-ai's are retired)
+  assert.deepEqual(quote("consultant-independent", "quarterly"), { ok: false, error: "billing_not_offered" });
+  assert.deepEqual(quote("lawyer-bundle", "monthly"), { ok: false, error: "billing_not_offered" });
+  assert.ok(quote("lawyer-pro", "quarterly").ok);
+  assert.ok(quote("lawyer-bundle", "quarterly").ok);
   assert.deepEqual(quote("ind-ai", "once"), { ok: false, error: "billing_not_offered" });
   assert.deepEqual(quote("ind-ai", "semiannual"), { ok: false, error: "not_for_sale" });
   assert.ok(quote("firm-basic", "quarterly").ok);
@@ -218,7 +222,8 @@ test("prices and grants as the owner set them (net halalas)", () => {
   // `retiredMonthly`: the monthly price stays listed (old orders), not sold.
   // `retired`: the other listed-not-sold cycles (q329, 1 Nov 2026).
   const expected: Record<string, { prices: Partial<Record<Billing, number>>; tier?: ServerTierLiteral; retiredMonthly?: number; retired?: Partial<Record<Billing, number>> }> = {
-    "lawyer-pro":             { prices: { yearly: 399000 },   tier: "pro", retiredMonthly: 39900 },
+    "lawyer-pro":             { prices: { quarterly: 120000, semiannual: 219000, yearly: 399000 },   tier: "pro", retiredMonthly: 39900 },
+    "lawyer-bundle":          { prices: { quarterly: 271200, semiannual: 508300, yearly: 933300 },   tier: "pro" },
     "consultant-independent": { prices: { yearly: 399000 },   tier: "pro", retiredMonthly: 39900 },
     "firm-basic":             { prices: { quarterly: 299000, semiannual: 549000, yearly: 990000 },    tier: "corp", retiredMonthly: 99000 },
     "firm-enterprise":        { prices: { quarterly: 449000, semiannual: 819000, yearly: 1490000 },   tier: "enterprise", retiredMonthly: 149000 },
@@ -262,6 +267,7 @@ test("derivation: every catalog item IS its price-book entry, in halalas — no 
     assert.equal(item.pointsValidityMonths, entry.pointsValidityMonths, id);
     assert.equal(item.libraryDays, entry.libraryDays, id);
     assert.equal(item.libraryPlanRef, entry.libraryPlanRef, id);
+    assert.deepEqual(item.libraryByBilling, entry.libraryByCycle, id);
     for (const [billing, p] of Object.entries(entry.prices)) {
       assert.equal(item.listedPrices[billing as Billing], p!.sar * 100, `${id} ${billing}`);
     }
@@ -313,6 +319,8 @@ test("each item's buyers: plans to their own audience, the library to profession
   const LIB = ["lawyer", "firm", "corporate", "government"];
   const want: Record<string, readonly string[] | "any"> = {
     "lawyer-pro": ["lawyer"],
+    // l14: the ERP + library bundle, lawyers only (the library is professional-only, LIVE-F05)
+    "lawyer-bundle": ["lawyer"],
     "consultant-independent": ["lawyer", "provider"],
     "firm-basic": ["firm"],
     "firm-enterprise": ["firm"],
@@ -513,19 +521,23 @@ test("formatHalalas refuses anything that is not a non-negative integer of halal
   }
 });
 
-// ─── subscription_plans (20261022_10 §6, repriced by 20261030_16) mirrors the book ───
+// ─── subscription_plans (20261022_10 §6, repriced by 20261030_16, then by
+// 20261204_20 — batch l14, the latest) mirrors the book ───
 
-test("20261030_16 sets every plan's subscription_plans prices to the book's listed price per cycle", () => {
-  const sql = readFileSync(new URL("../../../supabase/migrations/20261030_16_pricing_owner_package.sql", import.meta.url), "utf8");
-  const at = sql.search(/^update public\.subscription_plans p\s*$/m);
+test("20261204_20 (the latest repricing) sets every plan's subscription_plans prices to the book's listed price per cycle", () => {
+  const sql = readFileSync(new URL("../../../supabase/migrations/20261204_20_l14_pricing.sql", import.meta.url), "utf8");
+  const at = sql.search(/^update public\.subscription_plans p\s*\r?\n\s*set price_monthly/m);
   assert.ok(at > -1);
   const block = sql.slice(at, sql.indexOf(";", at));
   const num = "(null|\\d+)(?:::numeric)?";
   const rows = [...block.matchAll(new RegExp(`\\('([a-z-]+)',\\s*${num},\\s*${num},\\s*${num},\\s*${num}\\)`, "g"))];
   const plans = Object.values(PAYABLE_ITEMS).filter((i) => i.kind === "plan");
   assert.equal(rows.length, plans.length, "one row per plan in the book");
+  assert.deepEqual(rows.map((r) => r[1]).sort(), plans.map((p) => p.id).sort());
   const col = (v: string) => (v === "null" ? undefined : Number(v) * 100);
-  for (const [, id, m, q, h, y] of rows) {
+  for (const [, id, m0, q, h, y] of rows) {
+    // price_monthly is NOT NULL: a plan never listed monthly (lawyer-bundle) carries 0 there
+    const m = m0 === "0" && PAYABLE_ITEMS[id]?.listedPrices.monthly === undefined ? "null" : m0;
     const item = PAYABLE_ITEMS[id];
     assert.ok(item && item.kind === "plan", `${id} is a book plan`);
     assert.equal(col(m), item.listedPrices.monthly, `${id} monthly`);

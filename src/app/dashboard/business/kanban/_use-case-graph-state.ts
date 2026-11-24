@@ -417,7 +417,8 @@ export function useCaseGraphState({
     return () => el.removeEventListener("wheel", handleWheel);
   }, []);
 
-  // Keyboard: Ctrl+C copy, Ctrl+V paste, Ctrl+G group, Delete remove, Escape
+  // Keyboard: Ctrl+C copy, Ctrl+V paste, Ctrl+G group, Ctrl+A select every
+  // card (outside a field — there Ctrl+A selects the text), Delete remove, Escape
   // closes what is open (else deselects). Letters are matched on `e.code`, the
   // physical key, so they work on an Arabic layout (NOTE-08 item 07).
   useEffect(() => {
@@ -437,6 +438,11 @@ export function useCaseGraphState({
       if (action === "group") {
         e.preventDefault();
         createGroup();
+        return;
+      }
+      if (action === "selectAll") {
+        e.preventDefault();
+        setSelectedNodeIds(new Set(snapshotRef.current.nodes.map(n => n.id)));
         return;
       }
       if (action === "copy") {

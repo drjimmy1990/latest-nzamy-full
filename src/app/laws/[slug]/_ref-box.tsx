@@ -41,6 +41,23 @@
  *      an unreviewed automatic «إحالة» (l12's tag is gone) and not in the
  *      similar-meaning heading (it was «… (ربط آلي)»).
  *   9. File 16 §8: an empty section is hidden — never «لا توجد إحالات».
+ *
+ * Batch l14 (owner file 07, approved 23 Nov §15) — what changed:
+ *   * under the article only the counter: folded, never opened inside the text;
+ *     a press opens THE PANEL — the side box showing that article in full on a
+ *     wide screen, a bottom sheet on a phone or in reading mode — so the reading
+ *     never moves (items 2 and 4 above: the inline cards and «عرض الكل» dialog
+ *     are gone; «عرض الكل» opens the panel);
+ *   * «الإحالات (N)» in the article's header (ArticleRefsButton), where «أرسل
+ *     إلى الصائغ» was — that stays in the draft drawer;
+ *   * order: other documents first, «في هذا النظام» last with no extra fold;
+ *     the meaning-changing links, then the regulation, then reference,
+ *     exception, «مع مراعاة», penalty; the repealed at the end (arrangeSection);
+ *   * status: dot + border + worded badge — «معدّلة» amber, «ملغاة» faded with a
+ *     faint red, «لائحة» teal (statusLook);
+ *   * the panel's quick filters «الكل · لوائح · أحكام · معدِّلة · ملغاة»;
+ *   * the server drops the article itself and, among similar items, another
+ *     copy of the same law; three similar items at most (_shape.ts).
  */
 
 import { createContext, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type MouseEvent, type ReactNode } from "react";
@@ -49,7 +66,6 @@ import {
   ArrowSquareOut,
   BookBookmark,
   BookmarkSimple,
-  CaretDown,
   Check,
   Copy,
   Crosshair,
@@ -65,10 +81,16 @@ import { apiSlug } from "@/utils/apiSlug";
 import { cleanPrincipleText } from "@/app/precedents/[slug]/_principle-text";
 import {
   LAW_LINKS_ID,
+  REF_FILTERS,
+  arrangeSection,
   expandLawLinks,
   groupsOfRefs,
+  isRegulationRef,
+  refMatchesFilter,
+  type ArrangedGroup,
   type ArticleRefsOut,
   type LawLinks,
+  type RefFilter,
   type RefGroupOut,
   type RefItemOut,
 } from "@/app/api/library/laws/[slug]/citations/_shape";
@@ -152,10 +174,24 @@ function useBulk(lawSlug: string): BulkState | undefined {
   );
 }
 
-// ── One article's full list (?article=): the fallback, and «عرض الكل» ──
+// ── One article's full list (?article=): the fallback, and the panel ──
 
 /** Per page view: an article seen twice is fetched once. */
 const refsCache = new Map<string, Refs>();
+/** Batch l14: the header button and the chip of one article read the same answer — told when it lands. */
+let refsVersion = 0;
+const refsListeners = new Set<() => void>();
+function storeRefs(key: string, data: Refs) {
+  refsCache.set(key, data);
+  refsVersion++;
+  for (const l of refsListeners) l();
+}
+function subscribeRefs(l: () => void) {
+  refsListeners.add(l);
+  return () => {
+    refsListeners.delete(l);
+  };
+}
 /** The fallback asks at most three articles at a time, and one article once. */
 const MAX_PARALLEL = 3;
 let running = 0;
@@ -189,14 +225,15 @@ function fetchArticleRefs(lawSlug: string, articleId: string): Promise<Refs> {
   return p;
 }
 
-type LoadState = { status: "idle" | "loading" | "done" | "failed"; data?: Refs };
+/** `more`: the three per group of the law's answer are shown while the article's full list comes. */
+type LoadState = { status: "idle" | "loading" | "done" | "failed"; data?: Refs; more?: boolean };
 
 /**
  * The links of one article. From the law's bulk answer when it is there (no
  * request of its own); else, or when `full` asks for more than three per
  * group, from ?article= — once `enabled` (the inline list waits until the
- * article comes near the screen) and after `delayMs` (the side box waits for
- * the scroll to settle).
+ * article comes near the screen; the header button never asks) and after
+ * `delayMs` (the side box waits for the scroll to settle).
  */
 export function useArticleRefs(
   lawSlug: string,
@@ -204,11 +241,12 @@ export function useArticleRefs(
   { delayMs = 0, full = false, enabled = true }: { delayMs?: number; full?: boolean; enabled?: boolean } = {},
 ): LoadState {
   const bulk = useBulk(lawSlug);
+  useSyncExternalStore(subscribeRefs, () => refsVersion, () => 0);
   const fromBulk = useMemo<Refs | null>(() => {
     if (!articleId || bulk?.status !== "done") return null;
     return { available: true, ...expandLawLinks(bulk.data, articleId) };
   }, [bulk, articleId]);
-  // The bulk answer is enough, unless «عرض الكل» needs more than it holds.
+  // The bulk answer is enough, unless the panel needs more than it holds.
   const bulkEnough = !!fromBulk && (!full || (fromBulk.available && fromBulk.groups?.every((g) => g.keys.length >= g.total)));
   const bulkPending = !bulk || bulk.status === "loading";
   const key = articleId ? `${lawSlug}|${articleId}` : "";
@@ -220,7 +258,7 @@ export function useArticleRefs(
     const t = setTimeout(() => {
       fetchArticleRefs(lawSlug, articleId)
         .then((data) => {
-          refsCache.set(key, data);
+          storeRefs(key, data);
           if (live) setSettled({ key, failed: false });
         })
         .catch(() => live && setSettled({ key, failed: true }));
@@ -234,8 +272,8 @@ export function useArticleRefs(
   if (bulkEnough && fromBulk) return { status: "done", data: fromBulk };
   const cached = refsCache.get(key);
   if (cached) return { status: "done", data: cached };
-  // «عرض الكل» shows the three per group at once while the rest comes.
-  if (fromBulk) return { status: "done", data: fromBulk };
+  // The panel shows the three per group at once while the rest comes.
+  if (fromBulk) return { status: "done", data: fromBulk, more: wantFetch && !(settled.key === key && settled.failed) };
   if (!wantFetch) return { status: bulkPending ? "loading" : "idle" };
   return { status: settled.key === key && settled.failed ? "failed" : "loading" };
 }
@@ -252,7 +290,7 @@ export interface RefBoxPageContext {
   viewerHasFullAccess: boolean | null;
   isDark: boolean;
   isRTL: boolean;
-  /** Reading mode hides the side column; the list under each article stays. */
+  /** Reading mode hides the side column: the panel opens as a sheet. */
   inlineTrigger: boolean;
   showPaywall: () => void;
   /** «إضافة للمسودة» for an article of THIS law: the page's own add (same cart entry as its button). */
@@ -263,8 +301,17 @@ export interface RefBoxPageContext {
   articleLabel: (articleId: string) => string;
 }
 
+/**
+ * Batch l14 (owner file 07 §6): the article whose links are open — in the side
+ * column on a wide screen («side»: the side box shows it in full), else in a
+ * bottom sheet («sheet»: a phone, a tablet, reading mode).
+ */
+export type RefPanel = { articleId: string; mode: "side" | "sheet" };
+
 interface RefBoxContextValue extends RefBoxPageContext {
-  openAll: (articleId: string, tab: Section) => void;
+  panel: RefPanel | null;
+  openPanel: (articleId: string) => void;
+  closePanel: () => void;
   openPreview: (item: RefItem) => void;
 }
 
@@ -274,8 +321,14 @@ export function useRefBox(): RefBoxContextValue | null {
   return useContext(RefBoxContext);
 }
 
+/** The side column is drawn (page.tsx: `hidden lg:block`, not in reading mode). */
+function sideColumnShown(inlineTrigger: boolean): boolean {
+  if (inlineTrigger || typeof window === "undefined" || typeof window.matchMedia !== "function") return false;
+  return window.matchMedia("(min-width: 1024px)").matches;
+}
+
 export function RefBoxProvider({ value, children }: { value: RefBoxPageContext | null; children: ReactNode }) {
-  const [all, setAll] = useState<{ articleId: string; tab: Section } | null>(null);
+  const [panel, setPanel] = useState<RefPanel | null>(null);
   const [preview, setPreview] = useState<RefItem | null>(null);
   const lawSlug = value?.lawSlug ?? "";
   // The page already asked with the URL's slug; the law's own slug may differ.
@@ -287,16 +340,18 @@ export function RefBoxProvider({ value, children }: { value: RefBoxPageContext |
       value
         ? {
             ...value,
-            openAll: (articleId, tab) => setAll({ articleId, tab }),
+            panel,
+            openPanel: (articleId) => setPanel({ articleId, mode: sideColumnShown(value.inlineTrigger) ? "side" : "sheet" }),
+            closePanel: () => setPanel(null),
             openPreview: (item) => setPreview(item),
           }
         : null,
-    [value],
+    [value, panel],
   );
   return (
     <RefBoxContext.Provider value={ctx}>
       {children}
-      {ctx && all && <RefAllDialog ctx={ctx} articleId={all.articleId} initialTab={all.tab} onClose={() => setAll(null)} />}
+      {ctx && panel?.mode === "sheet" && <RefPanelSheet ctx={ctx} articleId={panel.articleId} onClose={() => setPanel(null)} />}
       {ctx && preview && <RefPreview ctx={ctx} item={preview} onClose={() => setPreview(null)} />}
     </RefBoxContext.Provider>
   );
@@ -349,7 +404,7 @@ function arDigits(n: number): string {
   return n.toLocaleString("ar-SA");
 }
 
-// ─── Sections and groups (under the article, side box) ───────────────────────
+// ─── Sections and groups (side box, panel) ───────────────────────────────────
 
 function visibleSections(data: Extract<Refs, { available: true }>): Section[] {
   // File 16 §8 (register 14 item 17): every empty section is hidden, never «لا توجد إحالات».
@@ -374,25 +429,83 @@ function linkCount(state: LoadState): number {
   return shownSections(state).reduce((n, s) => n + data.sections[s].total, 0);
 }
 
+/** The panel's quick filters (file 07 §6.4). */
+const FILTER_LABELS: Record<RefFilter, string> = {
+  all: "الكل",
+  regulation: "لوائح",
+  judicial: "أحكام",
+  amending: "معدِّلة",
+  repealed: "ملغاة",
+};
+
 /**
- * The sections of one article, each with its relation groups and at most
- * `max` small cards per group, then «عرض الكل (n)». The same component under
- * the article and in the side box.
+ * The sections of one article (batch l14, owner file 07 §4–§6, approved 23 Nov
+ * §15): in each, the items of OTHER documents first, by relation, the repealed
+ * at the end; then «في هذا النظام» — this law's own — with no extra fold. At
+ * most `max` cards per relation (the side box while reading), then «عرض الكل
+ * (n)», which opens the panel. `filter` (the panel) keeps matching items only.
  */
-function RefGroups({ ctx, articleId, data, max }: { ctx: RefBoxContextValue; articleId: string; data: Extract<Refs, { available: true }>; max: number }) {
+function RefGroups({
+  ctx,
+  articleId,
+  data,
+  max,
+  filter = "all",
+}: {
+  ctx: RefBoxContextValue;
+  articleId: string;
+  data: Extract<Refs, { available: true }>;
+  max: number;
+  filter?: RefFilter;
+}) {
   const { isDark } = ctx;
   const byKey = new Map<string, RefItem>();
   for (const s of SECTIONS) for (const it of data.sections[s]?.items ?? []) byKey.set(`${s}|${it.linkType}|${it.direction}|${it.key}`, it);
+  const itemOf = (g: RefGroupOut, k: string): RefItem | undefined => {
+    const it = byKey.get(`${g.section}|${g.linkType}|${g.direction}|${k}`) ?? data.sections[g.section]?.items.find((x) => x.key === k);
+    if (!it) return undefined;
+    const full = { ...it, relation: g.relation, linkType: g.linkType, direction: g.direction };
+    return refMatchesFilter(full, filter) ? full : undefined;
+  };
   const groups = groupsOf(data);
+  const rendered = visibleSections(data)
+    .map((s) => ({ s, parts: arrangeSection(groups.filter((g) => g.section === s), itemOf, ctx.lawSlug) }))
+    .filter(({ parts }) => parts.outside.length + parts.inside.length > 0);
+  if (rendered.length === 0) {
+    return <p className={`text-[11px] ${isDark ? "text-zinc-400" : "text-slate-500"}`}>لا شيء في هذا التصنيف.</p>;
+  }
+  const runs = (s: Section, list: ArrangedGroup[], locked: boolean) =>
+    list.map(({ group: g, keys }, i) => {
+      const prev = list[i - 1]?.group;
+      const heading = s !== "similar" && !(prev && prev.linkType === g.linkType && prev.direction === g.direction);
+      return (
+        <div key={`${g.linkType}|${g.direction}|${i}`}>
+          {heading && (
+            <p className={`mb-1 text-[10px] font-bold ${isDark ? "text-zinc-400" : "text-slate-500"}`}>
+              {g.relation} <span className="font-normal">({arDigits(g.total)})</span>
+            </p>
+          )}
+          <ul className="space-y-1">
+            {keys.slice(0, max).map((k) => {
+              const it = itemOf(g, k);
+              return it ? (
+                <li key={k}>
+                  <ItemButton ctx={ctx} item={it} locked={locked} />
+                </li>
+              ) : null;
+            })}
+          </ul>
+        </div>
+      );
+    });
   return (
     <div className="space-y-3">
-      {visibleSections(data).map((s, i) => {
+      {rendered.map(({ s, parts }, i) => {
         const meta = SECTION_META[s];
         const Icon = meta.icon;
         const sec = data.sections[s];
         const locked = SUBSCRIBER_SECTIONS.has(s) && ctx.viewerHasFullAccess === false;
-        const sectionGroups = groups.filter((g) => g.section === s);
-        const shown = sectionGroups.reduce((n, g) => n + Math.min(max, g.keys.length), 0);
+        const shown = [...parts.outside, ...parts.inside].reduce((n, r) => n + Math.min(max, r.keys.length), 0);
         return (
           <section key={s} aria-label={meta.title} className={i > 0 ? `pt-3 border-t ${isDark ? "border-white/[0.08]" : "border-slate-200"}` : ""}>
             <div className="flex items-center gap-1.5 mb-1.5">
@@ -402,35 +515,26 @@ function RefGroups({ ctx, articleId, data, max }: { ctx: RefBoxContextValue; art
               <span className={`rounded-md px-1.5 text-[10px] font-bold ${meta.chip(isDark)}`}>{arDigits(sec.total)}</span>
             </div>
             <div className="space-y-2">
-              {sectionGroups.map((g) => (
-                <div key={`${g.linkType}|${g.direction}`}>
-                  {s !== "similar" && (
-                    <p className={`mb-1 text-[10px] font-bold ${isDark ? "text-zinc-400" : "text-slate-500"}`}>
-                      {g.relation} <span className="font-normal">({arDigits(g.total)})</span>
-                    </p>
-                  )}
-                  <ul className="space-y-1">
-                    {g.keys.slice(0, max).map((k) => {
-                      const it = byKey.get(`${s}|${g.linkType}|${g.direction}|${k}`) ?? data.sections[s].items.find((x) => x.key === k);
-                      return it ? (
-                        <li key={k}>
-                          <ItemButton ctx={ctx} item={{ ...it, relation: g.relation, linkType: g.linkType, direction: g.direction }} locked={locked} />
-                        </li>
-                      ) : null;
-                    })}
-                  </ul>
+              {runs(s, parts.outside, locked)}
+              {parts.inside.length > 0 && (
+                <div className={parts.outside.length > 0 ? `pt-2 border-t border-dashed ${isDark ? "border-white/[0.08]" : "border-slate-200"}` : ""}>
+                  <p className={`mb-1 text-[10px] font-black ${isDark ? "text-zinc-300" : "text-slate-600"}`}>في هذا النظام</p>
+                  <div className="space-y-2">{runs(s, parts.inside, locked)}</div>
                 </div>
-              ))}
+              )}
             </div>
             <div className="mt-1.5 flex flex-wrap items-center gap-2">
-              {sec.total > shown && (
+              {filter === "all" && Number.isFinite(max) && sec.total > shown && (
                 <button
                   type="button"
-                  onClick={() => ctx.openAll(articleId, s)}
+                  onClick={() => ctx.openPanel(articleId)}
                   className={`min-h-[44px] sm:min-h-0 text-[10.5px] font-bold underline-offset-2 hover:underline ${meta.text(isDark)}`}
                 >
                   عرض الكل ({arDigits(sec.total)})
                 </button>
+              )}
+              {!Number.isFinite(max) && filter === "all" && sec.total > shown && (
+                <span className={`text-[10.5px] ${isDark ? "text-zinc-500" : "text-slate-500"}`}>يُعرض أول {arDigits(shown)} من {arDigits(sec.total)}.</span>
               )}
               {locked && sec.total > 0 && (
                 <button type="button" onClick={ctx.showPaywall} className="inline-flex items-center gap-1 rounded-lg bg-[#0B3D2E] px-2 py-0.5 text-[10px] font-bold text-white">
@@ -445,19 +549,69 @@ function RefGroups({ ctx, articleId, data, max }: { ctx: RefBoxContextValue; art
   );
 }
 
-function ItemButton({ ctx, item, locked }: { ctx: RefBoxContextValue; item: RefItem; locked: boolean }) {
-  const { isDark } = ctx;
+/**
+ * Owner file 07 §5 (approved 23 Nov): the status is a dot, a border and a
+ * WORDED badge — never colour alone. In force: a small green dot. Amended:
+ * amber, «معدّلة». Repealed: faded with a faint red, «ملغاة» (listed last).
+ * A regulation: its own teal and «لائحة».
+ */
+function statusLook(item: RefItem, isDark: boolean) {
   // A link whose article could not be pinned carries no status: it names and opens its document (Q132).
   const pill = item.anchorMissing ? null : pillOf(item);
-  const cls = `block w-full text-start rounded-lg border px-2 py-1.5 text-[11px] leading-snug transition ${isDark ? "border-white/[0.07] bg-zinc-900 text-zinc-200 hover:border-white/20" : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"}`;
+  const tone = pill?.tone ?? null;
+  const regulation = isRegulationRef(item);
+  const card =
+    tone === "repealed"
+      ? isDark
+        ? "border-red-500/20 bg-red-950/20 text-zinc-400 opacity-80"
+        : "border-red-200/70 bg-red-50/50 text-slate-500 opacity-80"
+      : tone === "amended"
+        ? isDark
+          ? "border-amber-500/30 bg-zinc-900 text-zinc-200"
+          : "border-amber-300 bg-white text-slate-700"
+        : regulation
+          ? isDark
+            ? "border-teal-500/30 bg-zinc-900 text-zinc-200"
+            : "border-teal-300 bg-white text-slate-700"
+          : isDark
+            ? "border-white/[0.07] bg-zinc-900 text-zinc-200"
+            : "border-slate-200 bg-white text-slate-700";
+  const dot = tone === "active" ? "bg-emerald-500" : tone === "amended" ? "bg-amber-500" : tone === "repealed" ? "bg-red-400" : tone === "unknown" ? "bg-slate-400" : null;
+  const badges: Array<{ label: string; cls: string }> = [];
+  if (pill && tone !== "active") {
+    badges.push({
+      label: pill.labelAr,
+      cls:
+        tone === "repealed"
+          ? isDark ? "bg-red-500/15 text-red-300" : "bg-red-100 text-red-700"
+          : tone === "amended"
+            ? isDark ? "bg-amber-500/15 text-amber-300" : "bg-amber-100 text-amber-800"
+            : isDark ? "bg-zinc-700/50 text-zinc-300" : "bg-slate-100 text-slate-600",
+    });
+  }
+  if (regulation) badges.push({ label: "لائحة", cls: isDark ? "bg-teal-500/15 text-teal-300" : "bg-teal-50 text-teal-700" });
+  return { pill, card, dot, badges };
+}
+
+function ItemButton({ ctx, item, locked }: { ctx: RefBoxContextValue; item: RefItem; locked: boolean }) {
+  const { isDark } = ctx;
+  const { pill, card, dot, badges } = statusLook(item, isDark);
+  const cls = `block w-full text-start rounded-lg border px-2 py-1.5 text-[11px] leading-snug transition hover:border-slate-400/60 ${card}`;
   const body = (
     <>
-      <span className="flex items-start gap-1">
-        {pill && <span role="img" aria-label={pill.labelAr} title={pill.labelAr} className="flex-shrink-0">{pill.emoji}</span>}
+      <span className="flex items-start gap-1.5">
+        {pill && dot && <span role="img" aria-label={pill.labelAr} title={pill.labelAr} className={`mt-1 h-2 w-2 flex-shrink-0 rounded-full ${dot}`} />}
         {locked && <Lock size={11} className={`mt-0.5 flex-shrink-0 ${isDark ? "text-zinc-500" : "text-slate-400"}`} aria-label="للمشتركين" />}
         <span className="line-clamp-2 flex-1 font-semibold">{item.title}</span>
       </span>
-      {item.relation && <span className={`mt-0.5 block text-[9.5px] ${isDark ? "text-zinc-500" : "text-slate-500"}`}>{item.relation}</span>}
+      {(item.relation || badges.length > 0) && (
+        <span className="mt-0.5 flex flex-wrap items-center gap-1">
+          {badges.map((b) => (
+            <span key={b.label} className={`rounded px-1 text-[9.5px] font-bold ${b.cls}`}>{b.label}</span>
+          ))}
+          {item.relation && <span className={`text-[9.5px] ${isDark ? "text-zinc-500" : "text-slate-500"}`}>{item.relation}</span>}
+        </span>
+      )}
     </>
   );
   if (item.anchorMissing) {
@@ -485,18 +639,19 @@ function RefsSkeleton({ isDark }: { isDark: boolean }) {
   );
 }
 
-// ─── Under each article ──────────────────────────────────────────────────────
+// ─── Under each article, and in its header ───────────────────────────────────
 
 /**
- * Owner L1 (lib02): the links under every article — a counter chip that folds
- * the cards, open by default. Nothing at all while loading or when the article
- * has no link (no spinner under hundreds of articles).
+ * Owner file 07 §6.1–2 (batch l14, approved 23 Nov): under the article only the
+ * counter — folded, nothing opens inside the text. A press opens the article's
+ * links in the side column (wide screen) or a bottom sheet (phone, reading
+ * mode), so the reading never moves. Nothing at all while loading or when the
+ * article has no link (no spinner under hundreds of articles).
  */
 export function ArticleRefsInline({ articleId }: { articleId: string }) {
   const ctx = useRefBox();
   const box = useRef<HTMLDivElement>(null);
   const [near, setNear] = useState(false);
-  const [open, setOpen] = useState(true);
   const bulk = useBulk(ctx?.lawSlug ?? "");
   const needsNear = !!ctx && (bulk?.status === "unavailable" || bulk?.status === "failed");
   // Fallback only: ask for this article's list while it is on screen (and
@@ -512,49 +667,163 @@ export function ArticleRefsInline({ articleId }: { articleId: string }) {
   if (!ctx) return null;
   const { isDark } = ctx;
   const data = state.data;
+  const open = ctx.panel?.articleId === articleId;
   return (
     <div ref={box} className="mt-3 print:hidden">
       {total > 0 && data && data.available && (
-        <>
-          <button
-            type="button"
-            aria-expanded={open}
-            onClick={() => setOpen((v) => !v)}
-            className={`inline-flex min-h-[44px] sm:min-h-0 items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[11px] font-bold ${isDark ? "border-white/[0.08] text-zinc-300" : "border-slate-200 text-slate-600"}`}
-          >
-            <LinkSimple size={12} className="text-[#C8A762]" /> الإحالات المرتبطة
-            <span className={`rounded-md px-1.5 text-[10px] ${isDark ? "bg-white/[0.06] text-zinc-300" : "bg-slate-100 text-slate-600"}`}>{arDigits(total)}</span>
-            <CaretDown size={11} className={`transition-transform ${open ? "rotate-180" : ""}`} aria-hidden />
-          </button>
-          {open && (
-            <div className={`mt-2 rounded-xl border p-3 ${isDark ? "border-white/[0.07] bg-zinc-900/40" : "border-slate-200 bg-slate-50/60"}`}>
-              <RefGroups ctx={ctx} articleId={articleId} data={data} max={3} />
-            </div>
-          )}
-        </>
+        <button
+          type="button"
+          aria-haspopup="dialog"
+          aria-expanded={open}
+          onClick={() => ctx.openPanel(articleId)}
+          className={`inline-flex min-h-[44px] sm:min-h-0 items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[11px] font-bold ${open ? "border-[#C8A762]/60" : isDark ? "border-white/[0.08]" : "border-slate-200"} ${isDark ? "text-zinc-300" : "text-slate-600"}`}
+        >
+          <LinkSimple size={12} className="text-[#C8A762]" /> الإحالات المرتبطة
+          <span className={`rounded-md px-1.5 text-[10px] ${isDark ? "bg-white/[0.06] text-zinc-300" : "bg-slate-100 text-slate-600"}`}>{arDigits(total)}</span>
+        </button>
       )}
     </div>
   );
 }
 
-// ─── The side box (desktop) ───────────────────────────────────────────────────
+/**
+ * Owner file 07 §6.3 / §7 (batch l14): «الإحالات (N)» in the article's header,
+ * where «أرسل إلى الصائغ» was (sending to the drafter stays in the draft
+ * drawer). For everyone; hidden when the article has no link. It never asks
+ * the server itself: the count comes from the law's one answer (or an answer
+ * already fetched) — a header per article must not send a request per article.
+ */
+export function ArticleRefsButton({ articleId }: { articleId: string }) {
+  const ctx = useRefBox();
+  const state = useArticleRefs(ctx?.lawSlug ?? "", ctx ? articleId : null, { enabled: false });
+  const total = linkCount(state);
+  if (!ctx || total === 0) return null;
+  const { isDark } = ctx;
+  const open = ctx.panel?.articleId === articleId;
+  return (
+    <button
+      type="button"
+      aria-haspopup="dialog"
+      aria-expanded={open}
+      onClick={() => ctx.openPanel(articleId)}
+      className={`inline-flex min-h-11 sm:min-h-0 items-center gap-1 px-1 text-[11.5px] font-semibold flex-shrink-0 ${isDark ? "text-zinc-400 hover:text-white" : "text-slate-500 hover:text-[#0B3D2E]"}`}
+    >
+      <LinkSimple size={12} className="text-[#C8A762]" /> الإحالات ({arDigits(total)})
+    </button>
+  );
+}
+
+// ─── The panel: the side column (wide screen) or a bottom sheet ──────────────
 
 /**
- * The box beside the article in view, from the same cache as the list under
- * it. In the fallback it waits 350 ms after the article changes, so scrolling
- * past fetches nothing. Hidden once the answer says the article has no link
- * (file 16 §8); while loading it keeps a skeleton frame, so the cards under it
- * in the sticky column do not jump.
+ * One article's links in full (batch l14, owner file 07 §6.4): the quick
+ * filters «الكل · لوائح · أحكام · معدِّلة · ملغاة» (each only when it has
+ * something), then every section with no cap per relation. Asks for the
+ * article's full list once — the panel was opened by a press.
+ */
+function RefPanelBody({ ctx, articleId }: { ctx: RefBoxContextValue; articleId: string }) {
+  const state = useArticleRefs(ctx.lawSlug, articleId, { full: true });
+  const [filter, setFilter] = useState<RefFilter>("all");
+  const { isDark } = ctx;
+  const data = state.status === "done" && state.data && state.data.available ? state.data : null;
+  const all = data ? visibleSections(data).flatMap((s) => data.sections[s].items) : [];
+  const filters = REF_FILTERS.filter((f) => f === "all" || all.some((it) => refMatchesFilter(it, f)));
+  const picked = filters.includes(filter) ? filter : "all";
+  if (state.status === "loading" || state.status === "idle") return <RefsSkeleton isDark={isDark} />;
+  if (state.status === "failed" || !data) return <p className={`text-[11px] ${isDark ? "text-zinc-400" : "text-slate-500"}`}>تعذّر تحميل الإحالات الآن.</p>;
+  if (!data.found || all.length === 0) return <p className={`text-[11px] ${isDark ? "text-zinc-400" : "text-slate-500"}`}>لا إحالات مسجّلة لهذه المادة بعد.</p>;
+  return (
+    <div className="space-y-3">
+      {filters.length > 1 && (
+        <div role="tablist" aria-label="تصنيف الإحالات" className="flex flex-wrap gap-1">
+          {filters.map((f) => {
+            const active = f === picked;
+            return (
+              <button
+                key={f}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => setFilter(f)}
+                className={`rounded-full border px-2.5 py-0.5 text-[10.5px] font-bold transition ${
+                  active
+                    ? "border-[#0B3D2E] bg-[#0B3D2E] text-white"
+                    : isDark
+                      ? "border-white/10 text-zinc-300 hover:bg-white/[0.06]"
+                      : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                }`}
+              >
+                {FILTER_LABELS[f]}
+              </button>
+            );
+          })}
+        </div>
+      )}
+      <RefGroups ctx={ctx} articleId={articleId} data={data} max={Number.POSITIVE_INFINITY} filter={picked} />
+      {state.more && <p className={`text-[10.5px] ${isDark ? "text-zinc-500" : "text-slate-500"}`}>جارٍ تحميل البقية…</p>}
+    </div>
+  );
+}
+
+function panelTitle(ctx: RefBoxContextValue, articleId: string): { title: string; label: string } {
+  return articleId === LAW_LINKS_ID ? { title: "روابط النظام كله", label: "" } : { title: "الإحالات المرتبطة", label: ctx.articleLabel(articleId) };
+}
+
+/**
+ * The box beside the article in view, from the same cache as the counter under
+ * it (compact: two cards per relation). When an article's links are opened on
+ * a wide screen it shows THAT article in full (the panel) until it is closed
+ * or the reading moves to another article. In the fallback it waits 350 ms
+ * after the article changes, so scrolling past fetches nothing. Hidden once the
+ * answer says the article has no link (file 16 §8); while loading it keeps a
+ * skeleton frame, so the cards under it in the sticky column do not jump.
  */
 export function RefBox({ articleId }: { articleId: string | null }) {
   const ctx = useRefBox();
-  const state = useArticleRefs(ctx?.lawSlug ?? "", ctx ? articleId : null, { delayMs: 350 });
-  if (!ctx || !articleId) return null;
-  if ((state.status === "done" || state.status === "idle") && shownSections(state).length === 0) return null;
+  const pinned = ctx?.panel?.mode === "side" ? ctx.panel.articleId : null;
+  const state = useArticleRefs(ctx?.lawSlug ?? "", ctx && !pinned ? articleId : null, { delayMs: 350 });
+  const frame = useRef<HTMLDivElement>(null);
+  const pinAt = useRef<{ pin: string; active: string | null } | null>(null);
+  const closePanel = ctx?.closePanel;
+  // The panel follows the reading again once the reader moves to another article.
+  useEffect(() => {
+    if (!pinned) {
+      pinAt.current = null;
+      return;
+    }
+    const at = pinAt.current;
+    if (!at || at.pin !== pinned) {
+      pinAt.current = { pin: pinned, active: articleId };
+      frame.current?.closest("aside")?.scrollTo({ top: 0, behavior: "smooth" });
+      return;
+    }
+    if (articleId === pinned) at.active = pinned;
+    else if (articleId !== at.active) closePanel?.();
+  }, [pinned, articleId, closePanel]);
+  if (!ctx) return null;
   const { isDark } = ctx;
+  const shell = `p-3.5 rounded-2xl border print:hidden ${isDark ? "bg-zinc-900 border-white/[0.07]" : "bg-white border-slate-200 shadow-sm"}`;
+  if (pinned) {
+    const { title, label } = panelTitle(ctx, pinned);
+    return (
+      <div ref={frame} role="region" aria-label={title} className={`${shell} ring-2 ring-[#C8A762]/40`}>
+        <h3 className={`mb-2.5 flex items-center gap-1.5 text-xs font-black ${isDark ? "text-zinc-300" : "text-slate-600"}`}>
+          <LinkSimple size={14} className="text-[#C8A762]" />
+          <span className="flex-1">{title}</span>
+          {label && <span className={`truncate max-w-[40%] text-[10px] font-bold ${isDark ? "text-zinc-500" : "text-slate-400"}`}>{label}</span>}
+          <button type="button" onClick={ctx.closePanel} aria-label="إغلاق" className={`flex h-7 w-7 items-center justify-center rounded-lg ${isDark ? "text-zinc-400 hover:bg-white/10" : "text-slate-500 hover:bg-slate-100"}`}>
+            <X size={13} weight="bold" />
+          </button>
+        </h3>
+        <RefPanelBody ctx={ctx} articleId={pinned} />
+      </div>
+    );
+  }
+  if (!articleId) return null;
+  if ((state.status === "done" || state.status === "idle") && shownSections(state).length === 0) return null;
   const data = state.data;
   return (
-    <div className={`p-3.5 rounded-2xl border print:hidden ${isDark ? "bg-zinc-900 border-white/[0.07]" : "bg-white border-slate-200 shadow-sm"}`}>
+    <div ref={frame} className={shell}>
       <h3 className={`mb-2.5 flex items-center gap-1.5 text-xs font-black ${isDark ? "text-zinc-300" : "text-slate-600"}`}>
         <LinkSimple size={14} className="text-[#C8A762]" />
         <span className="flex-1">الإحالات المرتبطة</span>
@@ -581,6 +850,7 @@ export function LawRefsBox() {
     [bulk],
   );
   if (!ctx || !data || !data.available || !data.found) return null;
+  if (ctx.panel?.mode === "side" && ctx.panel.articleId === LAW_LINKS_ID) return null;
   const { isDark } = ctx;
   return (
     <div className={`p-3.5 rounded-2xl border print:hidden ${isDark ? "bg-zinc-900 border-white/[0.07]" : "bg-white border-slate-200 shadow-sm"}`}>
@@ -592,8 +862,6 @@ export function LawRefsBox() {
     </div>
   );
 }
-
-// ─── «عرض الكل»: tabs per section ────────────────────────────────────────────
 
 function Modal({ isDark, label, onClose, children, wide }: { isDark: boolean; label: string; onClose: () => void; children: ReactNode; wide?: boolean }) {
   useEffect(() => {
@@ -616,76 +884,22 @@ function Modal({ isDark, label, onClose, children, wide }: { isDark: boolean; la
   );
 }
 
-function RefAllDialog({ ctx, articleId, initialTab, onClose }: { ctx: RefBoxContextValue; articleId: string; initialTab: Section; onClose: () => void }) {
-  const state = useArticleRefs(ctx.lawSlug, articleId, { full: true });
-  const [picked, setTab] = useState<Section>(initialTab);
+/** The panel as a bottom sheet (phone, tablet, reading mode — owner file 07 §6.2). */
+function RefPanelSheet({ ctx, articleId, onClose }: { ctx: RefBoxContextValue; articleId: string; onClose: () => void }) {
   const { isDark } = ctx;
-  const data = state.data && state.data.available ? state.data : null;
-  const tabs = data ? visibleSections(data) : [initialTab];
-  // An empty section has no tab (file 16 §8): fall back to the first one shown.
-  const tab = tabs.includes(picked) ? picked : (tabs[0] ?? picked);
-  const sec = data && tabs.includes(tab) ? data.sections[tab] : undefined;
-  const locked = SUBSCRIBER_SECTIONS.has(tab) && ctx.viewerHasFullAccess === false;
+  const { title, label } = panelTitle(ctx, articleId);
   return (
-    <Modal isDark={isDark} label="كل الإحالات المرتبطة" onClose={onClose} wide>
+    <Modal isDark={isDark} label={title} onClose={onClose} wide>
       <div className={`flex items-center justify-between px-4 py-3 border-b ${isDark ? "border-white/10" : "border-slate-200"}`}>
         <span className={`text-sm font-bold ${isDark ? "text-white" : "text-[#0B3D2E]"}`}>
-          {articleId === LAW_LINKS_ID ? "روابط النظام كله" : "الإحالات المرتبطة"}{" "}
-          <span className={`text-[11px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>{articleId === LAW_LINKS_ID ? "" : ctx.articleLabel(articleId)}</span>
+          {title} <span className={`text-[11px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>{label}</span>
         </span>
         <button type="button" onClick={onClose} aria-label="إغلاق" className={`flex h-11 w-11 items-center justify-center rounded-xl ${isDark ? "text-zinc-400 hover:bg-white/10" : "text-slate-500 hover:bg-slate-100"}`}>
           <X size={18} weight="bold" />
         </button>
       </div>
-      <div role="tablist" className={`flex gap-1 overflow-x-auto px-3 pt-3 border-b ${isDark ? "border-white/10" : "border-slate-200"}`}>
-        {tabs.map((s) => {
-          const meta = SECTION_META[s];
-          const active = s === tab;
-          return (
-            <button
-              key={s}
-              role="tab"
-              aria-selected={active}
-              type="button"
-              onClick={() => setTab(s)}
-              className={`relative flex-shrink-0 px-3 pb-2 pt-1 text-[11.5px] font-bold ${active ? meta.text(isDark) : isDark ? "text-zinc-500" : "text-slate-500"}`}
-            >
-              {meta.title} ({arDigits(data?.sections[s].total ?? 0)})
-              <span className={`absolute inset-x-1 -bottom-px h-[3px] rounded-full ${active ? meta.bar : "bg-transparent"}`} aria-hidden />
-            </button>
-          );
-        })}
-      </div>
-      <div className="flex-1 overflow-y-auto p-4">
-        {state.status === "loading" && !data && <RefsSkeleton isDark={isDark} />}
-        {state.status === "failed" && !data && <p className={`text-[11px] ${isDark ? "text-zinc-400" : "text-slate-500"}`}>تعذّر تحميل الإحالات الآن.</p>}
-        {data && sec && (
-          <>
-            {locked && (
-              <div className={`mb-3 flex items-center justify-between gap-2 rounded-xl border px-3 py-2 text-[11px] ${isDark ? "border-white/10 text-zinc-300" : "border-slate-200 text-slate-600"}`}>
-                <span>تظهر العناوين فقط؛ نصوص المبادئ والأحكام للمشتركين في المكتبة القانونية.</span>
-                <button type="button" onClick={ctx.showPaywall} className="flex-shrink-0 inline-flex items-center gap-1 rounded-lg bg-[#0B3D2E] px-2.5 py-1 text-[10.5px] font-bold text-white">
-                  <Lock size={11} /> اشترك في المكتبة
-                </button>
-              </div>
-            )}
-            <ul className="space-y-1.5">
-              {sec.items.map((it) => (
-                <li key={`${it.linkType}|${it.key}`} className="flex items-stretch gap-2">
-                  <span className={`w-1 flex-shrink-0 rounded-full ${SECTION_META[tab].bar}`} aria-hidden />
-                  <div className="flex-1 min-w-0">
-                    <ItemButton ctx={ctx} item={it} locked={locked} />
-                  </div>
-                </li>
-              ))}
-            </ul>
-            {sec.total > sec.items.length && (
-              <p className={`mt-3 text-[10.5px] ${isDark ? "text-zinc-500" : "text-slate-500"}`}>
-                {state.status === "loading" ? "جارٍ تحميل البقية…" : `يُعرض أول ${arDigits(sec.items.length)} من ${arDigits(sec.total)}.`}
-              </p>
-            )}
-          </>
-        )}
+      <div className="flex-1 overflow-y-auto overscroll-contain p-4">
+        <RefPanelBody ctx={ctx} articleId={articleId} />
       </div>
     </Modal>
   );

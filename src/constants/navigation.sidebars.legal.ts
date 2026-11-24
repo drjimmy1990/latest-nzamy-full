@@ -322,7 +322,7 @@ export const FIRM_SIDEBAR: SidebarGroup[] = [
     items: [
       // l9 row 70: «الخزنة القانونية» (/services/lawyers/vault, «قريباً») left
       // this menu — the firm's real vault is «الخزنة والترويسة» under «العقود».
-      { label: "الملف المهني للمكتب", labelEn: "Firm Profile",   href: "/dashboard/firm/profile",  icon: "UserCircle" },
+      { label: "الملف المهني للمكتب", labelEn: "Firm Profile",   href: "/dashboard/firm/profile",  icon: "UserCircle", badge: "قريباً" },
       // Owner decision ٢٠ — the firm's real reviews and the manager's opt-in to
       // show them publicly (20261017_31). No role list entry: the firm account
       // (managing_partner, full mode) gets this sidebar unfiltered, and it is

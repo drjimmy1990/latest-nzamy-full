@@ -196,6 +196,11 @@ const SECURITY_HEADERS = [
 const nextConfig: NextConfig = {
   // No `x-powered-by: Next.js` on responses (audit WEB-03).
   poweredByHeader: false,
+  // `next dev` only (the owner's local change, package of 23 Nov, folder 05):
+  // the dev server lets only localhost load its /_next files and live reload,
+  // so a page opened at http://127.0.0.1:3000 was refused. Loopback only —
+  // never a LAN or public host. No effect on `next build` / `next start`.
+  allowedDevOrigins: ["127.0.0.1"],
   // ── One HTML for every visitor (owner 18 Nov, items 2.7 + 4) ───────────────
   // By default Next "streams" generateMetadata for any user agent outside its
   // HTML-limited-bot list: the <title>, description, canonical and robots tags

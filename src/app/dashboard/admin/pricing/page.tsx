@@ -69,6 +69,9 @@ const API = "/api/v1/admin/pricing-catalog";
  */
 const BOOK_ROWS: Array<{ id: string; yearly: boolean; price: number }> = [
   { id: "lawyer-pro", yearly: true, price: bookSar("lawyer-pro", "yearly") },
+  // Batch l14: «إدارة المكتب + المكتبة القانونية» (its quarterly and
+  // half-yearly prices, like lawyer-pro's, are in the book and on /pricing).
+  { id: "lawyer-bundle", yearly: true, price: bookSar("lawyer-bundle", "yearly") },
   { id: "topup-500", yearly: false, price: bookSar("topup-500", "once") },
   { id: "topup-1000", yearly: false, price: bookSar("topup-1000", "once") },
   { id: "topup-2500", yearly: false, price: bookSar("topup-2500", "once") },

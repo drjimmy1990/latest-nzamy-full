@@ -6,6 +6,11 @@ import {
   type LibraryGrantSource,
   type LibraryPlanRef,
 } from '@/lib/libraryAccess';
+import {
+  FOUNDER_INVITE_TRIAL_PLAN_REF,
+  FOUNDER_INVITE_TRIAL_SOURCE,
+  isFounderInviteTrialCandidate,
+} from '@/lib/library/pointsGate';
 
 /**
  * The IO half of ./libraryAccess.ts: reads and writes
@@ -104,6 +109,50 @@ export async function activeLibraryGrantPlanRefs(userId: string): Promise<string
   } catch (err) {
     console.error('[libraryAccess] activeLibraryGrantPlanRefs failed:', err instanceof Error ? err.message : err);
     return null;
+  }
+}
+
+/**
+ * Owner ٢٠١ (أ), batch l14: true while the user holds a running founder-invite
+ * library trial — an active grant with plan_ref 'lib-trial' and source
+ * 'founder_campaign' (what founder_invite_redeem writes, 20261203_20) whose id
+ * a redeemed founder_invites row names. Any failure answers false: the user
+ * is then gated like every other grant holder (the gate itself fails open on
+ * an unreadable balance). Never throws.
+ */
+export async function hasActiveFounderInviteTrial(userId: string): Promise<boolean> {
+  if (typeof userId !== 'string' || userId.length === 0) return false;
+  try {
+    const supabase = await createServiceClient();
+    const nowIso = new Date().toISOString();
+    const { data, error } = await supabase
+      .from(TABLE)
+      .select('id, plan_ref, source')
+      .eq('user_id', userId)
+      .eq('plan_ref', FOUNDER_INVITE_TRIAL_PLAN_REF)
+      .eq('source', FOUNDER_INVITE_TRIAL_SOURCE)
+      .lte('starts_at', nowIso)
+      .gt('ends_at', nowIso)
+      .limit(10);
+    if (error || !Array.isArray(data)) return false;
+    const ids = (data as Array<{ id?: unknown; plan_ref?: unknown; source?: unknown }>)
+      .filter((row) => isFounderInviteTrialCandidate(row) && typeof row.id === 'string')
+      .map((row) => row.id as string);
+    if (ids.length === 0) return false;
+    const invites = await supabase
+      .from('founder_invites')
+      .select('id')
+      .eq('redeemed_by', userId)
+      .in('grant_id', ids)
+      .limit(1);
+    if (invites.error) {
+      console.error('[libraryAccess] founder invite trial read failed:', invites.error.code);
+      return false;
+    }
+    return Array.isArray(invites.data) && invites.data.length > 0;
+  } catch (err) {
+    console.error('[libraryAccess] hasActiveFounderInviteTrial failed:', err instanceof Error ? err.message : err);
+    return false;
   }
 }
 

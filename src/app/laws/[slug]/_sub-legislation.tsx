@@ -1,126 +1,141 @@
 "use client";
 
 /**
- * «التشريعات الفرعية» — owner file 16 §7 (19 Nov): under every law, its
- * sub-legislation («لائحة تنفيذية، قرارات وزارية…»), two or three, then
- * «عرض المزيد». Acceptance: نظام القضاء shows its first 2–3 with «عرض المزيد».
+ * «التشريعات الفرعية» — the options of the tab (owner spec 06, 23 Nov, batch
+ * l14). The permanent «التشريعات الفرعية (N)» box that stood in the middle
+ * column and in the sidebar is gone: the sub-legislation is counted on the
+ * law's card in the library («+N»), and inside the law page it lives in the
+ * «التشريعات الفرعية» tab. When that tab is chosen this row sits directly
+ * under the tabs: «الكل», then each sub-legislation by name (merged ones
+ * first, then the linked files — see _regulation-options.ts), the first three
+ * then «عرض المزيد». A merged one filters the view; a linked one opens its own
+ * page; one whose every article is withheld opens the upgrade.
  *
- * Two kinds, listed in this order:
- *   1. the regulations MERGED into this file (the names of the law route's
- *      `regulationIndex`, for every viewer) — each opens the regulation view
- *      on that instrument;
- *   2. the documents LINKED by their own `parent_law_id` (library agent's
- *      request of 19 Nov §1.8): `subLegislation.children`, already in the
- *      owner's order (the executive regulation first, then the newest; see
- *      src/app/api/library/laws/[slug]/_children.ts), without the ones that
- *      are one of the merged regulations — each opens its own page.
- * The first SUB_LEGISLATION_SHOWN, then «عرض المزيد (N)». Nothing is shown
- * when the law has neither.
- *
- * Titles, kinds and status are public like the catalogue; the issue date is
- * in the payload for a subscriber only. No text of any child is sent.
+ * Titles, kinds and status are public like the catalogue. No text of any
+ * child is sent.
  */
 
 import { useState } from "react";
 import Link from "next/link";
+import { ArrowSquareOut, Lock } from "@phosphor-icons/react";
 import { lawStatusPresentation } from "../law-status";
-import type { LawSystem } from "../data";
+import {
+  REG_OPTIONS_SHOWN,
+  hasAllOption,
+  visibleRegulationOptions,
+  type RegulationOption,
+} from "./_regulation-options";
 
-/** Owner §1.8 / file 16 §7: two or three entries, then «عرض المزيد». */
-export const SUB_LEGISLATION_SHOWN = 3;
-
-type SubLegislation = NonNullable<LawSystem["subLegislation"]>;
-
-type Entry =
-  | { kind: "merged"; name: string }
-  | { kind: "linked"; child: SubLegislation["children"][number] };
-
-export function SubLegislationSection({
-  subLegislation,
-  mergedNames = [],
-  onOpenMerged,
+export function SubLegislationOptions({
+  options,
+  selectedKey,
+  onSelect,
+  onLocked,
   isDark,
   isRTL = true,
-  placement = "main",
 }: {
-  subLegislation?: SubLegislation | null;
-  /** The names of the regulations merged into this file (regulationIndex). */
-  mergedNames?: readonly string[];
-  /** Opens the regulation view on one merged instrument. */
-  onOpenMerged?: (name: string) => void;
+  options: readonly RegulationOption[];
+  /** The merged instrument the view is filtered on; null = «الكل». */
+  selectedKey: string | null;
+  onSelect: (key: string | null) => void;
+  /** A sub-legislation whose every article is behind the paywall. */
+  onLocked: () => void;
   isDark: boolean;
   isRTL?: boolean;
-  /** O13 (batch l11): the same list in the reader's sidebar, a little tighter. */
-  placement?: "main" | "sidebar";
 }) {
   const [showAll, setShowAll] = useState(false);
-  const entries: Entry[] = [
-    ...Array.from(new Set(mergedNames.map((n) => n.trim()).filter(Boolean))).map((name): Entry => ({ kind: "merged", name })),
-    ...(subLegislation?.children ?? []).map((child): Entry => ({ kind: "linked", child })),
-  ];
-  if (entries.length === 0) return null;
-  const shown = showAll ? entries : entries.slice(0, SUB_LEGISLATION_SHOWN);
-  const more = entries.length - SUB_LEGISLATION_SHOWN;
-  const muted = isDark ? "text-zinc-400" : "text-slate-500";
-  const linkClass = `font-semibold hover:underline underline-offset-2 ${isDark ? "text-zinc-300" : "text-slate-800"}`;
+  const shown = visibleRegulationOptions(options, showAll, selectedKey);
+  const more = options.length - REG_OPTIONS_SHOWN;
+
+  const chip = (active: boolean) =>
+    `px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+      active
+        ? isDark ? "bg-[#C8A762] text-[#0B3D2E]" : "bg-amber-100 text-amber-800 border border-amber-300"
+        : isDark ? "text-zinc-400 hover:text-zinc-200" : "text-slate-500 hover:text-slate-700"
+    }`;
 
   return (
-    <section
-      data-testid={placement === "sidebar" ? "law-sub-legislation-sidebar" : "law-sub-legislation"}
-      aria-label={isRTL ? "التشريعات الفرعية" : "Sub-legislation"}
-      className={`rounded-2xl border ${placement === "sidebar" ? "p-3" : "px-4 py-3"} print:hidden ${
-        isDark ? "bg-zinc-900 border-white/[0.06]" : "bg-white border-slate-200 shadow-sm"
-      }`}
+    <nav
+      data-testid="law-sub-legislation-options"
+      aria-label={isRTL ? "اختيار التشريع الفرعي" : "Choose a sub-legislation"}
+      className={`flex flex-wrap gap-1.5 p-2 rounded-xl border print:hidden ${isDark ? "bg-zinc-900 border-white/[0.07]" : "bg-white border-slate-200 shadow-sm"}`}
     >
-      <h2 className={`text-[12px] font-bold mb-2 ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}>
-        {isRTL ? `التشريعات الفرعية (${entries.length})` : `Sub-legislation (${entries.length})`}
-      </h2>
-      <ul className="space-y-1.5">
-        {shown.map((entry) => {
-          if (entry.kind === "merged") {
-            return (
-              <li key={`merged:${entry.name}`} className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-[12px] leading-relaxed">
-                <button type="button" onClick={() => onOpenMerged?.(entry.name)} className={`${linkClass} ${isRTL ? "text-right" : "text-left"}`}>
-                  {entry.name}
-                </button>
-                <span className={`text-[10.5px] ${muted}`}>{isRTL ? "مدمجة في هذا الملف" : "Merged in this file"}</span>
-              </li>
-            );
-          }
-          const child = entry.child;
-          const status = lawStatusPresentation(child.status);
-          // As on the catalogue card: only a status that is not «ساري» is called out.
-          const statusTone = status && status.tone !== "effective" ? status.tone : null;
-          const statusClass = statusTone === "repealed"
-            ? "text-red-500"
-            : statusTone === "caution"
-              ? "text-amber-500"
-              : muted;
+      {hasAllOption(options) && (
+        <button
+          type="button"
+          onClick={() => onSelect(null)}
+          aria-pressed={selectedKey === null}
+          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+            selectedKey === null
+              ? isDark ? "bg-[#0B3D2E] text-[#C8A762]" : "bg-[#0B3D2E] text-white shadow-sm"
+              : isDark ? "text-zinc-400 hover:text-zinc-200" : "text-slate-500 hover:text-slate-700"
+          }`}
+        >
+          {isRTL ? "الكل" : "All"}
+        </button>
+      )}
+      {shown.map((o) => {
+        if (o.kind === "merged") {
           return (
-            <li key={child.slug} className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-[12px] leading-relaxed">
-              <Link href={`/laws/${encodeURIComponent(child.slug)}`} className={linkClass}>
-                {child.title || child.slug}
-              </Link>
-              {child.type && <span className={`text-[10.5px] ${muted}`}>{child.type}</span>}
-              {child.issueDate && <span className={`text-[10.5px] ${muted}`}>{child.issueDate}</span>}
-              {statusTone && status && (
-                <span className={`text-[10.5px] font-bold ${statusClass}`} data-child-status={child.status}>
-                  {isRTL ? status.labelAr : status.labelEn}
-                </span>
-              )}
-            </li>
+            <button
+              key={o.key}
+              type="button"
+              onClick={() => onSelect(o.key)}
+              aria-pressed={selectedKey === o.key}
+              className={chip(selectedKey === o.key)}
+            >
+              {o.label}
+            </button>
           );
-        })}
-      </ul>
+        }
+        if (o.kind === "locked") {
+          return (
+            <button
+              key={o.key}
+              type="button"
+              onClick={onLocked}
+              title={isRTL ? "نصّه للمشتركين" : "Subscribers only"}
+              className={`inline-flex items-center gap-1 ${chip(false)}`}
+            >
+              <Lock size={11} weight="bold" aria-hidden />
+              {o.label}
+            </button>
+          );
+        }
+        const status = lawStatusPresentation(o.status);
+        // As on the catalogue card: only a status that is not «ساري» is called out.
+        const statusTone = status && status.tone !== "effective" ? status.tone : null;
+        return (
+          <Link
+            key={o.key}
+            href={`/laws/${encodeURIComponent(o.slug)}`}
+            title={isRTL ? "ملف مستقل في المكتبة" : "A separate file in the library"}
+            className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border border-dashed ${
+              isDark ? "border-white/[0.12] text-zinc-400 hover:text-zinc-200" : "border-slate-300 text-slate-500 hover:text-slate-800"
+            }`}
+          >
+            {o.label}
+            {statusTone && status && (
+              <span
+                data-child-status={o.status}
+                className={`text-[10.5px] font-bold ${statusTone === "repealed" ? "text-red-500" : "text-amber-500"}`}
+              >
+                ({isRTL ? status.labelAr : status.labelEn})
+              </span>
+            )}
+            <ArrowSquareOut size={11} weight="bold" aria-hidden />
+          </Link>
+        );
+      })}
       {!showAll && more > 0 && (
         <button
           type="button"
           onClick={() => setShowAll(true)}
-          className={`mt-2 text-[11.5px] font-bold underline-offset-2 hover:underline ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}
+          className={`px-3 py-1.5 rounded-lg text-xs font-bold underline-offset-2 hover:underline ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}
         >
           {isRTL ? `عرض المزيد (${more})` : `Show more (${more})`}
         </button>
       )}
-    </section>
+    </nav>
   );
 }

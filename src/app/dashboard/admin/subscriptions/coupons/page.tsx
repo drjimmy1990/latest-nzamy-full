@@ -116,6 +116,8 @@ function mapRowToCoupon(row: Record<string, unknown>): AdminCoupon {
     excludedKinds: Array.isArray(row.excluded_kinds) ? (row.excluded_kinds as unknown[]).map(String) : undefined,
     firstPaidOrderOnly: metadata?.first_paid_order_only === true,
     excludedItems: excludedItemsOf({ metadata }),
+    // l14: «الغرض» (null on a code saved before 20261204_60)
+    purpose: typeof row.purpose === "string" ? row.purpose : "",
     createdAt: toDateInput(row.created_at),
     updatedAt: typeof row.updated_at === "string" ? row.updated_at : undefined,
   };
@@ -176,6 +178,7 @@ const EMPTY_COUPON: AdminCoupon = {
   excludedKinds: ["topup"],
   firstPaidOrderOnly: false,
   excludedItems: [],
+  purpose: "",
 };
 
 export default function AdminCouponsPage() {
@@ -504,17 +507,18 @@ export default function AdminCouponsPage() {
                     </select>
                   </Field>
                   <Field label="القيمة">
-                    <input type="number" value={draft.value} min={1} max={draft.discountType === "percentage" ? 25 : undefined} onChange={(event) => setDraft({ ...draft, value: Number(event.target.value) })} className={inputClass(isDark)} />
+                    <input type="number" value={draft.value} min={1} max={draft.discountType === "percentage" ? draft.maxDiscountPct ?? 25 : undefined} onChange={(event) => setDraft({ ...draft, value: Number(event.target.value) })} className={inputClass(isDark)} />
                   </Field>
                   {/* P7 review: checkout honours every active discount coupon;
-                      the server refuses one without a minimum, a cap above
-                      25 % and any coupon on point top-ups. */}
+                      the server refuses one without a minimum and any coupon
+                      on point top-ups. l14: the cap goes up to 100 % (default
+                      25), above 25 only with a purpose. */}
                   <Field label="الحد الأدنى للطلب قبل الضريبة (ر.س) — مطلوب">
                     <input type="number" value={draft.minOrderAmount ?? 0} min={1} required onChange={(event) => setDraft({ ...draft, minOrderAmount: Number(event.target.value) })} className={inputClass(isDark)} />
                   </Field>
                   {draft.maxDiscountPct !== undefined && (
-                    <Field label="سقف الخصم ٪ من صافي الطلب (حتى ٢٥)">
-                      <input type="number" value={draft.maxDiscountPct} min={1} max={25} onChange={(event) => setDraft({ ...draft, maxDiscountPct: Number(event.target.value) })} className={inputClass(isDark)} />
+                    <Field label="سقف الخصم ٪ من صافي الطلب (الافتراضي ٢٥، وحتى ١٠٠)">
+                      <input type="number" value={draft.maxDiscountPct} min={1} max={100} onChange={(event) => setDraft({ ...draft, maxDiscountPct: Number(event.target.value) })} className={inputClass(isDark)} />
                     </Field>
                   )}
                 </>
@@ -542,6 +546,23 @@ export default function AdminCouponsPage() {
                 </select>
               </Field>
             </div>
+            {/* l14 (owner item 67أ): the purpose is mandatory for every new code */}
+            <Field label="الغرض من الكود — مطلوب">
+              <textarea
+                value={draft.purpose ?? ""}
+                maxLength={500}
+                rows={2}
+                placeholder="مثال: تجربة مجانية لمكتب شريك، أو تعويض عميل عن خلل"
+                onChange={(event) => setDraft({ ...draft, purpose: event.target.value })}
+                className={inputClass(isDark)}
+              />
+            </Field>
+            {draft.couponType === "discount" && (draft.maxDiscountPct ?? 25) > 25 && (
+              <p className={`flex items-start gap-1.5 text-xs font-bold leading-6 ${isDark ? "text-amber-400" : "text-amber-700"}`}>
+                <Warning size={14} weight="fill" className="mt-1 shrink-0" />
+                سقف الخصم فوق ٢٥٪ (القاعدة العامة ٢٥٪). الكود الذي يغطي المبلغ كاملًا لا يُفعَّل للمشتري إلا مع بطاقة دفع محفوظة في حسابه، وتفعيله الكامل قيد التفعيل حاليًا.
+              </p>
+            )}
             <div>
               <p className={`text-xs font-bold mb-2 ${muted}`}>الأدوار المستهدفة</p>
               <div className="flex flex-wrap gap-2">
@@ -741,6 +762,10 @@ export default function AdminCouponsPage() {
                       </span>
                     </div>
                     {/* S6-T13: the «الجهاز المستخدم» row is gone — no device is ever recorded for a coupon. */}
+                    <div className="flex justify-between items-start gap-3">
+                      <span className={`shrink-0 ${muted}`}>الغرض</span>
+                      <span className={`text-left font-bold leading-6 ${isDark ? "text-gray-300" : "text-gray-700"}`}>{selectedCoupon.purpose || "— (كود قديم بلا غرض مسجّل)"}</span>
+                    </div>
                   </div>
                 </div>
 

@@ -10,6 +10,17 @@ import {
 // this file imports next/server, so nothing could import it to make a claim
 // about who is allowed where. See routeAccess.test.ts for what is pinned.
 import { routeAccessRuleFor, isProtectedApiPath } from "@/lib/auth/routeAccess";
+import {
+  CONSULTANT_HOME_PATH,
+  consultantApiVerdict,
+  consultantPageVerdict,
+  isConsultantAllowedApiPath,
+  isConsultantAllowedPath,
+  isConsultantScopedApiPath,
+  isConsultantScopedPagePath,
+} from "@/lib/auth/consultantScope";
+import { readConsultantStandingCached } from "@/lib/auth/consultantScopeServer";
+import { CONSULTANT_RESERVED_MESSAGE } from "@/lib/auth/practiceKind";
 // Gate 2 asks this which membership table (if any) can additionally open a
 // path. Pure — it imports routeAccess and nothing else — so it is safe in the
 // edge bundle, and it is the SAME function the browser guard's membership
@@ -901,6 +912,27 @@ async function proxyRoutes(req: NextRequest) {
     if (isSuspendedUser(user)) {
       return NextResponse.json({ error: ACCOUNT_SUSPENDED_AR, code: ACCOUNT_SUSPENDED_CODE }, { status: 403 });
     }
+    // Owner decision (22-23 Nov 2026): the independent legal consultant sees the
+    // library only. /api/v1/lawyer/* is the lawyer's workspace API (cases,
+    // clients, finance, the trust account, contracts, documents…), and no route
+    // there checks practice_kind, so the one shared check is here. An ALLOWLIST:
+    // a route not named in consultantScope.ts is closed to him. Only paths
+    // outside the small allowed list ask (one RLS-scoped lawyer_profiles row,
+    // plus a firm_members row for a confirmed consultant), and the answer is
+    // kept for a minute per process, keyed by the verified user id; a failed
+    // read is never kept. Only the exact value 'consultant' locks anyone; a
+    // blank or unknown value is an advocate.
+    if (isConsultantScopedApiPath(pathname) && !isConsultantAllowedApiPath(pathname)) {
+      const standing = await readConsultantStandingCached(supabase, user.id);
+      if (standing.readFailed) {
+        // The kind could not be read, so who is asking is unknown: ask again
+        // rather than guess, in either direction.
+        return NextResponse.json({ error: AUTH_UNAVAILABLE_AR }, { status: 503 });
+      }
+      if (consultantApiVerdict(pathname, standing.scopeKind) === "forbid") {
+        return NextResponse.json({ error: CONSULTANT_RESERVED_MESSAGE, code: "consultant_scope" }, { status: 403 });
+      }
+    }
     // Owner item 18 (batch l7): the admin API needs the two-step rule
     // (src/lib/auth/staffMfa.ts). No profiles read: a non-admin is refused by
     // every route here anyway, so the rule is applied to whoever calls. The
@@ -1230,6 +1262,27 @@ async function proxyRoutes(req: NextRequest) {
       const url = req.nextUrl.clone();
       url.pathname = "/onboarding";
       return NextResponse.redirect(url);
+    }
+
+    // ─── Owner decision (22-23 Nov 2026): the consultant sees the library only ──
+    // A `lawyer` whose practice_kind is exactly 'consultant' and who belongs to
+    // no firm is sent home from every lawyer-workspace page and AI tool page
+    // that consultantScope.ts does not allow; his home (/dashboard/lawyer)
+    // renders the library dashboard. Only a `lawyer` on a scoped path asks, and
+    // the answer is kept for a minute per process (readConsultantStandingCached),
+    // so a lawyer moving between pages does not pay a read each time. A read
+    // that fails is closed like the API branch above: he is sent to his home,
+    // which every lawyer may open, and the next request reads again.
+    if (knownType === "lawyer" && isConsultantScopedPagePath(pathname) && !isConsultantAllowedPath(pathname)) {
+      const standing = await readConsultantStandingCached(supabase, user.id);
+      if (standing.readFailed || consultantPageVerdict(pathname, standing.scopeKind) === "redirect_home") {
+        const home = req.nextUrl.clone();
+        home.pathname = CONSULTANT_HOME_PATH;
+        home.search = "";
+        const homeRedirect = NextResponse.redirect(home);
+        supabaseResponse.cookies.getAll().forEach((cookie) => homeRedirect.cookies.set(cookie));
+        return homeRedirect;
+      }
     }
 
     // ─── Gate 2: RBAC — is this user's own dashboard? ───────────────────────

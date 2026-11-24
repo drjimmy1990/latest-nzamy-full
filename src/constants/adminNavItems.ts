@@ -52,7 +52,9 @@ export const ADMIN_NAV_SECTIONS: readonly AdminNavSection[] = [
     sectionEn: "Users",
     items: [
       { href: "/dashboard/admin/users", label: "جميع المستخدمين", labelEn: "All Users", icon: "Users" },
-      { href: "/dashboard/admin/users/new", label: "إضافة مستخدم", labelEn: "Add User", icon: "UserCirclePlus" },
+      // «إضافة مستخدم» (/dashboard/admin/users/new) is not listed: no route creates an
+      // account from the console yet, and the page said «تم إنشاء الحساب» without
+      // sending anything (live check of 13 Nov, row 30). The page is «قيد التفعيل».
       { href: "/dashboard/admin/users/roles", label: "الأدوار والصلاحيات", labelEn: "Roles & Permissions", icon: "Key" },
       { href: "/dashboard/admin/business", label: "بروفيلات الشركات", labelEn: "Company Profiles", icon: "Buildings" },
       { href: "/dashboard/admin/provider-verification", label: "تحقق المزودين", labelEn: "Provider KYC", icon: "ShieldCheck" },
@@ -88,6 +90,8 @@ export const ADMIN_NAV_SECTIONS: readonly AdminNavSection[] = [
       { href: "/dashboard/admin/platform", label: "مركز تحكم المنصة", labelEn: "Platform Control", icon: "Globe" },
       { href: "/dashboard/admin/content/laws", label: "المكتبة القانونية", labelEn: "Library", icon: "BookOpen" },
       { href: "/dashboard/admin/library-issue-reports", label: "بلاغات المكتبة", labelEn: "Library Reports", icon: "Flag" },
+      // l14 (owner file 07 §2, approved 23 Nov): where the library's links are poor
+      { href: "/dashboard/admin/library-links-coverage", label: "تغطية الإحالات", labelEn: "Links Coverage", icon: "TreeStructure" },
       { href: "/dashboard/admin/content/articles", label: "المدونة القانونية", labelEn: "Articles", icon: "Article" },
       // l13 (owner Q190–Q195): «المجلة التشريعية» — entries, approval, the monthly issue
       { href: "/dashboard/admin/journal", label: "المجلة التشريعية", labelEn: "Legislative Journal", icon: "Article" },

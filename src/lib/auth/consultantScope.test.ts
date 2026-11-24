@@ -1,0 +1,160 @@
+/**
+ * consultantScope.test.ts — the independent legal consultant sees the library
+ * only (owner decision, 22–23 Nov 2026). The scope is an ALLOWLIST: whatever it
+ * does not name is closed to him, so a route added tomorrow is closed by default.
+ *
+ * RUN: node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test src/lib/auth/consultantScope.test.ts
+ */
+import test from "node:test";
+import assert from "node:assert/strict";
+
+import {
+  CONSULTANT_HOME_PATH,
+  consultantApiVerdict,
+  consultantPageVerdict,
+  isConsultantAllowedApiPath,
+  isConsultantAllowedPath,
+  isConsultantScopedApiPath,
+  isConsultantScopedPagePath,
+  isIndependentConsultantSession,
+} from "./consultantScope.ts";
+
+test("the consultant's allowed pages: home, library, my library, notifications, settings, profile, join, marketplace", () => {
+  for (const p of [
+    "/dashboard/lawyer",
+    "/dashboard/lawyer/",
+    "/laws",
+    "/laws/my",
+    "/laws/some-law?x=1",
+    "/notifications",
+    "/settings",
+    "/dashboard/lawyer/profile/edit",
+    "/dashboard/lawyer/join-office",
+    "/marketplace",
+    "/marketplace/post",
+    "/marketplace/order/abc",
+    "/marketplace/req-123",
+    "/pricing",
+  ]) {
+    assert.equal(isConsultantAllowedPath(p), true, p);
+  }
+});
+
+test("everything the lawyer dashboard carries is closed, and a prefix is segment-exact", () => {
+  for (const p of [
+    "/dashboard/lawyer/cases",
+    "/dashboard/lawyer/cases/123",
+    "/dashboard/lawyer/clients",
+    "/dashboard/lawyer/finance",
+    "/dashboard/lawyer/vault",
+    "/dashboard/lawyer/contracts",
+    "/dashboard/lawyer/documents",
+    "/dashboard/lawyer/consultations",
+    "/dashboard/lawyer/hearings",
+    "/dashboard/lawyerx",
+    "/dashboard/lawyer/profiles",
+    "/lawsuit",
+    "/ai/legal-drafter",
+    "/ai/legal-opinion",
+    "/ai/contracts",
+    "/dashboard/firm",
+  ]) {
+    assert.equal(isConsultantAllowedPath(p), false, p);
+  }
+  assert.equal(isConsultantAllowedPath(undefined as unknown as string), false);
+});
+
+test("a page verdict applies to a consultant of exactly 'consultant', inside the lawyer workspace only", () => {
+  assert.equal(consultantPageVerdict("/dashboard/lawyer/cases", "consultant"), "redirect_home");
+  assert.equal(consultantPageVerdict("/ai/draft", "consultant"), "redirect_home");
+  assert.equal(consultantPageVerdict("/dashboard/lawyer", "consultant"), "allow");
+  assert.equal(consultantPageVerdict("/laws/my", "consultant"), "allow");
+  assert.equal(CONSULTANT_HOME_PATH, "/dashboard/lawyer");
+});
+
+test("a blank, null, unknown or differently-cased practice kind never locks a lawyer out", () => {
+  for (const kind of [undefined, null, "", " ", "advocate", "Consultant", "CONSULTANT", "consultant ", 0, false, {}, []]) {
+    assert.equal(consultantPageVerdict("/dashboard/lawyer/cases", kind), "allow", JSON.stringify(kind));
+    assert.equal(consultantApiVerdict("/api/v1/lawyer/clients", kind), "allow", JSON.stringify(kind));
+  }
+});
+
+test("the API verdict: a consultant is refused on every /api/v1/lawyer route that is not allowed (fail closed)", () => {
+  for (const p of [
+    "/api/v1/lawyer/clients",
+    "/api/v1/lawyer/finance/summary",
+    "/api/v1/lawyer/trust",
+    "/api/v1/lawyer/contracts",
+    "/api/v1/lawyer/ledger",
+    "/api/v1/lawyer/hearings",
+    "/api/v1/lawyer/market-requests",
+    "/api/v1/lawyer/services",
+    "/api/v1/lawyer/a-route-added-tomorrow",
+    "/api/v1/lawyer/signup-verification-x",
+  ]) {
+    assert.equal(consultantApiVerdict(p, "consultant"), "forbid", p);
+    assert.equal(consultantApiVerdict(p, "advocate"), "allow", p);
+  }
+});
+
+test("the API routes a consultant needs to verify his licence and keep his profile stay open", () => {
+  for (const p of [
+    "/api/v1/lawyer/signup-verification",
+    "/api/v1/lawyer/signup-verification/email/start",
+    "/api/v1/lawyer/signup-verification/licence",
+    "/api/v1/lawyer/licence-image",
+    "/api/v1/lawyer/profile-row",
+  ]) {
+    assert.equal(isConsultantAllowedApiPath(p), true, p);
+    assert.equal(consultantApiVerdict(p, "consultant"), "allow", p);
+  }
+});
+
+test("the scope is the lawyer workspace: /api/v1/lawyers (the public directory) is outside it", () => {
+  assert.equal(isConsultantScopedApiPath("/api/v1/lawyer/clients"), true);
+  assert.equal(isConsultantScopedApiPath("/api/v1/lawyers"), false);
+  assert.equal(isConsultantScopedApiPath("/api/v1/lawyers/42"), false);
+  assert.equal(consultantApiVerdict("/api/v1/lawyers", "consultant"), "allow");
+  assert.equal(isConsultantScopedPagePath("/dashboard/lawyer"), true);
+  assert.equal(isConsultantScopedPagePath("/dashboard/lawyer/cases"), true);
+  assert.equal(isConsultantScopedPagePath("/dashboard/lawyers"), false);
+  assert.equal(isConsultantScopedPagePath("/laws"), false);
+});
+
+// ── review of 23 Nov: the marketplace is his as a client only ─────────────────
+
+test("the provider side of the marketplace is closed to him; the client side stays open", () => {
+  for (const p of [
+    "/marketplace/collaborate",
+    "/marketplace/collaborate/",
+    "/marketplace/workspace",
+    "/marketplace/workspace/col-1",
+    "/marketplace/profile",
+    "/marketplace/req-1/offers",
+    "/marketplacex",
+  ]) {
+    assert.equal(isConsultantAllowedPath(p), false, p);
+  }
+  for (const p of ["/marketplace", "/marketplace/", "/marketplace/post", "/marketplace/order/o-1", "/marketplace/r-9?tab=offers"]) {
+    assert.equal(isConsultantAllowedPath(p), true, p);
+  }
+  // the proxy's verdict on the PROTECTED provider pages
+  assert.equal(consultantPageVerdict("/marketplace/collaborate", "consultant"), "redirect_home");
+  assert.equal(consultantPageVerdict("/marketplace/workspace/col-1", "consultant"), "redirect_home");
+  assert.equal(consultantPageVerdict("/marketplace/post", "consultant"), "allow");
+  assert.equal(consultantPageVerdict("/marketplace/order/o-1", "consultant"), "allow");
+  // an advocate is untouched there
+  assert.equal(consultantPageVerdict("/marketplace/collaborate", "advocate"), "allow");
+  assert.equal(isConsultantScopedPagePath("/marketplace/collaborate"), true);
+});
+
+test("the screen's 'independent consultant': a lawyer, exactly 'consultant', and no active firm membership", () => {
+  assert.equal(isIndependentConsultantSession("lawyer", "consultant", false), true);
+  assert.equal(isIndependentConsultantSession("lawyer", "consultant", true), false, "a firm member keeps his role's list");
+  for (const kind of [undefined, null, "", "advocate", "Consultant"]) {
+    assert.equal(isIndependentConsultantSession("lawyer", kind, false), false, JSON.stringify(kind));
+  }
+  for (const type of ["firm", "individual", "admin", "corporate", undefined]) {
+    assert.equal(isIndependentConsultantSession(type, "consultant", false), false, String(type));
+  }
+});

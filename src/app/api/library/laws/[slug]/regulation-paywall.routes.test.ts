@@ -132,7 +132,8 @@ test("the page carries the count through its whitelist and shows the existing lo
   // entry point, not just the content behind it.
   assert.match(
     pageSource,
-    /law\.chapters\.some\(ch => ch\.articles\.some\(a => a\.regulations && a\.regulations\.length > 0\)\) \|\|\s*\(law\.regulationInstrumentsLocked \?\? 0\) > 0\) && \(/,
+    // Owner spec 06 (l14): the linked sub-legislation keeps it open too.
+    /law\.chapters\.some\(ch => ch\.articles\.some\(a => a\.regulations && a\.regulations\.length > 0\)\) \|\|\s*\(law\.regulationInstrumentsLocked \?\? 0\) > 0(?: \|\|\s*hasLinkedSubLegislation)?\) && \(/,
     "the regulation tab button must also open on the withheld count",
   );
 

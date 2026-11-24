@@ -54,7 +54,7 @@
         "modelId": {
           "__rl": true,
           "mode": "id",
-          "value": "models/gemini-3.1-flash-lite"
+          "value": "models/gemini-3.5-flash-lite"
         },
         "messages": {
           "values": [
@@ -87,7 +87,7 @@
         220
       ],
       "parameters": {
-        "jsCode": "const b = $('Webhook').first().json.body;\nconst fail = (code, message) => [{ json: { run_id: b.run_id, status: 'failed', output: null, citations: [], usage: null, error: { code, message } } }];\nconst textOf = (j) => {\n  const c = j && Array.isArray(j.candidates) ? j.candidates[0] : null;\n  const parts = c && c.content && Array.isArray(c.content.parts) ? c.content.parts : (j && j.content && Array.isArray(j.content.parts) ? j.content.parts : null);\n  if (parts) return parts.filter((p) => p && !p.thought).map((p) => (typeof p.text === 'string' ? p.text : '')).join('');\n  return j && typeof j.output === 'string' ? j.output : (j && typeof j.text === 'string' ? j.text : '');\n};\nconst usageOf = (j) => {\n  const m = j && j.usageMetadata && typeof j.usageMetadata === 'object' ? j.usageMetadata : {};\n  const n = (v) => (typeof v === 'number' && v > 0 ? Math.round(v) : 0);\n  return { input_tokens: n(m.promptTokenCount) + n(m.toolUsePromptTokenCount), output_tokens: n(m.candidatesTokenCount) + n(m.thoughtsTokenCount), cache_read_tokens: n(m.cachedContentTokenCount) };\n};\nlet t = textOf($json);\nt = t.trim().replace(/^```[A-Za-z]*[ \\t]*\\n?/, '').replace(/\\n?```\\s*$/, '').trim();\nif (!t) return fail('schema_invalid', 'the model returned no text');\nconst cited = [...new Set([...t.matchAll(/\\[(S\\d{1,3})\\]/g)].map((m) => m[1]))];\nreturn [{ json: { run_id: b.run_id, status: 'succeeded', output: { reply: t }, citations: cited, usage: { model: 'gemini-3.1-flash-lite', ...usageOf($json) }, error: null } }];"
+        "jsCode": "const b = $('Webhook').first().json.body;\nconst fail = (code, message) => [{ json: { run_id: b.run_id, status: 'failed', output: null, citations: [], usage: null, error: { code, message } } }];\nconst textOf = (j) => {\n  const c = j && Array.isArray(j.candidates) ? j.candidates[0] : null;\n  const parts = c && c.content && Array.isArray(c.content.parts) ? c.content.parts : (j && j.content && Array.isArray(j.content.parts) ? j.content.parts : null);\n  if (parts) return parts.filter((p) => p && !p.thought).map((p) => (typeof p.text === 'string' ? p.text : '')).join('');\n  return j && typeof j.output === 'string' ? j.output : (j && typeof j.text === 'string' ? j.text : '');\n};\nconst usageOf = (j) => {\n  const m = j && j.usageMetadata && typeof j.usageMetadata === 'object' ? j.usageMetadata : {};\n  const n = (v) => (typeof v === 'number' && v > 0 ? Math.round(v) : 0);\n  return { input_tokens: n(m.promptTokenCount) + n(m.toolUsePromptTokenCount), output_tokens: n(m.candidatesTokenCount) + n(m.thoughtsTokenCount), cache_read_tokens: n(m.cachedContentTokenCount) };\n};\nlet t = textOf($json);\nt = t.trim().replace(/^```[A-Za-z]*[ \\t]*\\n?/, '').replace(/\\n?```\\s*$/, '').trim();\nif (!t) return fail('schema_invalid', 'the model returned no text');\nconst cited = [...new Set([...t.matchAll(/\\[(S\\d{1,3})\\]/g)].map((m) => m[1]))];\nreturn [{ json: { run_id: b.run_id, status: 'succeeded', output: { reply: t }, citations: cited, usage: { model: 'gemini-3.5-flash-lite', ...usageOf($json) }, error: null } }];"
       }
     },
     {

@@ -114,7 +114,7 @@ const nounAr = (n: number): string => (n >= 3 && n <= 10 ? "نقاط" : "نقط�
  * purpose. Owner ٤٠٩–٤١٢ / ٤١٦ (7 Nov 2026): simulator 75/150
  * (R1), strength 75, consultation 100, letter 50, assistant 30 per 15
  * messages, quick answer 10, Najiz condense 15. Owner ٩ (17 Nov 2026): the
- * drafter's claim 500 (and the first-instance memos), appeal 800, cassation
+ * drafter's claim 200 (owner N6), the first-instance memos 500, appeal 800, cassation
  * and petition 1,500.
  */
 const TODAY: Record<string, [number, number]> = {

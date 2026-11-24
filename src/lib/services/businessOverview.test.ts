@@ -1,9 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   accountDisplayName,
   toCompanyIdentityFields,
+  companyIdentityFromProfileResponse,
   vaultDocumentsPhraseAr,
   countVaultDocuments,
   businessIntakeNoticeAr,
@@ -334,4 +336,37 @@ test("an absent, blank or e-mail-shaped name still states that this is not a per
       String(bad),
     );
   }
+});
+
+// ─── companyIdentityFromProfileResponse (live check 13 Nov, row 13) ──────────
+
+test("profile answer: a member's company row is shown, not «no record»", () => {
+  const body = {
+    businessProfile: { company_name_ar: "شركة الأمثلة", cr_number: "1010" },
+    businessProfileScope: "member",
+    roleProfileReadFailed: false,
+  };
+  assert.deepEqual(
+    companyIdentityFromProfileResponse(200, body).map((f) => f.key),
+    ["company_name", "cr_number"],
+  );
+});
+
+test("profile answer: 404 is no company (empty), every other failure throws", () => {
+  assert.deepEqual(companyIdentityFromProfileResponse(404, null), []);
+  assert.throws(() => companyIdentityFromProfileResponse(500, { error: "x" }));
+  assert.throws(() => companyIdentityFromProfileResponse(401, null));
+  assert.throws(() => companyIdentityFromProfileResponse(200, { businessProfile: null, roleProfileReadFailed: true }));
+});
+
+test("profile answer: a failed delegation lookup beside a real row still shows the row", () => {
+  const body = { businessProfile: { company_name_ar: "شركة الأمثلة" }, roleProfileReadFailed: true };
+  assert.equal(companyIdentityFromProfileResponse(200, body).length, 1);
+});
+
+test("the panel reads the company through the API, never by owner_user_id", () => {
+  const src = readFileSync(new URL("../../components/dashboard/business/BusinessProfileReadinessPanel.tsx", import.meta.url), "utf8");
+  assert.match(src, /fetch\("\/api\/v1\/business\/profile"/);
+  assert.doesNotMatch(src, /\.eq\("owner_user_id"/);
+  assert.doesNotMatch(src, /from "@\/lib\/supabase\/client"/);
 });

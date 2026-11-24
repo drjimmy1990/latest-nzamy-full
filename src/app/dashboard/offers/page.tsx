@@ -1,6 +1,5 @@
 import { redirect } from "next/navigation";
-import Navbar from "@/components/Navbar";
-import Footer from "@/components/Footer";
+import AccountDashboardShell from "@/components/dashboard/AccountDashboardShell";
 import { OffersList } from "@/components/offers/OffersList";
 import { createClient } from "@/lib/supabase/server";
 
@@ -19,9 +18,8 @@ export default async function OffersPage() {
   } = await supabase.auth.getUser();
   if (!user) redirect("/login?next=%2Fdashboard%2Foffers");
   return (
-    <>
-      <Navbar />
-      <main dir="rtl" className="min-h-[75dvh] bg-zinc-50 px-4 pb-20 pt-32 text-zinc-900 dark:bg-[#0A0A0A] dark:text-zinc-100">
+    <AccountDashboardShell>
+      <main dir="rtl" className="min-h-[75dvh] bg-zinc-50 px-4 pb-20 pt-8 text-zinc-900 dark:bg-[#0A0A0A] dark:text-zinc-100">
         <div className="mx-auto max-w-5xl space-y-6">
           <div>
             <p className="mb-2 text-sm text-zinc-500">حسابك في نظامي</p>
@@ -31,7 +29,6 @@ export default async function OffersPage() {
           <OffersList />
         </div>
       </main>
-      <Footer />
-    </>
+    </AccountDashboardShell>
   );
 }

@@ -80,15 +80,17 @@ test("sections: legislation and judicial filled, fiqh empty; outline types dropp
   assert.equal(out.found, true);
   assert.deepEqual(
     out.sections.legislation.items.map((i) => [i.key, i.kind, i.linkType, i.direction, i.docKind, i.docId, i.anchorId]),
+    // Batch l14 (owner file 07 §4/§5): other documents first — the amendment,
+    // then the regulation-type link —, the repealed after them, this law's own last.
     [
-      ["article:a7", "article", "CITES_ARTICLE", "out", "law", "labor", "a7"],
+      ["decree:d1", "decree", "AMENDS_ARTICLE", "in", "order", "d1", null],
+      ["law:parent", "law", "PARENT_LAW", "out", "law", "parent", null],
       ["article:x1", "article", "EXEMPTS_FROM", "in", "law", "civil", "x1"],
       ["law:old", "law", "SUPERSEDES_LAW", "in", "law", "old", null],
-      ["law:parent", "law", "PARENT_LAW", "out", "law", "parent", null],
-      ["decree:d1", "decree", "AMENDS_ARTICLE", "in", "order", "d1", null],
+      ["article:a7", "article", "CITES_ARTICLE", "out", "law", "labor", "a7"],
     ],
   );
-  assert.equal(out.sections.legislation.items[0].relation, "تحيل إليها هذه المادة", "a5 refers to a7: a7 is listed as the article a5 refers to");
+  assert.equal(out.sections.legislation.items.find((i) => i.key === "article:a7")!.relation, "تحيل إليها هذه المادة", "a5 refers to a7: a7 is listed as the article a5 refers to");
   assert.deepEqual(
     out.sections.judicial.items.map((i) => [i.key, i.docKind, i.docId, i.anchorId, i.relation]),
     [["principle:p1", "collection", "high-court", "p1", "مبدأ قضائي يستند إليها"]],
@@ -219,7 +221,7 @@ test("live rows: statuses from library.*; a missing anchor links to its document
     (raw) => String(raw ?? "status_undeclared"),
   );
   const leg = live.sections.legislation.items;
-  assert.deepEqual(leg.map((i) => i.key), ["article:a7", "article:x1", "law:old", "decree:d1", "article:gone"], "law:parent has no library row: dropped");
+  assert.deepEqual(leg.map((i) => i.key), ["decree:d1", "article:gone", "article:x1", "law:old", "article:a7"], "law:parent has no library row: dropped");
   const gone = leg.find((i) => i.key === "article:gone")!;
   assert.equal(gone.anchorMissing, true);
   assert.equal(gone.title, "نظام المعاملات المدنية", "the document's name, never «المادة 99»");
@@ -457,7 +459,7 @@ test("route contract (l12): ?bulk=1 reads the similar switch and calls the law f
   assert.match(route, /const autoTagOn = false;/);
   assert.doesNotMatch(route, /library_auto_link_tag/);
   assert.match(route, /shapeLawLinks\(data, slug, types, safeArticleStatus, lawStatusForDetail, autoTagOn\)/);
-  assert.match(route, /withHrefs\(withAutoTags\(live, autoTagOn\)\)/);
+  assert.match(route, /withHrefs\(withAutoTags\(orderRefs\(cleanArticleRefs\(live, id, slug, lawTitle\), slug\), autoTagOn\)\)/);
   assert.match(route, /if \(graphFunctionMissing\(error\.code\)\) return json\(\{ available: false \}\);/, "before 20261202_30: the reader falls back to one article at a time");
 });
 
@@ -497,8 +499,10 @@ test("Q101 (l12 integration): a non-subscriber's links never carry a decree's nu
   assert.equal(masked.items[1].title, "نظام العمل", "a law keeps its title");
   assert.equal(maskDecreeTitlesForViewer(answer, true), answer, "a subscriber reads the stored title");
   const route = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
-  assert.equal((route.match(/maskDecreeTitlesForViewer\(/g) ?? []).length, 2, "bulk and per-article answers");
-  assert.match(route, /tierJson\(\{ available: true, \.\.\.maskDecreeTitlesForViewer\(shapedLaw, await viewerIsSubscriber\(\)\) \}\)/);
+  // bulk, and the per-article answer from the l14 cache or fresh: masked on every request.
+  assert.equal((route.match(/maskDecreeTitlesForViewer\(/g) ?? []).length, 3, "bulk and per-article answers");
+  assert.match(route, /const body = \{ available: true, \.\.\.maskDecreeTitlesForViewer\(shapedLaw, await viewerIsSubscriber\(\)\) \};/);
+  assert.match(route, /\{ available: true, \.\.\.maskDecreeTitlesForViewer\(kept, await viewerIsSubscriber\(\)\) \}/);
   assert.match(route, /'Cache-Control': TIER_SHAPED_CACHE_CONTROL/);
   // The client box imports _shape: the decree helpers stay out of it.
   assert.doesNotMatch(readFileSync(new URL("./_shape.ts", import.meta.url), "utf8"), /decreeDisplay/);

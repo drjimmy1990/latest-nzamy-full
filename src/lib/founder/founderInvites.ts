@@ -12,8 +12,9 @@
  *   - A NEW verified advocate (account created after the invite, no founder
  *     invite and no library grant before) redeems a code: a lib-trial library
  *     grant of `trial_days` (30) + `points` (50) gift points expiring with it,
- *     in the `points_scope` wallet (library_agent by default — the trial is a
- *     library trial; an admin may switch it to general).
+ *     in the library_agent wallet (owner ٢٠١, batch l14: the library
+ *     assistant only — no other choice); the trial is outside the 50-point
+ *     library gate (src/lib/library/pointsGate.ts).
  *   - Both creating and redeeming work only while the payment gateway is on
  *     for that account (the routes check it; the database cannot see the
  *     server's keys). Otherwise the screen says so (INVITES_GATEWAY_OFF_AR).
@@ -28,7 +29,14 @@ import { toArabicDigits } from "../services/arabicCount.ts";
 
 export const FOUNDER_INVITES_KEY = "founder_invites";
 
-export type InvitePointsScope = "library_agent" | "general";
+/**
+ * Owner ٢٠١ (23 Nov 2026, batch l14): the invitee's points are the library
+ * assistant's ONLY. The stored field stays (the database reads it) but holds
+ * one value: a stored "general" reads as library_agent, and the admin check
+ * refuses it. 20261204_20 resets a stored "general" and makes
+ * founder_invite_settings() answer library_agent whatever is stored.
+ */
+export type InvitePointsScope = "library_agent";
 
 export interface FounderInvitesSettings {
   monthly: number;
@@ -64,7 +72,7 @@ export function parseFounderInvites(value: unknown): FounderInvitesSettings {
     monthly: isInt(o.monthly, ...BOUNDS.monthly) ? o.monthly : FOUNDER_INVITES_DEFAULTS.monthly,
     trialDays: isInt(o.trial_days, ...BOUNDS.trial_days) ? o.trial_days : FOUNDER_INVITES_DEFAULTS.trialDays,
     points: isInt(o.points, ...BOUNDS.points) ? o.points : FOUNDER_INVITES_DEFAULTS.points,
-    pointsScope: o.points_scope === "general" || o.points_scope === "library_agent" ? o.points_scope : FOUNDER_INVITES_DEFAULTS.pointsScope,
+    pointsScope: "library_agent",
     validDays: isInt(o.valid_days, ...BOUNDS.valid_days) ? o.valid_days : FOUNDER_INVITES_DEFAULTS.validDays,
   };
 }
@@ -78,14 +86,14 @@ export function founderInvitesValue(s: FounderInvitesSettings): Record<string, u
 export function founderInvitesIssue(value: unknown): string | null {
   const shape =
     `قيمة ${FOUNDER_INVITES_KEY} يجب أن تكون {"monthly": ١–٢٠، "trial_days": ١–٣٦٥، "points": ٠–١٠٠٠٠، ` +
-    `"points_scope": "library_agent" أو "general"، "valid_days": ١–٣٦٥} بأعداد صحيحة`;
+    `"points_scope": "library_agent"، "valid_days": ١–٣٦٥} بأعداد صحيحة (نقاط التجربة لمساعد المكتبة وحده)`;
   if (!value || typeof value !== "object" || Array.isArray(value)) return shape;
   const o = value as Record<string, unknown>;
   const keys = Object.keys(o).sort().join(",");
   if (keys !== "monthly,points,points_scope,trial_days,valid_days") return shape;
   if (!isInt(o.monthly, ...BOUNDS.monthly) || !isInt(o.trial_days, ...BOUNDS.trial_days)
       || !isInt(o.points, ...BOUNDS.points) || !isInt(o.valid_days, ...BOUNDS.valid_days)) return shape;
-  if (o.points_scope !== "library_agent" && o.points_scope !== "general") return shape;
+  if (o.points_scope !== "library_agent") return shape;
   return null;
 }
 
@@ -127,10 +135,11 @@ export const INVITES_UNAVAILABLE_AR = "تعذّر تحميل الدعوات ال
 export function inviteGiftAr(s: FounderInvitesSettings): string {
   const days = `${toArabicDigits(s.trialDays)} ${s.trialDays >= 3 && s.trialDays <= 10 ? "أيام" : "يوماً"}`;
   const trial = `تجربة المكتبة القانونية ${days}`;
-  if (s.points <= 0) return trial;
-  const where = s.pointsScope === "library_agent" ? "لمساعد المكتبة" : "لأدوات الذكاء الاصطناعي";
+  // Owner ٢٠١ (أ), batch l14: the trial is outside the 50-point library gate.
+  const open = "، والمكتبة مفتوحة لك طوال التجربة مهما كان رصيدك";
+  if (s.points <= 0) return `${trial}${open}`;
   const noun = s.points >= 3 && s.points <= 10 ? "نقاط" : "نقطة";
-  return `${trial} مع ${toArabicDigits(s.points)} ${noun} ${where} صالحة مدة التجربة`;
+  return `${trial} مع ${toArabicDigits(s.points)} ${noun} لمساعد المكتبة وحده صالحة مدة التجربة${open}`;
 }
 
 export type CreateResult = "ok" | "not_founder" | "limit";

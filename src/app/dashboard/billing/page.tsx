@@ -1,12 +1,11 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import Navbar from "@/components/Navbar";
-import Footer from "@/components/Footer";
+import AccountDashboardShell from "@/components/dashboard/AccountDashboardShell";
 import { DeleteCardButton } from "@/components/payments/BillingControls";
 import { CurrentPlanCard } from "@/components/payments/CurrentPlanCard";
 import { createClient } from "@/lib/supabase/server";
 import { BILLING_UNAVAILABLE_AR, getBillingWith } from "@/lib/payments/billingCore";
-import { arabicDigits, billingDateAr, billingOrderItemAr, cardTitleAr, hasReceipt, orderStatusAr, pointsByType, POINTS_SPEND_ORDER_AR, type BillingData } from "@/lib/payments/billingView";
+import { arabicDigits, billingDateAr, billingOrderItemAr, cardTitleAr, hasReceipt, orderStatusAr, pointsByType, POINTS_SPEND_ORDER_AR, POINTS_SPEND_REFUND_NOTE_AR, type BillingData } from "@/lib/payments/billingView";
 import { formatHalalas } from "@/lib/payments/catalog";
 
 export const dynamic = "force-dynamic";
@@ -24,9 +23,9 @@ export default async function BillingPage() {
     if (result.status === 200) data = result.body as BillingData;
   } catch { /* The page keeps a useful unavailable state while configuration is missing. */ }
   const groups = data ? pointsByType(data.lots) : [];
-  return <>
-    <Navbar />
-    <main dir="rtl" className="min-h-[75dvh] bg-zinc-50 px-4 pb-20 pt-32 text-zinc-900 dark:bg-[#0A0A0A] dark:text-zinc-100">
+  // Live check row 12: the viewer's own dashboard sidebar, not the site navbar.
+  return <AccountDashboardShell>
+    <main dir="rtl" className="min-h-[75dvh] bg-zinc-50 px-4 pb-20 pt-8 text-zinc-900 dark:bg-[#0A0A0A] dark:text-zinc-100">
       <div className="mx-auto max-w-5xl space-y-6">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div><p className="mb-2 text-sm text-zinc-500">حسابك في نظامي</p><h1 className="text-3xl font-extrabold">الفوترة والمدفوعات</h1></div>
@@ -42,7 +41,7 @@ export default async function BillingPage() {
           <section className={PANEL}>
             <h2 className="text-xl font-bold">رصيد النقاط</h2>
             <p className="mt-3 text-3xl font-extrabold text-[#0B3D2E] dark:text-[#C8A762]">{arabicDigits(data.pointsBalance)} <span className="text-base">نقطة</span></p>
-            <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">{POINTS_SPEND_ORDER_AR} النقاط مخصصة لاستخدام أدوات الذكاء الاصطناعي ولا تُحوّل إلى نقد.</p>
+            <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">{POINTS_SPEND_ORDER_AR} {POINTS_SPEND_REFUND_NOTE_AR} النقاط مخصصة لاستخدام أدوات الذكاء الاصطناعي ولا تُحوّل إلى نقد.</p>
             {/* Owner ١٦٥ (l13): the balance by kind, each lot with its end date, in spend order. */}
             {groups.length ? <ul className="mt-5 space-y-4">{groups.map(group => <li key={group.type} className="rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
               <div className="flex flex-wrap items-center justify-between gap-2"><h3 className="font-bold">{group.label}{group.type === "library" && <span className="ms-2 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-bold text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400">لمساعد المكتبة وحده</span>}</h3><span className="font-extrabold text-[#0B3D2E] dark:text-[#C8A762]">{arabicDigits(group.points)} نقطة</span></div>
@@ -60,6 +59,5 @@ export default async function BillingPage() {
         </>}
       </div>
     </main>
-    <Footer />
-  </>;
+  </AccountDashboardShell>;
 }

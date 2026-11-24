@@ -381,8 +381,10 @@ begin
      not like '%20261026_20%' then
     missing := missing || ' coupons.excluded_kinds is missing or lacks its comment;';
   end if;
-  if exists (select 1 from public.coupons where max_discount_pct > 25 or not ('topup' = any (excluded_kinds))) then
-    missing := missing || ' a coupon exceeds the 25 % cap or applies to top-ups;';
+  -- 20261204_60 (batch l14) raised the ceiling to 100 % (its own CHECK keeps
+  -- a cap above 25 tied to a purpose); a re-run of this file accepts that
+  if exists (select 1 from public.coupons where max_discount_pct > 100 or not ('topup' = any (excluded_kinds))) then
+    missing := missing || ' a coupon exceeds the 100 % ceiling or applies to top-ups;';
   end if;
 
   if to_regclass('public.coupon_usage_coupon_user_key') is null
@@ -436,7 +438,7 @@ begin
   if missing <> '' then
     raise exception '20261026_20 verify:%', missing;
   end if;
-  raise notice '20261026_20 verify: OK — coupons and coupon_usage are server only (no policy, no anon / authenticated privilege); 25 %% cap and top-up exclusion on every coupon; once per user and once per order guarded; one open / paid order per (buyer, coupon); used_count follows inserts and deletes; NZAMY50 and NEWCLIENT received the owner''s rules (stamped); other seeded codes switched off';
+  raise notice '20261026_20 verify: OK — coupons and coupon_usage are server only (no policy, no anon / authenticated privilege); cap ceiling (25 %%, or 100 %% once 20261204_60 ran) and top-up exclusion on every coupon; once per user and once per order guarded; one open / paid order per (buyer, coupon); used_count follows inserts and deletes; NZAMY50 and NEWCLIENT received the owner''s rules (stamped); other seeded codes switched off';
 end $$;
 
 commit;

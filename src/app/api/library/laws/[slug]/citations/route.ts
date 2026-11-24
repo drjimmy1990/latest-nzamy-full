@@ -16,8 +16,11 @@ import {
   READER_SECTION_QUERIES,
   applyLiveRows,
   capTitle,
+  cleanArticleRefs,
+  cleanLawLinks,
   docNameCandidates,
   mergeSectionRefs,
+  orderRefs,
   pickFoldedTitle,
   titleLikePatterns,
   parseNumbers,
@@ -29,6 +32,14 @@ import {
   withHrefs,
 } from './_shape';
 import { maskDecreeTitlesForViewer } from './_decree-titles';
+import {
+  ARTICLE_CACHE_ENTRIES,
+  BULK_CACHE_ENTRIES,
+  LINKS_CACHE_TTL_MS,
+  createTtlCache,
+  linksCacheKey,
+  serverTiming,
+} from './_cache';
 
 /**
  * GET /api/library/laws/[slug]/citations — the law reader's citation data
@@ -59,6 +70,13 @@ import { maskDecreeTitlesForViewer } from './_decree-titles';
  * the entitlement question does not arise, and nothing here spends the
  * library document quota. The graph functions are service-role only; their
  * text fields (snippet, evidence) are dropped by the whitelists in _shape.ts.
+ *
+ * Batch l14 (owner file 07 §3, §4, §12, §14): the article itself — or, in the
+ * similar-meaning section, another copy of the same law — never appears
+ * (cleanArticleRefs / cleanLawLinks); the items come in the box's order; the
+ * links answers (?bulk=1 and ?article=) are kept LINKS_CACHE_TTL_MS in this
+ * process (_cache.ts) — after the public guard, before the per-viewer decree
+ * mask — and carry a `Server-Timing` header.
  */
 const CACHE = 'private, max-age=300';
 const ARTICLE_COLUMNS = 'id, number, title, status, instrument';
@@ -87,8 +105,32 @@ async function viewerIsSubscriber(): Promise<boolean> {
   }
 }
 
-function tierJson(body: unknown) {
-  return NextResponse.json(body, { headers: { 'Cache-Control': TIER_SHAPED_CACHE_CONTROL } });
+function tierJson(body: unknown, timing?: string) {
+  return NextResponse.json(body, {
+    headers: { 'Cache-Control': TIER_SHAPED_CACHE_CONTROL, ...(timing ? { 'Server-Timing': timing } : {}) },
+  });
+}
+
+type ServiceClient = Awaited<ReturnType<typeof createServiceClient>>;
+
+/** The links answers before the per-viewer mask (batch l14, owner file 07 §14). */
+const bulkCache = createTtlCache<ReturnType<typeof cleanLawLinks>>(BULK_CACHE_ENTRIES, LINKS_CACHE_TTL_MS);
+const articleCache = createTtlCache<ReturnType<typeof withHrefs>>(ARTICLE_CACHE_ENTRIES, LINKS_CACHE_TTL_MS);
+
+/**
+ * The law's own title, to tell another copy of it apart (file 07 §3); '' when
+ * it cannot be read — then only the exact self link is dropped, and the answer
+ * is not kept.
+ */
+async function lawTitleOf(serverOnly: ServiceClient, slug: string): Promise<string> {
+  try {
+    const { data, error } = await serverOnly.schema('library').from('laws').select('title').eq('slug', slug).limit(1);
+    if (error) return '';
+    const title = (data?.[0] as { title?: unknown } | undefined)?.title;
+    return typeof title === 'string' ? title : '';
+  } catch {
+    return '';
+  }
 }
 
 function safeArticleStatus(raw: unknown): string {
@@ -103,8 +145,10 @@ export async function GET(
   request: Request,
   { params }: { params: Promise<{ slug: string }> },
 ) {
+  const started = performance.now();
   const gate = await libraryGate();
   if (gate) return gate;
+  const gateMs = performance.now() - started;
 
   const { slug } = await params;
   const url = new URL(request.url);
@@ -121,24 +165,46 @@ export async function GET(
 
     // ── Every article of the law at once (batch l12, owner L1) ───────────────
     if (url.searchParams.get('bulk') === '1') {
-      const { data, error } = await serverOnly.rpc('graph_rag_law_article_links', {
-        p_law_slug: slug,
-        p_per_type: BULK_PER_TYPE,
-        p_types: types,
-      });
-      if (error) {
-        if (graphFunctionMissing(error.code)) return json({ available: false });
-        console.error('[citations] law links failed:', error.code ?? 'no-code', error.message);
-        return json({ error: 'تعذّر تحميل الإحالات' }, 500);
+      const key = linksCacheKey('bulk', slug, null, types);
+      let shapedLaw = bulkCache.get(key);
+      const hit = !!shapedLaw;
+      const graphStart = performance.now();
+      if (!shapedLaw) {
+        const [{ data, error }, lawTitle] = await Promise.all([
+          serverOnly.rpc('graph_rag_law_article_links', {
+            p_law_slug: slug,
+            p_per_type: BULK_PER_TYPE,
+            p_types: types,
+          }),
+          lawTitleOf(serverOnly, slug),
+        ]);
+        if (error) {
+          if (graphFunctionMissing(error.code)) return json({ available: false });
+          console.error('[citations] law links failed:', error.code ?? 'no-code', error.message);
+          return json({ error: 'تعذّر تحميل الإحالات' }, 500);
+        }
+        shapedLaw = cleanLawLinks(shapeLawLinks(data, slug, types, safeArticleStatus, lawStatusForDetail, autoTagOn), slug, lawTitle);
+        if (shapedLaw.found && lawTitle) bulkCache.set(key, shapedLaw);
       }
-      const shapedLaw = shapeLawLinks(data, slug, types, safeArticleStatus, lawStatusForDetail, autoTagOn);
-      return tierJson({ available: true, ...maskDecreeTitlesForViewer(shapedLaw, await viewerIsSubscriber()) });
+      const graphMs = performance.now() - graphStart;
+      const body = { available: true, ...maskDecreeTitlesForViewer(shapedLaw, await viewerIsSubscriber()) };
+      return tierJson(body, serverTiming([['gate', gateMs], ['graph', graphMs], ['total', performance.now() - started]], hit ? 'hit' : 'miss'));
     }
 
     // ── One article's links: the links box (owner item 6, decision ٦٠) ──────
     if (url.searchParams.has('article')) {
       const id = validArticleId(url.searchParams.get('article'));
       if (!id) return json({ error: 'bad article' }, 400);
+      const key = linksCacheKey('article', slug, id, types);
+      const kept = articleCache.get(key);
+      if (kept) {
+        return tierJson(
+          { available: true, ...maskDecreeTitlesForViewer(kept, await viewerIsSubscriber()) },
+          serverTiming([['gate', gateMs], ['total', performance.now() - started]], 'hit'),
+        );
+      }
+      const graphStart = performance.now();
+      const lawTitleRead = lawTitleOf(serverOnly, slug);
       // One call per query group (READER_SECTION_QUERIES, graphLinkTypes.ts):
       // hundreds of principles citing an article, or its many «إحالة» links,
       // never crowd out its amendment and regulation links. A group whose
@@ -191,8 +257,14 @@ export async function GET(
         safeArticleStatus,
         lawStatusForDetail,
       );
-      const out = withHrefs(withAutoTags(live, autoTagOn));
-      return tierJson({ available: true, ...maskDecreeTitlesForViewer(out, await viewerIsSubscriber()) });
+      const lawTitle = await lawTitleRead;
+      const out = withHrefs(withAutoTags(orderRefs(cleanArticleRefs(live, id, slug, lawTitle), slug), autoTagOn));
+      if (lawTitle) articleCache.set(key, out);
+      const graphMs = performance.now() - graphStart;
+      return tierJson(
+        { available: true, ...maskDecreeTitlesForViewer(out, await viewerIsSubscriber()) },
+        serverTiming([['gate', gateMs], ['graph', graphMs], ['total', performance.now() - started]], 'miss'),
+      );
     }
 
     // ── A decree named in the text (N02-13, batch l11) ───────────────────────

@@ -74,7 +74,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { planGrantDecision, type ActivePlanRow, type TierRankTable } from "../entitlementGrantRules.ts";
 import type { LibraryGrantSource, LibraryPlanRef } from "../libraryAccess.ts";
-import { resolveItem, type PayableItem } from "./catalog.ts";
+import { resolveItem, type Billing, type PayableItem } from "./catalog.ts";
 import { addMonthsUtc, isMissingPaymentsObject, planWindow } from "./fulfillDecision.ts";
 import { readLibraryPlanPoints } from "../points/pointsSettings.ts";
 import { grantedTopupPoints } from "./topupBonus.ts";
@@ -211,6 +211,34 @@ async function creditLibraryPlanPoints(
   return failure("credit_wallet_points", error);
 }
 
+/**
+ * The library pass of an order — a library order's own, or (batch l14) the
+ * one a bundle plan brings — and then the pass's library-assistant points,
+ * read by the LIBRARY plan's id (lib-q1 / lib-q2 / lib-annual), so a bundle
+ * cycle brings exactly what the matching library pass brings.
+ * library_access_grants.order_id UNIQUE: this order's grant already exists (a
+ * retry) → granted; its points are credited now if an earlier try stopped
+ * short of them.
+ */
+async function grantOrderLibrary(
+  deps: GrantPurchaseDeps,
+  order: PurchaseOrder,
+  planRef: LibraryPlanRef,
+  days: number,
+  now: Date,
+): Promise<GrantPurchaseResult> {
+  const grant = await deps.grantLibrary({
+    userId: order.user_id,
+    planRef,
+    days,
+    source: "purchase",
+    orderId: order.id,
+  });
+  if (grant.ok) return await creditLibraryPlanPoints(deps.admin, order, planRef, grant.endsAt, now);
+  if (grant.code === "23505") return await creditLibraryPlanPoints(deps.admin, order, planRef, null, now);
+  return { ok: false, error: `library grant: ${grant.error}`, missing: isMissingPaymentsObject(grant.code) };
+}
+
 async function grantPlan(
   deps: GrantPurchaseDeps,
   order: PurchaseOrder,
@@ -343,7 +371,17 @@ export async function grantPurchase(
     const now = opts.now ?? new Date();
 
     if (item.kind === "plan") {
-      return await grantPlan(deps, order, item, opts.paymentMethodId ?? null, now);
+      const planResult = await grantPlan(deps, order, item, opts.paymentMethodId ?? null, now);
+      // Batch l14: the ERP + library bundle brings its library pass too — only
+      // once the plan itself is granted (or was, on a retry). A plan kept
+      // because a higher one runs (alreadyEntitled) grants nothing more: the
+      // order waits for an admin refund whole.
+      if (!planResult.ok || planResult.alreadyEntitled) return planResult;
+      const part = item.libraryByBilling && Object.hasOwn(item.libraryByBilling, order.billing)
+        ? item.libraryByBilling[order.billing as Billing]
+        : undefined;
+      if (!part) return planResult;
+      return await grantOrderLibrary(deps, order, part.planRef, part.days, now);
     }
 
     if (item.kind === "membership") {
@@ -354,19 +392,7 @@ export async function grantPurchase(
       if (!item.libraryPlanRef || !item.libraryDays) {
         return { ok: false, error: `library item ${item.id} has no plan or length` };
       }
-      const grant = await deps.grantLibrary({
-        userId: order.user_id,
-        planRef: item.libraryPlanRef,
-        days: item.libraryDays,
-        source: "purchase",
-        orderId: order.id,
-      });
-      if (grant.ok) return await creditLibraryPlanPoints(deps.admin, order, item.id, grant.endsAt, now);
-      // library_access_grants.order_id UNIQUE: this order's grant already exists
-      // (a retry) → granted; its points are credited now if an earlier try
-      // stopped short of them
-      if (grant.code === "23505") return await creditLibraryPlanPoints(deps.admin, order, item.id, null, now);
-      return { ok: false, error: `library grant: ${grant.error}`, missing: isMissingPaymentsObject(grant.code) };
+      return await grantOrderLibrary(deps, order, item.libraryPlanRef, item.libraryDays, now);
     }
 
     // topup

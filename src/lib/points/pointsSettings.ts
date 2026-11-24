@@ -84,6 +84,20 @@ export function libraryPlanPointsLine(planId: string, lang: "ar" | "en"): string
   return `${n.toLocaleString("ar-SA-u-nu-arab")} نقطة لمساعد المكتبة الذكي، تنتهي بانتهاء الاشتراك`;
 }
 
+/**
+ * Batch l14: the ERP + library bundle's card. Each cycle brings what the
+ * matching library pass brings (lib-q1 / lib-q2 / lib-annual — grantPurchase
+ * credits by the library plan's id), so the card names all three.
+ */
+export function bundleLibraryPointsLine(lang: "ar" | "en"): string {
+  const n = (id: string) => (Object.hasOwn(DEFAULT_LIBRARY_PLAN_POINTS, id) ? DEFAULT_LIBRARY_PLAN_POINTS[id] : 0);
+  if (lang === "en") {
+    return `Library assistant points as with the library alone: ${n("lib-q1")} quarterly, ${n("lib-q2")} half-yearly, ${n("lib-annual")} yearly`;
+  }
+  const ar = (v: number) => v.toLocaleString("ar-SA-u-nu-arab");
+  return `نقاط لمساعد المكتبة الذكي كالمكتبة وحدها: ${ar(n("lib-q1"))} للربع سنوي، ${ar(n("lib-q2"))} للنصف سنوي، ${ar(n("lib-annual"))} للسنوي`;
+}
+
 // ── validators for /api/v1/admin/settings (null = acceptable) ──────────────
 export function libraryPlanPointsIssue(value: unknown): string | null {
   return countMapIssue(LIBRARY_PLAN_POINTS_KEY, value, MAX_POINTS, Object.keys(DEFAULT_LIBRARY_PLAN_POINTS));

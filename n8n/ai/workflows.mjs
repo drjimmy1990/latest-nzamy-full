@@ -45,7 +45,7 @@ export const CREDENTIALS = {
 export const MODEL = {
   type: "@n8n/n8n-nodes-langchain.googleGemini",
   typeVersion: 1,
-  modelName: "models/gemini-3.1-flash-lite",
+  modelName: "models/gemini-3.5-flash-lite",
   credentialKey: "googlePalmApi",
   credential: CREDENTIALS.gemini,
 };

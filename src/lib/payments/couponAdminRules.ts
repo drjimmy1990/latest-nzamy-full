@@ -7,6 +7,15 @@
  * database's own CHECKs (20261026_20):
  *   - a discount coupon (fixed / percentage) needs a minimum order net
  *     before VAT, greater than 0 («الحد الأدنى للطلب مطلوب»);
+ *   - (batch l14, 20261204_60, before payments go live — owner package of
+ *     23 Nov §٤): the cap may go up to 100 % (max_discount_pct in (0, 100],
+ *     default still 25 — owner ١٥٥), a percentage value never above the
+ *     code's own cap, and EVERY new code carries its «الغرض» (purpose, 3–500
+ *     characters; couponPurpose). A PATCH may set or change the purpose,
+ *     never clear it, and a cap above 25 needs one (the database's
+ *     coupons_high_discount_purpose_check says the same). A code that covers
+ *     the whole price is refused at checkout without a saved card
+ *     (fullDiscount.ts). Before l14 the rule was:
  *   - the discount never exceeds 25 % of the net: max_discount_pct ≤ 25
  *     (default 25), and a percentage coupon's value is at most 25;
  *   - excluded_kinds always holds topup (added when missing) and only the
@@ -31,11 +40,50 @@
 
 import { PRICE_BOOK } from "../pricing/priceBook.ts";
 
+/** The default cap of a new code (owner ١٥٥: 25 %, top-ups never). */
 export const OWNER_MAX_DISCOUNT_PCT = 25;
+/** The hard ceiling (batch l14, 20261204_60): a code may cover the whole price. */
+export const COUPON_HARD_MAX_PCT = 100;
 export const COUPON_KINDS: readonly string[] = Object.freeze(["plan", "library", "topup", "service"]);
 
 export const MIN_ORDER_REQUIRED_AR = "الحد الأدنى للطلب مطلوب لكوبون الخصم (صافي الطلب قبل الضريبة، أكبر من صفر)";
-export const MAX_PCT_AR = "سقف الخصم لا يتجاوز ٢٥٪ من صافي الطلب";
+export const MAX_PCT_AR = "سقف الخصم بين ١٪ و١٠٠٪ من صافي الطلب";
+export const VALUE_ABOVE_CAP_AR = "نسبة الخصم لا تتجاوز سقف الخصم المحدد لهذا الكود";
+export const PURPOSE_REQUIRED_AR = "اكتب الغرض من الكود (من ٣ إلى ٥٠٠ حرف)";
+export const PURPOSE_HIGH_CAP_AR = "سقف الخصم فوق ٢٥٪ يحتاج الغرض من الكود — اكتبه قبل الحفظ";
+
+/** The purpose's length bounds (the database's coupons_purpose_check, 20261204_60). */
+export const PURPOSE_MIN = 3;
+export const PURPOSE_MAX = 500;
+
+/** body.purpose → the trimmed text (3–500 characters), or null. */
+export function couponPurpose(raw: unknown): string | null {
+  if (typeof raw !== "string") return null;
+  const text = raw.trim().replace(/\s+/g, " ");
+  return text.length >= PURPOSE_MIN && text.length <= PURPOSE_MAX ? text : null;
+}
+
+/**
+ * The purpose a PATCH writes: `{ purpose }` when the body sends a valid one,
+ * `{}` when it sends none. A cap ending above OWNER_MAX_DISCOUNT_PCT on a row
+ * without a purpose needs one in the same save; a sent empty / invalid
+ * purpose is refused (a purpose is never cleared).
+ */
+export function adminPurposePatch(
+  existing: { purpose?: unknown; max_discount_pct?: unknown },
+  body: Record<string, unknown>,
+): AdminDiscountFields {
+  const fields: Record<string, unknown> = {};
+  if (body.purpose !== undefined) {
+    const purpose = couponPurpose(body.purpose);
+    if (!purpose) return { ok: false, error: PURPOSE_REQUIRED_AR };
+    fields.purpose = purpose;
+  }
+  const nextCap = body.maxDiscountPct !== undefined ? num(body.maxDiscountPct) : num(existing.max_discount_pct);
+  const hasPurpose = "purpose" in fields || couponPurpose(existing.purpose) !== null;
+  if (Number.isFinite(nextCap) && nextCap > OWNER_MAX_DISCOUNT_PCT && !hasPurpose) return { ok: false, error: PURPOSE_HIGH_CAP_AR };
+  return { ok: true, fields };
+}
 export const VALUE_REQUIRED_AR = "قيمة الخصم مطلوبة وأكبر من صفر";
 export const KINDS_AR = "أنواع الطلبات المستثناة غير صالحة";
 export const UNKNOWN_ITEM_AR = "منتج مستثنى غير معروف";
@@ -113,10 +161,10 @@ export type AdminDiscountFields =
 
 const num = (v: unknown): number => (v === null || v === undefined || v === "" ? Number.NaN : Number(v));
 
-/** maxDiscountPct: absent / null / "" = 25; else a number in (0, 25]; null = refused. */
+/** maxDiscountPct: absent / null / "" = 25; else a number in (0, 100] (l14); null = refused. */
 function parseMaxPct(raw: unknown): number | null {
   const pct = raw === undefined || raw === null || raw === "" ? OWNER_MAX_DISCOUNT_PCT : num(raw);
-  return Number.isFinite(pct) && pct > 0 && pct <= OWNER_MAX_DISCOUNT_PCT ? pct : null;
+  return Number.isFinite(pct) && pct > 0 && pct <= COUPON_HARD_MAX_PCT ? pct : null;
 }
 
 /** excludedKinds: an array of known kinds; topup always first; null = refused. */
@@ -138,13 +186,17 @@ export function adminDiscountFields(
 
   const value = num(body.value);
   if (!Number.isFinite(value) || value <= 0) return { ok: false, error: VALUE_REQUIRED_AR };
-  if (dbType === "percentage" && value > OWNER_MAX_DISCOUNT_PCT) return { ok: false, error: MAX_PCT_AR };
+  if (dbType === "percentage" && value > COUPON_HARD_MAX_PCT) return { ok: false, error: MAX_PCT_AR };
 
   const min = num(body.minOrderAmount);
   if (!Number.isFinite(min) || min <= 0) return { ok: false, error: MIN_ORDER_REQUIRED_AR };
 
   const pctRaw = parseMaxPct(body.maxDiscountPct);
   if (pctRaw === null) return { ok: false, error: MAX_PCT_AR };
+  // before 20261026_20 no cap column exists: the old 25 % ceiling stays the rule
+  if (!opts.withNewColumns && pctRaw > OWNER_MAX_DISCOUNT_PCT) return { ok: false, error: MAX_PCT_AR };
+  // l14: a percentage never promises more than the code's own cap
+  if (dbType === "percentage" && value > pctRaw) return { ok: false, error: VALUE_ABOVE_CAP_AR };
 
   let kinds: string[] = ["topup"];
   if (body.excludedKinds !== undefined && body.excludedKinds !== null) {
@@ -163,7 +215,8 @@ export function adminDiscountFields(
 
 /**
  * A PATCH: the minimum may change but never to 0 / empty on a discount
- * coupon, a percentage value never above 25, and a discount coupon is never
+ * coupon, a percentage value never above the code's cap (l14: the cap is
+ * (0, 100], default 25; before l14 both were 25), and a discount coupon is never
  * switched ON while its stored minimum is 0 (LAUNCH2026 from the old seed, or
  * a code created before this rule) — the same hole as a create without one.
  * S6-T11: maxDiscountPct and excludedKinds may change too, with the create's
@@ -171,7 +224,7 @@ export function adminDiscountFields(
  * The route refuses them while 20261026_20's columns are missing.
  */
 export function adminDiscountPatch(
-  existing: { discount_type?: unknown; min_order_amount?: unknown; active?: unknown },
+  existing: { discount_type?: unknown; min_order_amount?: unknown; active?: unknown; discount_value?: unknown; max_discount_pct?: unknown },
   body: Record<string, unknown>,
   nextActive: boolean | undefined,
 ): AdminDiscountFields {
@@ -182,7 +235,7 @@ export function adminDiscountPatch(
   if (body.value !== undefined) {
     const value = num(body.value);
     if (!Number.isFinite(value) || value <= 0) return { ok: false, error: VALUE_REQUIRED_AR };
-    if (dbType === "percentage" && value > OWNER_MAX_DISCOUNT_PCT) return { ok: false, error: MAX_PCT_AR };
+    if (dbType === "percentage" && value > COUPON_HARD_MAX_PCT) return { ok: false, error: MAX_PCT_AR };
   }
 
   let min = num(existing.min_order_amount);
@@ -201,6 +254,19 @@ export function adminDiscountPatch(
     const kinds = parseKinds(body.excludedKinds);
     if (!kinds) return { ok: false, error: KINDS_AR };
     fields.excluded_kinds = kinds;
+  }
+
+  // l14: a percentage never above the code's cap — checked when either moves
+  if (dbType === "percentage" && (body.value !== undefined || body.maxDiscountPct !== undefined)) {
+    const value = body.value !== undefined ? num(body.value) : num(existing.discount_value);
+    const storedCap = num(existing.max_discount_pct);
+    const cap =
+      typeof fields.max_discount_pct === "number"
+        ? fields.max_discount_pct
+        : Number.isFinite(storedCap) && storedCap > 0
+          ? storedCap
+          : OWNER_MAX_DISCOUNT_PCT;
+    if (Number.isFinite(value) && value > cap) return { ok: false, error: VALUE_ABOVE_CAP_AR };
   }
 
   const willBeActive = nextActive ?? existing.active === true;

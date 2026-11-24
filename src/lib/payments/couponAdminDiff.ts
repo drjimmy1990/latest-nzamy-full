@@ -30,6 +30,8 @@ export const COUPON_PATCH_KEYS = [
   "excludedKinds",
   "firstPaidOrderOnly",
   "excludedItems",
+  // l14 (20261204_60): «الغرض» — set or changed, never cleared (the route refuses "")
+  "purpose",
 ] as const satisfies readonly (keyof AdminCoupon)[];
 
 function sameSet(a: readonly unknown[], b: readonly unknown[]): boolean {

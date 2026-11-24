@@ -121,12 +121,15 @@ export default function SharedSidebar() {
     simId ? simId.affiliationRole : affiliation?.role, isDemoBypass, country,
     simId ? simId.practiceKind : practiceKind, staffRole,
   ] as const;
-  const writtenGroups = getSidebarByUserType(...menuArgs);
+  // A consultant who is an active firm member is not the independent one
+  // (the proxy's rule); an admin's simulated view has no membership of its own.
+  const navFirmMember = simId ? false : !!firmMembership;
+  const writtenGroups = getSidebarByUserType(...menuArgs, null, navFirmMember);
   // BUG-12: a «قريباً» row whose AI tool the admin has opened for this user
   // loses the badge (and stays in its own group). Only rows with a
   // `liveToolId` are asked about; the badge stays on any doubt.
   const liveTools = useLiveTools(comingSoonToolIds(writtenGroups), isSupabaseMode && !loading && isLoggedIn);
-  const menuGroups = liveTools.size > 0 ? getSidebarByUserType(...menuArgs, liveTools) : writtenGroups;
+  const menuGroups = liveTools.size > 0 ? getSidebarByUserType(...menuArgs, liveTools, navFirmMember) : writtenGroups;
   // Art. 18: a consultant LAWYER drawn the firm menu (a firm member, N01-29)
   // loses the court tools there too — getSidebarByUserType reads practiceKind
   // for the lawyer menu only. The pages lock him either way; this is the menu.

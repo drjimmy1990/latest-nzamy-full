@@ -137,7 +137,8 @@ test("checkLibraryAccess and getLibraryAccessForUser decide full access by the s
 
 test("access-control imports the rule and the grant read, not a second ranking", () => {
   assert.match(accessControlSource, /import \{ fullLibraryAccess \} from "@\/lib\/libraryAccessDecision";/);
-  assert.match(accessControlSource, /import \{ activeLibraryGrantPlanRefs \} from "@\/lib\/libraryAccessServer";/);
+  // l14 (owner ٢٠١): and the founder-invite trial read beside it
+  assert.match(accessControlSource, /import \{ activeLibraryGrantPlanRefs, hasActiveFounderInviteTrial \} from "@\/lib\/libraryAccessServer";/);
 });
 
 test("no library API route compares the tier with TIER_RANK.pro inline any more", () => {

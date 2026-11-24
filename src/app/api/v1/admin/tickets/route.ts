@@ -3,12 +3,15 @@ import { DB_ERROR_AR } from "@/lib/api/dbError";
 import { createServiceClient } from "@/lib/supabase/server";
 import { requireAdmin, requireStaff } from "@/lib/access-control";
 import { logAdminAction } from "@/lib/auth/adminAudit";
+import { parseTicketsQuery } from "@/lib/admin/ticketsQuery";
 
 /**
  * GET /api/v1/admin/tickets — List support tickets (admin only)
  *
- * Query params:
+ * Query params (checked by parseTicketsQuery; a bad value is a 400):
  *   - status (optional filter: open | pending | resolved | closed)
+ *   - user_id (optional: one account's tickets — a uuid)
+ *   - limit (optional: 1..500; absent = the whole list, as before)
  *
  * FAILURE IS A 500, NOT AN EMPTY LIST. A support queue that answers a broken
  * read with «لا توجد تذاكر» tells the admin there is nothing waiting on them —
@@ -23,8 +26,13 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const { searchParams } = new URL(request.url);
-    const status = searchParams.get("status");
+    // status / user_id / limit are checked before the query (ticketsQuery.ts);
+    // user_id serves the «تذاكر الدعم» tab of one user's page (live check of
+    // 13 Nov, row 31), which used to print three invented tickets.
+    const parsed = parseTicketsQuery(new URL(request.url).searchParams);
+    if (!parsed.ok) {
+      return NextResponse.json({ error: parsed.error }, { status: 400 });
+    }
 
     const adminClient = await createServiceClient();
     let query = adminClient
@@ -32,8 +40,14 @@ export async function GET(request: NextRequest) {
       .select("*")
       .order("created_at", { ascending: false });
 
-    if (status) {
-      query = query.eq("status", status);
+    if (parsed.status) {
+      query = query.eq("status", parsed.status);
+    }
+    if (parsed.userId) {
+      query = query.eq("user_id", parsed.userId);
+    }
+    if (parsed.limit !== null) {
+      query = query.limit(parsed.limit);
     }
 
     const { data, error } = await query;

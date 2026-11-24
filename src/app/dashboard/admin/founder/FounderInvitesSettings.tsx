@@ -31,7 +31,6 @@ export default function FounderInvitesSettings() {
   const [loaded, setLoaded] = useState(false);
   const [stored, setStored] = useState(false);
   const [form, setForm] = useState<Record<string, string>>({});
-  const [scope, setScope] = useState<Settings["pointsScope"]>(FOUNDER_INVITES_DEFAULTS.pointsScope);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<{ ok: boolean; msg: string } | null>(null);
 
@@ -45,7 +44,6 @@ export default function FounderInvitesSettings() {
         setStored(raw !== undefined && raw !== null);
         const s = parseFounderInvites(raw);
         setForm({ monthly: String(s.monthly), trialDays: String(s.trialDays), points: String(s.points), validDays: String(s.validDays) });
-        setScope(s.pointsScope);
         setLoaded(true);
       })
       .catch(() => {
@@ -60,7 +58,7 @@ export default function FounderInvitesSettings() {
     monthly: Number(form.monthly),
     trialDays: Number(form.trialDays),
     points: Number(form.points),
-    pointsScope: scope,
+    pointsScope: "library_agent",
     validDays: Number(form.validDays),
   };
   const issue = founderInvitesIssue(founderInvitesValue(draft));
@@ -111,17 +109,11 @@ export default function FounderInvitesSettings() {
             />
           </label>
         ))}
-        <label className="text-[12px] text-zinc-300">
-          النقاط صالحة لـ
-          <select
-            value={scope}
-            onChange={(e) => setScope(e.target.value === "general" ? "general" : "library_agent")}
-            className="mt-1 w-full rounded-lg border border-white/10 bg-zinc-950 px-3 py-1.5 text-sm text-white"
-          >
-            <option value="library_agent">مساعد المكتبة فقط</option>
-            <option value="general">كل أدوات الذكاء الاصطناعي</option>
-          </select>
-        </label>
+        {/* Owner ٢٠١ (23 Nov 2026, batch l14): the trial's points are the
+            library assistant's only — no choice here any more. */}
+        <p className="text-[12px] text-zinc-300">
+          النقاط صالحة لمساعد المكتبة وحده (قرار المالك)، والمكتبة مفتوحة للمدعو طوال التجربة مهما كان رصيده.
+        </p>
       </div>
       <button
         type="button"

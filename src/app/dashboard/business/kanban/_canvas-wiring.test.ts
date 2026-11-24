@@ -44,7 +44,9 @@ test("link cards open http(s) only, in a new tab without an opener", () => {
 
 test("urgent cards: a text badge, and the glow stops under reduced motion", () => {
   assert.match(view, /nz-urgent-glow/);
-  assert.match(view, /مستعجل/);
+  // Row 53 (file 11): the reference's wording «أولوية قصوى», not «مستعجل».
+  assert.match(view, /<Lightning size=\{8\} weight="fill" \/> أولوية قصوى/);
+  assert.doesNotMatch(view, /> مستعجل|«مستعجل»|كمستعجل/);
   assert.match(css, /@media \(prefers-reduced-motion: reduce\)\s*\{\s*\.nz-urgent-glow\s*\{\s*animation: none !important;/);
 });
 

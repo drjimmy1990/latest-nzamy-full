@@ -12,7 +12,7 @@ export const providerTypes = {
     // Owner answer ٢١٩: a lawyer account with practice_kind 'consultant' — no
     // pleading or hearings (Art. 18). Licensed in Saudi Arabia only; see
     // signupMetadata.ts for what the signup sends.
-    { id: "consultant" as ProviderType, icon: Briefcase, label: "مستشار قانوني", desc: "الاستشارات والعقود والدراسات — دون ترافع (المادة ١٨)", color: "bg-teal-50 dark:bg-teal-500/10 text-teal-600 dark:text-teal-400", borderActive: "border-teal-200 dark:border-teal-500/20 bg-teal-50 dark:bg-teal-500/10" },
+    { id: "consultant" as ProviderType, icon: Briefcase, label: "مستشار قانوني", desc: "المكتبة القانونية — دون ترافع (المادة ١٨)، وأدوات العمل بتفويض من مكتب أو محامٍ", color: "bg-teal-50 dark:bg-teal-500/10 text-teal-600 dark:text-teal-400", borderActive: "border-teal-200 dark:border-teal-500/20 bg-teal-50 dark:bg-teal-500/10" },
   ],
   en: [
     { id: "lawyer" as ProviderType, icon: Gavel, label: "Lawyer", desc: "Practice law and provide consultations", color: "bg-royal/5 text-royal", borderActive: "border-royal/30 bg-royal/5" },
@@ -20,7 +20,7 @@ export const providerTypes = {
     { id: "notary" as ProviderType, icon: Stamp, label: "Notary", desc: "Contract and document notarization", color: "bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400", borderActive: "border-blue-200 dark:border-blue-500/20 bg-blue-50 dark:bg-blue-500/10" },
     { id: "tracker" as ProviderType, icon: Shield, label: "Gov. Agent", desc: "Complete government transactions", color: "bg-orange-50 dark:bg-orange-500/10 text-orange-600 dark:text-orange-400", borderActive: "border-orange-200 dark:border-orange-500/20 bg-orange-50 dark:bg-orange-500/10" },
     { id: "arbitrator" as ProviderType, icon: Scales, label: "Arbitrator", desc: "Arbitration and dispute resolution", color: "bg-purple-50 dark:bg-purple-500/10 text-purple-600 dark:text-purple-400", borderActive: "border-purple-200 dark:border-purple-500/20 bg-purple-50 dark:bg-purple-500/10" },
-    { id: "consultant" as ProviderType, icon: Briefcase, label: "Legal Consultant", desc: "Consultations, contracts and studies — no court pleading (Art. 18)", color: "bg-teal-50 dark:bg-teal-500/10 text-teal-600 dark:text-teal-400", borderActive: "border-teal-200 dark:border-teal-500/20 bg-teal-50 dark:bg-teal-500/10" },
+    { id: "consultant" as ProviderType, icon: Briefcase, label: "Legal Consultant", desc: "Legal library — no court pleading (Art. 18); work tools by delegation from a firm or lawyer", color: "bg-teal-50 dark:bg-teal-500/10 text-teal-600 dark:text-teal-400", borderActive: "border-teal-200 dark:border-teal-500/20 bg-teal-50 dark:bg-teal-500/10" },
   ],
 };
 
@@ -43,12 +43,13 @@ export const plans = {
     },
     {
       id: "ai",
-      name: "المحامي المحترف",
-      // §2 rule 1 (25 Oct): professionals are offered yearly (quarterly / half-yearly from P2), not monthly.
+      // Batch l14 (owner 23 Nov, §حادي عشر #2): lawyer-pro is «إدارة المكتب»,
+      // sold quarterly / half-yearly / yearly; the yearly price is shown.
+      name: "إدارة المكتب",
       price: bookPriceText("lawyer-pro", "yearly", "ar"),
       period: "ر.س / سنة",
-      desc: "اشتراك سنوي بنقاط لأدوات الذكاء الاصطناعي",
-      features: ["كل مميزات إدارة الممارسة", "النقاط بحزم الشحن فقط", `حزم شحن من ${bookPriceText("topup-500", "once", "ar")} ر.س`, "أسعار الأدوات بالنقاط حسب قائمة الأسعار"],
+      desc: `اشتراك إدارة المكتب، أو ${bookPriceText("lawyer-pro", "quarterly", "ar")} ر.س لثلاثة أشهر و${bookPriceText("lawyer-pro", "semiannual", "ar")} ر.س لستة أشهر`,
+      features: ["كل مميزات إدارة الممارسة", `مع المكتبة القانونية: ${bookPriceText("lawyer-bundle", "yearly", "ar")} ر.س سنوياً (خصم ١٥٪)`, "النقاط بحزم الشحن فقط", `حزم شحن من ${bookPriceText("topup-500", "once", "ar")} ر.س`, "أسعار الأدوات بالنقاط حسب قائمة الأسعار"],
       cta: "اشترك الآن",
       highlighted: true,
     },
@@ -76,11 +77,11 @@ export const plans = {
     },
     {
       id: "ai",
-      name: "Professional Lawyer",
+      name: "Office Management",
       price: bookPriceText("lawyer-pro", "yearly", "en"),
       period: "SAR / year",
-      desc: "Yearly subscription with AI tool points",
-      features: ["All practice-management features", "Points from top-ups only", `Top-ups from SAR ${bookPriceText("topup-500", "once", "en")}`, "Tool prices in points per the price list"],
+      desc: `Office management, or SAR ${bookPriceText("lawyer-pro", "quarterly", "en")} for 3 months and SAR ${bookPriceText("lawyer-pro", "semiannual", "en")} for 6 months`,
+      features: ["All practice-management features", `With the legal library: SAR ${bookPriceText("lawyer-bundle", "yearly", "en")} a year (15% off)`, "Points from top-ups only", `Top-ups from SAR ${bookPriceText("topup-500", "once", "en")}`, "Tool prices in points per the price list"],
       cta: "Subscribe",
       highlighted: true,
     },

@@ -45,12 +45,12 @@ const SUPER_ONLY = [
 
 // ─── The console's own sidebar (AdminSidebar.tsx) ─────────────────────────────
 
-test("super_admin sees all 42 items of the console sidebar", () => {
+test("super_admin sees all 42 items of the console sidebar (l14: + «تغطية الإحالات», − «إضافة مستخدم»)", () => {
   const all = hrefsOf(NAV);
   // l9 row 54: one list for both navs — 37, plus إضافة مستخدم, الأدوار والصلاحيات,
   // سجل المدفوعات and إدارة الأسعار from the old ADMIN_SIDEBAR, minus the
   // «قريباً» page «إعدادات النظام» (/dashboard/admin/system); + دفعات الاختبار (l9 testinfra);
-  // + المجلة التشريعية (l13).
+  // + المجلة التشريعية (l13); + تغطية الإحالات (l14 links); − إضافة مستخدم (l14: the page created nothing, now «قيد التفعيل»).
   assert.equal(all.length, 42, "the console sidebar has 42 items");
   assert.equal(new Set(all).size, all.length, "no href is listed twice");
   assert.deepEqual(adminNavForRole("super_admin"), NAV);
@@ -222,8 +222,8 @@ test("filterNavGroupsByRole keeps the group's own fields", () => {
 
 // ─── ADMIN_SIDEBAR (SharedSidebar / GlobalSearch) ─────────────────────────────
 
-// l9 row 54: ADMIN_SIDEBAR is the console list (42 since l13) plus the personal /settings.
-test("ADMIN_SIDEBAR: super_admin and a null role see all 42 items", () => {
+// l9 row 54: ADMIN_SIDEBAR is the console list (42 since l14) plus the personal /settings.
+test("ADMIN_SIDEBAR: super_admin and a null role see all 43 items", () => {
   assert.equal(hrefsOf(ADMIN_SIDEBAR).length, 43, "ADMIN_SIDEBAR has 43 items");
   assert.deepEqual(adminSidebarForRole("super_admin"), ADMIN_SIDEBAR);
   assert.deepEqual(adminSidebarForRole(null), ADMIN_SIDEBAR);
@@ -265,4 +265,12 @@ test("row 54: both admin navs list the same pages, the companies list included, 
     for (const mock of ["/dashboard/admin/payouts", "/dashboard/admin/disputes"]) assert.equal(nav.includes(mock), false, mock);
   }
   for (const g of ADMIN_SIDEBAR) for (const i of g.items) assert.notEqual(i.badge, "جديد", i.href);
+});
+
+test("«إضافة مستخدم» is not offered while the page cannot create an account (live check row 30)", () => {
+  assert.equal(hrefsOf(NAV).includes("/dashboard/admin/users/new"), false);
+  const page = readFileSync(new URL("../../app/dashboard/admin/users/new/page.tsx", import.meta.url), "utf8");
+  assert.match(page, /<DashboardComingSoon/);
+  const code = page.replace(/\/\/.*$/gm, ""); // comments quote what was removed
+  assert.doesNotMatch(code, /تم إنشاء الحساب|setSubmitted/);
 });

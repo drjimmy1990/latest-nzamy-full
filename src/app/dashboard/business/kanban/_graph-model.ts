@@ -33,7 +33,7 @@ export interface GraphNode {
   customColor?: string;
   groupId?: string;
   notes?: string;
-  /** «مستعجل» — the card pulses (and carries a text badge) until switched off. */
+  /** «أولوية قصوى» — the card pulses (and carries a text badge) until switched off. */
   urgent?: boolean;
   /** `link` cards: an http(s) address. Re-checked on every render (safeExternalUrl). */
   url?: string;

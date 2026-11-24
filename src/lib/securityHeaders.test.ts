@@ -17,6 +17,10 @@ test("x-powered-by is switched off", () => {
   assert.equal(nextConfig.poweredByHeader, false);
 });
 
+test("dev-server origins: loopback 127.0.0.1 only, never a wildcard or another host", () => {
+  assert.deepEqual(nextConfig.allowedDevOrigins, ["127.0.0.1"]);
+});
+
 test("every path gets the security headers, from the first rule", async () => {
   const all = await rules();
   assert.equal(all[0].source, "/:path*");

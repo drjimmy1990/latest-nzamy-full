@@ -44,13 +44,18 @@ import { RequestCard } from "./_components/RequestCard";
 import { MyRequestsTab } from "./_components/MyRequestsTab";
 import { PostRequestTab } from "./_components/PostRequestTab";
 import { commissionRatesLine } from "@/lib/pricing/commission";
+import { isIndependentConsultantSession } from "@/lib/auth/consultantScope";
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 function MarketplaceInner() {
   const { isDark } = useTheme();
   const user = useUser();
 
-  const isLawyer    = user.userType === "lawyer" || user.userType === "firm";
+  // Owner decision (22-23 Nov 2026): the independent consultant is a client
+  // here, like an individual — he asks for a service and never takes one, so
+  // the provider's «تصفح السوق» tab is not his (consultantScope.ts).
+  const isIndependentConsultant = isIndependentConsultantSession(user.userType, user.practiceKind, !!user.firmMembership);
+  const isLawyer    = (user.userType === "lawyer" && !isIndependentConsultant) || user.userType === "firm";
   const isProvider  = user.userType === "provider";
   const isAdmin     = user.userType === "admin";
   // Individual client = logged in, not lawyer/firm/provider/admin

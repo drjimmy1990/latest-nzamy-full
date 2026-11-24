@@ -244,6 +244,20 @@ export function pointsSummary(data: Pick<BillingData, "pointsBalance" | "lots">)
 
 /** Owner ١٦٥ (ب), 20261203_10: the spend rule, as the points screens state it. */
 export const POINTS_SPEND_ORDER_AR = "تُصرف النقاط الأقرب انتهاءً أولاً أيّاً كان نوعها، ونقاط مساعد المكتبة لا يصرفها إلا مساعد المكتبة.";
+/**
+ * Owner ٢٠٦ (23 Nov 2026, batch l14): beside the spend order, one plain line
+ * that soonest-first can cost a top-up its refund. True because a top-up is
+ * refundable only while none of ITS points were spent
+ * (WITHDRAWAL_MAX_POINTS_USED_PCT = 0, refundEligibility.ts), and the
+ * soonest-expiring lot — a newer 3-month pack before an older 12-month one —
+ * is spent first (debit_points, 20261203_10). Shown on the points screens and
+ * the top-up checkout; the terms wait for the platform's lawyer.
+ */
+export const POINTS_SPEND_REFUND_NOTE_AR =
+  "ولأن الصرف يبدأ بالأقرب انتهاءً فقد تُصرف نقاط شحنة حديثة قبل شحنة أقدم منها، وصرف أي نقطة من شحنة يُسقط أهليتها للاسترداد.";
+/** The same rule as one sentence on its own, for the top-up checkout. */
+export const TOPUP_SPEND_REFUND_LINE_AR =
+  "تُصرف النقاط الأقرب انتهاءً أولاً، فقد تُصرف نقاط هذه الشحنة قبل نقاط أقدم منها، وصرف أي نقطة منها يُسقط أهليتها للاسترداد.";
 /** Owner ١٦٥ (batch l13): the kinds of points the balance is shown by. */
 export type PointsTypeKey = "library" | "plan" | "topup" | "bonus" | "gift" | "granted" | "restored" | "migrated" | "other";
 export const POINTS_TYPE_AR: Readonly<Record<PointsTypeKey, string>> = {

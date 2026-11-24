@@ -784,9 +784,28 @@ test("Q89 (l12): no non-library plan card advertises the library as included (la
     "constants/pricing/pricing.individuals.ts",
     "constants/pricing/pricing.providers.ts",
   ];
+  // l14 (owner 23 Nov, §عاشرًا): the lawyers' tab also sells the ERP + library
+  // bundle — a LIBRARY plan. Its card and its comparison cells are cut out
+  // first; every other card there is still held to Q89. lawyer-pro's own line
+  // says the library is NOT in it («بلا المكتبة القانونية»).
+  const withoutBundle = (src: string) =>
+    src
+      .replace(/\n {4}\{\n(?:(?! {4}\},)[^\n]*\n)*? {6}id: "lawyer-bundle",[\s\S]*?\n {4}\},/g, "")
+      .replace(/"lawyer-bundle": (?:"[^"]*"|true|false),\s*/g, "");
+  const notIncluded = (claims: string[]) => claims.filter((s) => !/^اشتراك إدارة المكتب وحده، بلا المكتبة القانونية|^Office management on its own, without the legal library/.test(s));
+  // negative control: cutting the bundle out leaves a lawyer-pro claim in place
+  assert.equal(
+    notIncluded(nonLibraryPlanLibraryClaims(withoutBundle('\n    {\n      id: "lawyer-pro", desc: "المكتبة القانونية الكاملة",\n    },\n    {\n      id: "lawyer-bundle", desc: "المكتبة القانونية الكاملة",\n    },'))).length,
+    1,
+  );
   for (const path of files) {
-    const src = code(path).split("\n").filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join("\n");
-    assert.deepEqual(nonLibraryPlanLibraryClaims(src), [], path);
+    let src = code(path).replace(/\r\n/g, "\n").split("\n").filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join("\n");
+    if (path === "constants/pricing/pricing.lawyers.ts") {
+      assert.match(src, /id: "lawyer-bundle"/, "the bundle card is on the lawyers' tab");
+      src = withoutBundle(src);
+      assert.doesNotMatch(src, /lawyer-bundle/, "the whole bundle card was cut");
+    }
+    assert.deepEqual(notIncluded(nonLibraryPlanLibraryClaims(src)), [], path);
   }
   const plans = code("lib/pricing/plans.ts");
   const consultant = plans.slice(plans.indexOf("export const INDEPENDENT_CONSULTANT_PLAN"), plans.indexOf("export function getStandaloneLibraryPlan"));

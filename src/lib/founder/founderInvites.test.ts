@@ -36,7 +36,11 @@ const read = (p: string) => readFileSync(new URL(p, import.meta.url), "utf8").re
 test("the defaults are the owner's answer: 3 a month, 30-day library trial, 50 points for the library assistant", () => {
   assert.deepEqual({ ...FOUNDER_INVITES_DEFAULTS }, { monthly: 3, trialDays: 30, points: 50, pointsScope: "library_agent", validDays: 30 });
   assert.deepEqual(parseFounderInvites(null), { ...FOUNDER_INVITES_DEFAULTS });
-  assert.equal(inviteGiftAr(FOUNDER_INVITES_DEFAULTS), "تجربة المكتبة القانونية ٣٠ يوماً مع ٥٠ نقطة لمساعد المكتبة صالحة مدة التجربة");
+  // l14 (owner ٢٠١): the points are the library assistant's alone, and the trial is outside the 50-point gate
+  assert.equal(
+    inviteGiftAr(FOUNDER_INVITES_DEFAULTS),
+    "تجربة المكتبة القانونية ٣٠ يوماً مع ٥٠ نقطة لمساعد المكتبة وحده صالحة مدة التجربة، والمكتبة مفتوحة لك طوال التجربة مهما كان رصيدك",
+  );
 });
 
 test("parseFounderInvites: a malformed field reads as its default, a good one is kept (as founder_invite_settings())", () => {
@@ -44,16 +48,18 @@ test("parseFounderInvites: a malformed field reads as its default, a good one is
     parseFounderInvites({ monthly: "x", trial_days: 0, points: -1, points_scope: "all", valid_days: 9999 }),
     { ...FOUNDER_INVITES_DEFAULTS },
   );
+  // l14 (owner ٢٠١): a stored "general" reads as library_agent — the trial's points are the library assistant's only
   assert.deepEqual(parseFounderInvites({ monthly: 5, trial_days: 7, points: 0, points_scope: "general", valid_days: 10 }), {
-    monthly: 5, trialDays: 7, points: 0, pointsScope: "general", validDays: 10,
+    monthly: 5, trialDays: 7, points: 0, pointsScope: "library_agent", validDays: 10,
   });
   assert.equal(parseFounderInvites({ monthly: 2.5 }).monthly, 3);
 });
 
-test("founderInvitesIssue: exactly the five keys, integers in range, a known wallet", () => {
+test("founderInvitesIssue: exactly the five keys, integers in range, the library assistant's wallet only (l14, owner ٢٠١)", () => {
   assert.equal(founderInvitesIssue(founderInvitesValue(FOUNDER_INVITES_DEFAULTS)), null);
-  assert.equal(founderInvitesIssue({ monthly: 20, trial_days: 365, points: 0, points_scope: "general", valid_days: 1 }), null);
+  assert.equal(founderInvitesIssue({ monthly: 20, trial_days: 365, points: 0, points_scope: "library_agent", valid_days: 1 }), null);
   for (const bad of [
+    { monthly: 3, trial_days: 30, points: 50, points_scope: "general", valid_days: 30 },
     null, [], "x",
     { monthly: 3, trial_days: 30, points: 50, points_scope: "library_agent" },
     { monthly: 3, trial_days: 30, points: 50, points_scope: "library_agent", valid_days: 30, extra: 1 },
@@ -104,7 +110,7 @@ test("redeem answers: every database result has an Arabic line and a status", ()
   assert.ok(CREATE_REFUSAL_AR.limit.includes("لا تتراكم"));
   assert.match(INVITES_GATEWAY_OFF_AR, /بعد تفعيل الدفع الإلكتروني/);
   assert.match(redeemSuccessAr("2026-12-23T10:00:00Z", FOUNDER_INVITES_DEFAULTS), /حتى ٢٠٢٦-١٢-٢٣/);
-  assert.equal(inviteGiftAr({ ...FOUNDER_INVITES_DEFAULTS, points: 0 }), "تجربة المكتبة القانونية ٣٠ يوماً");
+  assert.equal(inviteGiftAr({ ...FOUNDER_INVITES_DEFAULTS, points: 0 }), "تجربة المكتبة القانونية ٣٠ يوماً، والمكتبة مفتوحة لك طوال التجربة مهما كان رصيدك");
 });
 
 test("founderInvitesView: this month's allowance from the rows of this Riyadh month only; statuses; newest first", () => {

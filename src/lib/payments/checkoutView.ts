@@ -26,6 +26,7 @@ import { FOUNDER_CREDITS, FOUNDER_LIBRARY_DAYS, FOUNDER_MEMBERSHIP_MONTHS } from
 import { libraryExpiryLockLineAr } from "../points/pointsExpiryNotice.ts";
 import { libraryPlanCheckoutGateLineAr } from "../library/pointsGate.ts";
 import { DEFAULT_LIBRARY_PLAN_POINTS } from "../points/pointsSettings.ts";
+import { TOPUP_SPEND_REFUND_LINE_AR } from "./billingView.ts";
 
 // ── the buy buttons ─────────────────────────────────────────────────────────
 
@@ -159,6 +160,13 @@ function monthsAr(n: number): string {
   return n <= 10 ? `${arabicNumber(n)} أشهر` : `${arabicNumber(n)} شهراً`;
 }
 
+/** A plan cycle's length, as the bundle's checkout line says it. */
+const CYCLE_TEXT_AR: Partial<Record<Billing, string>> = {
+  quarterly: "٣ أشهر",
+  semiannual: "٦ أشهر",
+  yearly: "سنة",
+};
+
 /** 90 → «٩٠ يوماً», 7 → «٧ أيام» */
 function daysAr(n: number): string {
   if (n === 1) return "يوم واحد";
@@ -186,7 +194,7 @@ export const POINT_VALUE_LINE_AR = "النقطة = ريال سعودي واحد 
  */
 export function checkoutItemNotes(
   item: PayableItem,
-  ctx: { libraryMinPoints?: number | null; libraryQuestionPoints?: number | null } = {},
+  ctx: { libraryMinPoints?: number | null; libraryQuestionPoints?: number | null; billing?: Billing } = {},
 ): string[] {
   if (item.kind === "topup") {
     const notes: string[] = [];
@@ -199,6 +207,8 @@ export function checkoutItemNotes(
     }
     // l12 (owner Q87, RAW[61]): the point's value, on every top-up screen
     notes.push(POINT_VALUE_LINE_AR);
+    // Owner ٢٠٦ (batch l14): the spend order and what it means for a refund
+    notes.push(TOPUP_SPEND_REFUND_LINE_AR);
     if (typeof item.pointsValidityMonths === "number") {
       // l11 O7 (register 49, founder terms ١٢): only for a holder of a gated
       // library plan — the page passes the minimum then (0 = gate off: no line)
@@ -215,6 +225,23 @@ export function checkoutItemNotes(
     // passed the minimum (0 = gate off: no line).
     const gate = libraryPlanCheckoutGateLineAr(
       DEFAULT_LIBRARY_PLAN_POINTS[item.id] ?? null,
+      ctx.libraryMinPoints ?? null,
+      ctx.libraryQuestionPoints ?? null,
+    );
+    if (gate) notes.push(gate);
+    return notes;
+  }
+  if (item.kind === "plan" && ctx.billing && item.libraryByBilling) {
+    // Batch l14: the ERP + library bundle — the library pass this cycle
+    // brings, and the 50-point rule that comes with any library grant.
+    const part = Object.hasOwn(item.libraryByBilling, ctx.billing) ? item.libraryByBilling[ctx.billing] : undefined;
+    if (!part) return [];
+    const notes = [
+      `إدارة المكتب لمدة ${CYCLE_TEXT_AR[ctx.billing] ?? "الدورة المختارة"}`,
+      `وصول إلى المكتبة القانونية لمدة ${daysAr(part.days)}`,
+    ];
+    const gate = libraryPlanCheckoutGateLineAr(
+      DEFAULT_LIBRARY_PLAN_POINTS[part.planRef] ?? null,
       ctx.libraryMinPoints ?? null,
       ctx.libraryQuestionPoints ?? null,
     );

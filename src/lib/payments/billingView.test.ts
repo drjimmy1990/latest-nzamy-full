@@ -12,7 +12,7 @@ test("receipt uses recorded halalas, keeps VAT arithmetic and labels a receipt",
   const view = receiptView(order, company);
   assert.ok(view);
   assert.equal(view.title, "إيصال دفع");
-  assert.equal(view.item, "المحامي المحترف");
+  assert.equal(view.item, "إدارة المكتب");
   assert.equal(view.total, "٤٥٨٫٨٥ ر.س");
   assert.equal(view.lastFour, "١١١١");
   assert.equal(view.company?.legal_name_ar, company.legal_name_ar);
@@ -130,7 +130,7 @@ test("receipts and admin name every billing cycle in Arabic, and nothing for an 
 
 test("retire, never delete: a receipt and the admin list keep a retired plan's name", () => {
   const retired = buildCatalog({ ...PRICE_BOOK, "lawyer-pro": { ...PRICE_BOOK["lawyer-pro"], retired: true } });
-  assert.equal(billingItemAr("lawyer-pro", retired), "المحامي المحترف");
+  assert.equal(billingItemAr("lawyer-pro", retired), "إدارة المكتب");
   assert.equal(billingItemAr("never-sold", retired), "عملية شراء");
 });
 

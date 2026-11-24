@@ -26,7 +26,8 @@ test("the box sits in the side column for the article in view; the provider wrap
   assert.match(PAGE, /\{viewMode !== "regulation" && <RefBox articleId=\{activeArticle\?\.id \?\? null\} \/>\}/);
   assert.match(PAGE, /<RefBoxProvider value=\{refBoxContext\}>/);
   assert.match(PAGE, /inlineTrigger: isReadingMode,/);
-  assert.match(BOX, /useArticleRefs\(ctx\?\.lawSlug \?\? "", ctx \? articleId : null, \{ delayMs: 350 \}\)/, "the fallback waits for the scroll to settle");
+  // l14: while an article's links are open in the side column (pinned), the box shows that one in full.
+  assert.match(BOX, /useArticleRefs\(ctx\?\.lawSlug \?\? "", ctx && !pinned \? articleId : null, \{ delayMs: 350 \}\)/, "the fallback waits for the scroll to settle");
 });
 
 test("L1 (batch l12): the links under every article again, from ONE request for the law, the side box from the same cache", () => {
@@ -40,12 +41,13 @@ test("L1 (batch l12): the links under every article again, from ONE request for 
   assert.match(BOX, /const MAX_PARALLEL = 3;/);
   assert.match(BOX, /new IntersectionObserver\(/);
   assert.match(BOX, /needsNear = !!ctx && \(bulk\?\.status === "unavailable" \|\| bulk\?\.status === "failed"\)/);
-  // The inline list: a counter chip, open by default, groups by relation, three each; nothing at 0.
-  assert.match(BOX, /const \[open, setOpen\] = useState\(true\);/);
-  assert.match(BOX, /<RefGroups ctx=\{ctx\} articleId=\{articleId\} data=\{data\} max=\{3\} \/>/);
-  assert.match(BOX, /<RefGroups ctx=\{ctx\} articleId=\{articleId\} data=\{data\} max=\{2\} \/>/, "the same component in the side box");
+  // Batch l14 (owner file 07 §6, approved 23 Nov): under the article only the counter — folded;
+  // a press opens the panel (side column or bottom sheet), never cards inside the text.
+  assert.doesNotMatch(BOX, /const \[open, setOpen\] = useState\(true\);/);
+  assert.match(BOX, /onClick=\{\(\) => ctx\.openPanel\(articleId\)\}/);
+  assert.match(BOX, /<RefGroups ctx=\{ctx\} articleId=\{articleId\} data=\{data\} max=\{2\} \/>/, "the side box while reading: two per relation");
   assert.match(BOX, /\{total > 0 && data && data\.available && \(/);
-  // «عرض الكل» asks for the full list when the cache holds three per group.
+  // The panel asks for the full list when the cache holds three per group.
   assert.match(BOX, /useArticleRefs\(ctx\.lawSlug, articleId, \{ full: true \}\)/);
 });
 
@@ -65,7 +67,8 @@ test("coloured sections, «عرض الكل (n)», every empty section hidden (fi
   assert.match(BOX, /عرض الكل \(\{arDigits\(sec\.total\)\}\)/);
   assert.match(BOX, /SECTIONS\.filter\(\(s\) => data\.sections\[s\] && data\.sections\[s\]\.total > 0 && data\.sections\[s\]\.items\.length > 0\)/);
   assert.doesNotMatch(BOX, /لا توجد إحالات مسجّلة في هذا القسم/, "never an empty section with «لا توجد»");
-  assert.match(BOX, /role="tablist"/);
+  // l14: the panel's quick filters are its tabs (file 07 §6.4).
+  assert.match(BOX, /role="tablist" aria-label="تصنيف الإحالات"/);
 });
 
 test("the preview: text first, then copy / add to draft / go to / open whole; subscribe for locked text", () => {
@@ -82,7 +85,9 @@ test("the preview: text first, then copy / add to draft / go to / open whole; su
 test("file 16 §8: the side box is hidden when the article has no link; the dialog never opens on an empty tab", () => {
   assert.match(BOX, /if \(\(state\.status === "done" \|\| state\.status === "idle"\) && shownSections\(state\)\.length === 0\) return null;/, "hidden on an empty answer, framed while loading");
   assert.match(BOX, /\{state\.status === "loading" && <RefsSkeleton isDark=\{isDark\} \/>\}/, "L12: a skeleton, not a spinner line");
-  assert.match(BOX, /const tab = tabs\.includes\(picked\) \? picked : \(tabs\[0\] \?\? picked\);/);
+  // l14: a filter with nothing is not offered; a stale one falls back to «الكل».
+  assert.match(BOX, /const filters = REF_FILTERS\.filter\(\(f\) => f === "all" \|\| all\.some\(\(it\) => refMatchesFilter\(it, f\)\)\);/);
+  assert.match(BOX, /const picked = filters\.includes\(filter\) \? filter : "all";/);
 });
 
 test("Q132 (owner 20 Nov, 22:16 «شغّلهم من غير وسم»): an unpinned link is an ordinary link to its document — no tag", () => {
@@ -99,7 +104,7 @@ test("register 14 item 14: the law map is gone from the law page", () => {
 test("O15 (batch l11): no lock before the entitlement is known — tri-state, lock on false only", () => {
   assert.match(BOX, /viewerHasFullAccess: boolean \| null;/);
   const locks = BOX.match(/SUBSCRIBER_SECTIONS\.has\((?:s|tab)\) && ctx\.viewerHasFullAccess === false/g) ?? [];
-  assert.equal(locks.length, 2, "the side box and the «عرض الكل» dialog");
+  assert.equal(locks.length, 1, "one section renderer for the side box and the panel (l14: the «عرض الكل» dialog is the panel)");
   assert.doesNotMatch(BOX, /!ctx\.viewerHasFullAccess/);
   // The page starts and resets it at null (unknown), never false.
   assert.match(PAGE, /useState<boolean \| null>\(null\)/);
@@ -125,4 +130,33 @@ test("fallback (bulk missing or failed): only while the article is on screen, af
 test("lib05 (l12 integration): the preview cleans a principle's text with cleanPrincipleText and its number", () => {
   const src = readFileSync(new URL("./_ref-box.tsx", import.meta.url), "utf8");
   assert.match(src, /item\.kind === "principle" \? cleanPrincipleText\(p\.text, p\.num\) : plain\(p\.text\)/);
+});
+
+test("l14 (owner file 07 §6–§7, approved 23 Nov §15): the panel, the header button, the order and the status badges", () => {
+  // The panel: the side box shows the opened article in full on a wide screen, else a bottom sheet.
+  assert.match(BOX, /window\.matchMedia\("\(min-width: 1024px\)"\)\.matches/, "lg — the side column's own breakpoint (page.tsx `hidden lg:block`)");
+  assert.match(BOX, /if \(inlineTrigger \|\| typeof window === "undefined"/, "reading mode hides the side column: a sheet");
+  assert.match(BOX, /\{ctx && panel\?\.mode === "sheet" && <RefPanelSheet /);
+  assert.match(BOX, /flex items-end sm:items-center/, "a bottom sheet on a phone");
+  assert.match(BOX, /else if \(articleId !== at\.active\) closePanel\?\.\(\);/, "the side box follows the reading again once the reader moves on");
+  // The header button never asks the server: count from the law's one answer only.
+  assert.match(BOX, /export function ArticleRefsButton\(/);
+  assert.match(BOX, /useArticleRefs\(ctx\?\.lawSlug \?\? "", ctx \? articleId : null, \{ enabled: false \}\)/);
+  assert.match(BOX, /الإحالات \(\{arDigits\(total\)\}\)/);
+  assert.match(ARTICLE, /\{viewMode !== "regulation" && refBox && <ArticleRefsButton articleId=\{article\.id\} \/>\}/);
+  assert.doesNotMatch(ARTICLE, /SendToDrafterNotesButton/, "«أرسل إلى الصائغ» left the article header");
+  // …and stays reachable in the draft drawer (lawyer and firm).
+  const drawer = readFileSync(new URL("../../../components/laws/DraftDrawer.tsx", import.meta.url), "utf8");
+  assert.match(drawer, /handleSendToDrafter/);
+  assert.match(drawer, /إرسال إلى الصائغ القانوني/);
+  // Order and parts: other documents, then «في هذا النظام» with no fold.
+  assert.match(BOX, /arrangeSection\(groups\.filter\(\(g\) => g\.section === s\), itemOf, ctx\.lawSlug\)/);
+  assert.match(BOX, />في هذا النظام</);
+  // Status: a worded badge, never colour alone.
+  assert.match(BOX, /badges\.push\(\{ label: "لائحة"/);
+  assert.match(BOX, /tone === "repealed"\s*\? isDark\s*\? "border-red-500\/20 bg-red-950\/20 text-zinc-400 opacity-80"/);
+  assert.match(BOX, /if \(pill && tone !== "active"\) \{\s*badges\.push\(\{\s*label: pill\.labelAr,/);
+  for (const label of ["الكل", "لوائح", "أحكام", "معدِّلة", "ملغاة"]) assert.ok(BOX.includes(`"${label}"`), label);
+  // No emoji pill any more.
+  assert.doesNotMatch(BOX, /\{pill\.emoji\}/);
 });

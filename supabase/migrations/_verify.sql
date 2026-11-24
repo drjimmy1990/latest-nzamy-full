@@ -4201,8 +4201,10 @@ begin
   if not exists (select 1 from information_schema.columns
                   where table_schema = 'public' and table_name = 'coupons' and column_name = 'excluded_kinds') then
     missing := missing || ' coupons.excluded_kinds is missing;';
-  elsif exists (select 1 from public.coupons where max_discount_pct > 25 or not ('topup' = any (excluded_kinds))) then
-    missing := missing || ' a coupon exceeds the 25 % cap or applies to top-ups;';
+  -- 20261204_60 (batch l14): the ceiling is 100 % (a cap above 25 needs a
+  -- purpose — its own verify block checks that); a top-up is never discounted
+  elsif exists (select 1 from public.coupons where max_discount_pct > 100 or not ('topup' = any (excluded_kinds))) then
+    missing := missing || ' a coupon exceeds the 100 % ceiling or applies to top-ups;';
   end if;
   if to_regclass('public.coupon_usage_coupon_user_key') is null then
     missing := missing || ' the unique (coupon_id, user_id) guard is missing;';
@@ -4250,7 +4252,7 @@ begin
   if p is not null then
     raise notice '_verify: 20261026_20 — active codes besides NZAMY50 / NEWCLIENT (checkout honours them): %', p;
   end if;
-  raise notice '_verify: 20261026_20 OK — coupons and coupon_usage are server only; 25 %% cap and top-up exclusion hold; once per user / once per order / one open order per (buyer, coupon) guarded; used_count follows coupon_usage; the owner''s two codes received his rules';
+  raise notice '_verify: 20261026_20 OK — coupons and coupon_usage are server only; the cap ceiling (100 %% since 20261204_60) and top-up exclusion hold; once per user / once per order / one open order per (buyer, coupon) guarded; used_count follows coupon_usage; the owner''s two codes received his rules';
 end $$;
 -- <<< verify:coupons_server_only
 
@@ -5127,13 +5129,17 @@ end $$;
 -- not run: it only reports. After, it raises when a plan row's prices are not
 -- the price book's (src/lib/pricing/priceBook.ts) or NEWCLIENT lost its stamp.
 do $$
-declare bad text;
+declare bad text; l14 boolean;
 begin
   if to_regclass('public.subscription_plans') is null
      or not exists (select 1 from information_schema.columns
                      where table_schema = 'public' and table_name = 'subscription_plans' and column_name = 'price_quarterly') then
     raise notice '_verify: 20261030_16 — subscription_plans has no price_quarterly yet (20261026_10 first)'; return;
   end if;
+  -- 20261204_20 (batch l14) gives lawyer-pro («إدارة المكتب») its quarterly
+  -- 1,200 and half-yearly 2,190; once that file ran (its lawyer-bundle row
+  -- exists) those are the book's, before it they are still null.
+  l14 := exists (select 1 from public.subscription_plans where id = 'lawyer-bundle');
   if exists (select 1 from public.subscription_plans where id = 'ind-ai' and price_monthly = 39) then
     raise notice '_verify: 20261030_16 is not applied yet — ind-ai still lists 39 a month (the admin MRR reads the old price; checkout charges the book)'; return;
   end if;
@@ -5143,7 +5149,7 @@ begin
       ('ind-ai',                 29::numeric,  79::numeric,  149::numeric,  249::numeric),
       ('ind-preventive',         149,          null,         null,          1490),
       ('ind-litigation',         399,          null,         null,          3990),
-      ('lawyer-pro',             399,          null,         null,          3990),
+      ('lawyer-pro',             399,          case when l14 then 1200::numeric end, case when l14 then 2190::numeric end, 3990),
       ('consultant-independent', 399,          null,         null,          3990),
       ('firm-basic',             990,          2990,         5490,          9900),
       ('firm-enterprise',        1490,         4490,         8190,          14900)
@@ -5151,7 +5157,7 @@ begin
    where (p.price_monthly, p.price_quarterly, p.price_semiannual, p.price_yearly)
          is distinct from (v.m, v.q, v.h, v.y);
   if bad is not null then
-    raise exception '_verify: 20261030_16 — the subscription_plans prices of % are not the price book''s (re-run 20261030_16)', bad;
+    raise exception '_verify: 20261030_16 — the subscription_plans prices of % are not the price book''s (re-run 20261030_16, then 20261204_20 if it ran)', bad;
   end if;
   -- Since 20261103_21 (metadata.first_order_rule = '20261103_21') the flag is
   -- the admin coupons page's: an un-ticked NEWCLIENT is a legitimate state
@@ -8460,3 +8466,132 @@ select 'Case map insert limited to the case''s workers (run 20261203_95)' as che
                   and permissive = 'RESTRICTIVE' and cmd = 'INSERT'
                   and coalesce(with_check, '') like '%case_board_open%') as ok;
 -- <<< verify:l13_case_graph_insert
+
+-- >>> verify:l14_links
+-- Batch l14 «links» (owner file 07 §2/§12, «تغطية الإحالات»): run 20261204_40 any time, before or after the deploy. Read-only.
+select 'l14 links: graph_rag_link_coverage present, SECURITY INVOKER, empty search_path, service role only (run 20261204_40)' as check,
+       coalesce((select not p.prosecdef and p.proconfig @> array['search_path=""']
+                        and not has_function_privilege('anon', p.oid, 'EXECUTE')
+                        and not has_function_privilege('authenticated', p.oid, 'EXECUTE')
+                        and has_function_privilege('service_role', p.oid, 'EXECUTE')
+                   from pg_catalog.pg_proc p
+                  where p.oid = to_regprocedure('public.graph_rag_link_coverage(text[],integer,integer)')), false) as ok;
+select 'l14 links: the coverage never counts SIMILAR_TO or an article''s link to itself as a legal link (run 20261204_40)' as check,
+       coalesce((select pg_catalog.strpos(pg_catalog.pg_get_functiondef(p.oid), 'e.edge_type <> ''SIMILAR_TO''') > 0
+                        and pg_catalog.strpos(pg_catalog.pg_get_functiondef(p.oid), 'e.source_key <> e.target_key') > 0
+                   from pg_catalog.pg_proc p
+                  where p.oid = to_regprocedure('public.graph_rag_link_coverage(text[],integer,integer)')), false) as ok;
+-- <<< verify:l14_links
+-- >>> verify:l14_paygate — supabase/tests/rls/l14_paygate.test.sql
+-- 2026-11-24 — 20261204_60_l14_paygate.sql (batch l14, owner package of
+-- 23 Nov §٤ / §٢-٣; BEFORE the deploy). Read-only, safe to repeat. NOTICEs
+-- while the file has not run (no coupons.purpose): the admin coupon routes
+-- then refuse to save a code (503). RAISES when it ran but the purpose
+-- column or one of its two CHECKs is gone, the cap ceiling is not 0 < x <= 100,
+-- a coupon above 25 % has no purpose, the library device limit allows more
+-- than 2 (or a row holds one), or a session privilege came back on coupons.
+-- Never reads device_limit_enabled (the admin's switch). A MANUAL check:
+-- deploy.sh does not run this file.
+do $$
+declare
+  def     text;
+  missing text := '';
+  r       text;
+  p       text;
+begin
+  if to_regclass('public.coupons') is null then
+    raise notice '_verify: 20261204_60 skipped — public.coupons not present';
+    return;
+  end if;
+  if not exists (select 1 from information_schema.columns
+                  where table_schema = 'public' and table_name = 'coupons' and column_name = 'purpose') then
+    raise notice '_verify: 20261204_60 is not applied yet — the admin coupons page cannot save a code until it runs. Run 20261204_60_l14_paygate.sql';
+    return;
+  end if;
+  select pg_get_constraintdef(oid) into def from pg_constraint
+   where conrelid = 'public.coupons'::regclass and conname = 'coupons_max_discount_pct_check';
+  if coalesce(def, '') not like '%max_discount_pct > %0%max_discount_pct <= %100%' then
+    missing := missing || format(' coupons_max_discount_pct_check is not 0 < x <= 100 (%s);', coalesce(def, 'missing'));
+  end if;
+  select pg_get_constraintdef(oid) into def from pg_constraint
+   where conrelid = 'public.coupons'::regclass and conname = 'coupons_high_discount_purpose_check';
+  if coalesce(def, '') not like '%max_discount_pct <= %25%purpose IS NOT NULL%' then
+    missing := missing || ' coupons_high_discount_purpose_check (a cap above 25 needs a purpose) is missing;';
+  end if;
+  select pg_get_constraintdef(oid) into def from pg_constraint
+   where conrelid = 'public.coupons'::regclass and conname = 'coupons_purpose_check';
+  if coalesce(def, '') not like '%purpose IS NULL%char_length%btrim%purpose%3%500%' then
+    missing := missing || ' coupons_purpose_check (3–500 characters) is missing;';
+  end if;
+  if exists (select 1 from public.coupons where coalesce(max_discount_pct, 25) > 25 and purpose is null) then
+    missing := missing || ' a coupon above 25 % has no purpose;';
+  end if;
+  foreach r in array array['anon', 'authenticated'] loop
+    foreach p in array array['SELECT', 'INSERT', 'UPDATE', 'DELETE'] loop
+      if has_table_privilege(r, 'public.coupons', p) then
+        missing := missing || format(' %s holds %s on public.coupons;', r, p);
+      end if;
+    end loop;
+  end loop;
+  if to_regclass('public.library_monitor_settings') is not null then
+    select pg_get_constraintdef(oid) into def from pg_constraint
+     where conrelid = 'public.library_monitor_settings'::regclass and conname = 'library_monitor_settings_device_limit_check';
+    if coalesce(def, '') not like '%device_limit >= 1%device_limit <= 2%' then
+      missing := missing || format(' the library device limit is not 1–2 (%s) — 20261108_20 re-run before the l14 fix?;', coalesce(def, 'missing'));
+    end if;
+    if exists (select 1 from public.library_monitor_settings where coalesce(device_limit, 0) not between 1 and 2) then
+      missing := missing || ' a library settings row holds a device limit outside 1–2;';
+    end if;
+  end if;
+  if missing <> '' then
+    raise exception '_verify: 20261204_60 —% run 20261204_60_l14_paygate.sql again', missing;
+  end if;
+  raise notice '_verify: 20261204_60 OK — coupons carry a purpose, the ceiling is 100 %% (above 25 only with a purpose), the library device limit is one or two';
+end $$;
+-- <<< verify:l14_paygate
+-- >>> verify:l14_pricing
+-- Batch l14 pricing (owner package of 23 Nov 2026: 01 §عاشرًا / §حادي عشر, ٢٠١). 20261204_20 runs
+-- BEFORE the deploy. Before it runs the checks below answer ok = false («run 20261204_20»).
+select 'l14 pricing: lawyer-pro is «إدارة المكتب» 399 (retired) / 1,200 / 2,190 / 3,990 and lawyer-bundle (tier pro, lawyer) 0 / 2,712 / 5,083 / 9,333 (run 20261204_20)' as check,
+       coalesce((select count(*) = 2 and bool_and(
+                          (p.price_monthly, p.price_quarterly, p.price_semiannual, p.price_yearly, p.tier, p.audience, p.name_ar)
+                          is not distinct from
+                          (case p.id when 'lawyer-pro' then 399::numeric else 0::numeric end,
+                           case p.id when 'lawyer-pro' then 1200::numeric else 2712::numeric end,
+                           case p.id when 'lawyer-pro' then 2190::numeric else 5083::numeric end,
+                           case p.id when 'lawyer-pro' then 3990::numeric else 9333::numeric end,
+                           'pro'::text, 'lawyer'::text,
+                           case p.id when 'lawyer-pro' then 'إدارة المكتب' else 'إدارة المكتب + المكتبة القانونية' end))
+                   from public.subscription_plans p where p.id in ('lawyer-pro', 'lawyer-bundle')), false) as ok;
+select 'l14 pricing: a refunded PLAN order closes the library grant it made (the bundle), service role only (run 20261204_20)' as check,
+       coalesce((select pg_catalog.strpos(pg_catalog.pg_get_functiondef(p.oid), 'o.kind in (''plan'', ''library'')') > 0
+                        and pg_catalog.strpos(pg_catalog.pg_get_functiondef(p.oid), 'set ends_at = greatest(starts_at + interval ''1 second'', now_at)') > 0
+                        and p.prosecdef
+                        and not has_function_privilege('anon', p.oid, 'EXECUTE')
+                        and not has_function_privilege('authenticated', p.oid, 'EXECUTE')
+                        and has_function_privilege('service_role', p.oid, 'EXECUTE')
+                   from pg_catalog.pg_proc p
+                  where p.oid = to_regprocedure('public.finish_payment_refund(uuid,text,text)')), false) as ok;
+select 'l14 pricing (owner ٢٠١): founder-invite trial points are the library assistant''s only — setting, reader and lots (run 20261204_20)' as check,
+       coalesce((select pg_catalog.strpos(pg_catalog.pg_get_functiondef(p.oid), '''library_agent''::text,') > 0
+                        and not has_function_privilege('anon', p.oid, 'EXECUTE')
+                        and not has_function_privilege('authenticated', p.oid, 'EXECUTE')
+                   from pg_catalog.pg_proc p
+                  where p.oid = to_regprocedure('public.founder_invite_settings()')), false)
+       and coalesce((select s.points_scope = 'library_agent' from public.founder_invite_settings() s), false)
+       and not exists (select 1 from public.platform_settings
+                        where key = 'founder_invites' and pg_catalog.jsonb_typeof(value) = 'object'
+                          and value ->> 'points_scope' is distinct from 'library_agent')
+       and not exists (select 1 from public.points_lots l join public.founder_invites i on i.lot_id = l.id
+                        where l.wallet_scope is distinct from 'library_agent') as ok;
+select 'l14 pricing: no lawyer-service or AI-card row is left at the price 20261204_20 replaces (changed and stamped, or an admin''s own value kept; run 20261204_20)' as check,
+       coalesce((select bool_and(c.service_id is null
+                                 or c.metadata ->> 'owner_l14' is not null
+                                 or c.base_price <> e.old_price)
+                   from (values ('case-study', 1500::numeric, 'starting_from', 1600::numeric),
+                                ('file-lawsuit', 600, 'starting_from', 1600), ('appeal', 1800, 'starting_from', 2000),
+                                ('cassation', 2500, 'starting_from', 3000), ('enforce-judgment', 950, 'starting_from', 1200),
+                                ('ai-consult', 0, 'points', 49), ('contract-analyze', 0, 'points', 79), ('ai-case-eval', 0, 'points', 79))
+                          as e(service_id, price, mode, old_price)
+                   left join public.admin_pricing_catalog c on c.service_id = e.service_id), false) as ok;
+-- <<< verify:l14_pricing
