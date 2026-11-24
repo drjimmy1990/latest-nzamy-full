@@ -112,6 +112,21 @@ import { libraryActivityKind } from "@/lib/library/activityMeter";
 import { recordLibraryActivity } from "@/lib/library/activityMeterServer";
 import { hasValidSaudiMobile } from "@/lib/services/saudiMobile";
 import { isLibraryApiPath, LIBRARY_API_ROBOTS_HEADER, LIBRARY_API_ROBOTS_VALUE } from "@/lib/publicSeo/libraryApiRobots";
+// Batch l15: the WhatsApp sign-up code. A new account (created at/after the
+// admin's switch-on) is held on PROTECTED pages and /api/v1 until its mobile
+// is confirmed. Pure rules + a fetch-only server half (no client, no node:).
+import {
+  isPhoneGatedApiPath,
+  PHONE_UNVERIFIED_AR,
+  PHONE_UNVERIFIED_CODE,
+  VERIFY_PHONE_PATH,
+} from "@/lib/phoneOtp/phoneOtpRules";
+import {
+  hasTokenPass,
+  loadSignupPhoneOtpSetting,
+  phoneGateVerdict,
+  sessionTokenKey,
+} from "@/lib/phoneOtp/phoneGateServer";
 
 // ─── Rate limiting (owner item ١٧٢) ─────────────────────────────────────────
 //
@@ -577,6 +592,90 @@ async function applyCheckoutStartLimit(req: NextRequest, pathname: string): Prom
   }
 }
 
+// ─── The WhatsApp sign-up code (batch l15) — /api/v1 outside branch 1b ───────
+//
+// A held account (src/lib/phoneOtp/phoneGateServer.ts: created at/after the
+// switch-on, not staff, not a test account, mobile not confirmed) is refused
+// every /api/v1 route except its own code routes, sign-in/session, the terms
+// acceptance and the server-to-server endpoints (phoneOtpRules.ts). Branch 1b
+// (/api/v1/{lawyer,admin,firm}) asks with the user it already has; this
+// helper covers every other /api/v1 path.
+//
+// Cost: nothing while the switch is off (one cached settings read every 30 s).
+// While it is on, a request with a session pays one getUser() per session
+// token per minute: a pass is kept 60 s per token and per user. Who the user
+// is comes from that verified getUser() — never from decoding the cookie.
+// A refresh during getUser() is carried exactly as the page branch carries it
+// (request cookies re-forwarded, response cookies set), so the route never
+// replays a spent refresh token. `upstream` is the pass-through response an
+// earlier step already built (the checkout limit): its cookies are kept and no
+// second pass-through is made.
+//
+// FAILS OPEN on an internal error or an unanswered getUser() (the route
+// authenticates on its own); the gate read itself fails CLOSED for new
+// accounts only (phoneGateVerdict).
+async function applyPhoneGateApi(
+  req: NextRequest,
+  pathname: string,
+  upstream: NextResponse | null = null,
+): Promise<NextResponse | null> {
+  if (!isSupabaseMode || !isPhoneGatedApiPath(pathname) || isProtectedApiPath(pathname)) return null;
+  try {
+    const setting = await loadSignupPhoneOtpSetting();
+    if (!setting.enabled || !setting.enabledAt) return null;
+
+    const authHeader = req.headers.get("authorization");
+    let bearerToken: string | null = null;
+    if (authHeader && authHeader.trim().toLowerCase().startsWith("bearer ")) {
+      const token = authHeader.trim().slice(7).trim();
+      if (token.length > 0) bearerToken = token;
+    }
+    const sessionCookies = req.cookies
+      .getAll()
+      .filter((c) => hasSupabaseAuthCookie([c.name]))
+      .map((c) => `${c.name}=${c.value}`);
+    if (!bearerToken && sessionCookies.length === 0) return null;
+
+    const tokenKey = await sessionTokenKey([bearerToken ?? "", ...sessionCookies]);
+    if (tokenKey && hasTokenPass(tokenKey)) return null;
+
+    let refreshed = false;
+    let response: NextResponse = upstream ?? NextResponse.next({ request: req });
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          getAll() {
+            return req.cookies.getAll();
+          },
+          setAll(cookiesToSet) {
+            refreshed = true;
+            cookiesToSet.forEach(({ name, value }) => req.cookies.set(name, value));
+            if (!upstream) response = NextResponse.next({ request: req });
+            cookiesToSet.forEach(({ name, value, options }) => response.cookies.set(name, value, options));
+          },
+        },
+      },
+    );
+    const {
+      data: { user },
+    } = await (bearerToken ? supabase.auth.getUser(bearerToken) : supabase.auth.getUser());
+    const passThrough = refreshed && !upstream ? response : null;
+    if (!user) return passThrough;
+
+    if ((await phoneGateVerdict(user, tokenKey)) === "held") {
+      const held = NextResponse.json({ error: PHONE_UNVERIFIED_AR, code: PHONE_UNVERIFIED_CODE }, { status: 403 });
+      held.headers.set("Cache-Control", "no-store");
+      response.cookies.getAll().forEach((c) => held.cookies.set(c));
+      return held;
+    }
+    return passThrough;
+  } catch {
+    return null;
+  }
+}
+
 // ─── Library read quota + security lock (owner note ١٣ C07 / C09) ────────────
 //
 // The buckets above are per visitor and in memory: they reset with the
@@ -829,6 +928,11 @@ async function proxyRoutes(req: NextRequest) {
   // 0a. S5: checkout starts (the founder seat reservation), 3 per 10 minutes
   //     per signed-in user. null for every other request.
   const checkoutLimited = await applyCheckoutStartLimit(req, pathname);
+  // Batch l15: a checkout pass-through (not a 429) still meets the WhatsApp
+  // sign-up gate, keeping that response's cookies.
+  const checkoutPhoneHeld =
+    checkoutLimited && checkoutLimited.status !== 429 ? await applyPhoneGateApi(req, pathname, checkoutLimited) : null;
+  if (checkoutPhoneHeld) return checkoutPhoneHeld;
   if (checkoutLimited) return checkoutLimited;
 
   // 0b. Owner note ١٣: the durable per-user library quota and the library
@@ -836,6 +940,13 @@ async function proxyRoutes(req: NextRequest) {
   //     (see applyLibraryReadQuota). null for every other request.
   const quotaResponse = await applyLibraryReadQuota(req, pathname);
   if (quotaResponse) return quotaResponse;
+
+  // 0c. Batch l15: a new account whose mobile is not confirmed yet is refused
+  //     /api/v1 (outside branch 1b, which asks below with its own user) —
+  //     403 { code: "phone_unverified" }. null for every other request, and
+  //     for everyone while the admin's switch is off.
+  const phoneHeldApi = await applyPhoneGateApi(req, pathname);
+  if (phoneHeldApi) return phoneHeldApi;
 
   // 1. Handle deprecated route redirects (permanent 301)
   if (REDIRECTS[pathname]) {
@@ -911,6 +1022,14 @@ async function proxyRoutes(req: NextRequest) {
     // TODO 3.5: a suspended account is refused every gated API.
     if (isSuspendedUser(user)) {
       return NextResponse.json({ error: ACCOUNT_SUSPENDED_AR, code: ACCOUNT_SUSPENDED_CODE }, { status: 403 });
+    }
+    // Batch l15: the WhatsApp sign-up code. Nothing while the switch is off;
+    // an account older than the switch-on never asks (phoneGateServer.ts).
+    if (isPhoneGatedApiPath(pathname) && (await phoneGateVerdict(user)) === "held") {
+      const held = NextResponse.json({ error: PHONE_UNVERIFIED_AR, code: PHONE_UNVERIFIED_CODE }, { status: 403 });
+      held.headers.set("Cache-Control", "no-store");
+      apiResponse.cookies.getAll().forEach((c) => held.cookies.set(c));
+      return held;
     }
     // Owner decision (22-23 Nov 2026): the independent legal consultant sees the
     // library only. /api/v1/lawyer/* is the lawyer's workspace API (cases,
@@ -1123,6 +1242,23 @@ async function proxyRoutes(req: NextRequest) {
       const suspendedRedirect = NextResponse.redirect(suspendedUrl);
       supabaseResponse.cookies.getAll().forEach((cookie) => suspendedRedirect.cookies.set(cookie));
       return suspendedRedirect;
+    }
+
+    // ─── Batch l15: a new account confirms its mobile first ────────────────
+    // Created at/after the admin's switch-on, not staff, not a test account,
+    // mobile not confirmed → /verify-phone (not PROTECTED: no loop). Before
+    // the profiles read below so /onboarding and rule-less pages are held
+    // too. Nothing while the switch is off; an older account never asks.
+    if ((await phoneGateVerdict(user)) === "held") {
+      const verifyUrl = req.nextUrl.clone();
+      verifyUrl.pathname = VERIFY_PHONE_PATH;
+      verifyUrl.search = "";
+      // Back to the page asked for once the mobile is confirmed (same-origin
+      // only: /verify-phone reads it through safePhoneNext).
+      verifyUrl.searchParams.set("next", `${pathname}${req.nextUrl.search}`);
+      const verifyRedirect = NextResponse.redirect(verifyUrl);
+      supabaseResponse.cookies.getAll().forEach((cookie) => verifyRedirect.cookies.set(cookie));
+      return verifyRedirect;
     }
 
     // ─── One read of `profiles`, shared by both gates below ─────────────────

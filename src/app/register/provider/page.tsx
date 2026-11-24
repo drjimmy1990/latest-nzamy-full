@@ -58,6 +58,8 @@ import { TurnstileWidget } from "@/components/auth/TurnstileWidget";
 import TermsConsentCheckbox from "@/components/legal/TermsConsentCheckbox";
 import { CURRENT_TERMS_VERSION } from "@/lib/legal/termsVersion";
 import { recordTermsAcceptance } from "@/lib/legal/termsAcceptanceClient";
+// Batch l15: a new account confirms its mobile by WhatsApp before anything else.
+import { phoneOtpRequiredNow } from "@/lib/phoneOtp/phoneOtpClient";
 
 // `?type=` from a /pricing CTA (e.g. /register/provider?type=consultant)
 // preselects that card. Step 1 stays on screen, so the choice can still be
@@ -585,6 +587,18 @@ export default function RegisterProviderPage() {
                             // session. Best-effort — a failure is healed by the
                             // metadata path above on the next signed-in visit.
                             if (signUpData.session) await recordTermsAcceptance("signup");
+
+                            // Batch l15: with a session and the admin's switch
+                            // on, the account's WhatsApp code comes first; a
+                            // lawyer then returns to the licence step (the photo
+                            // is asked again there). Without a session nothing
+                            // changes.
+                            if (signUpData.session && (await phoneOtpRequiredNow())) {
+                              window.location.assign(
+                                needsLicenceProofFor(providerType) ? "/verify-phone?next=/register/provider/verify" : "/verify-phone",
+                              );
+                              return;
+                            }
                             setSignupHasSession(Boolean(signUpData.session));
 
                             setStep(5);

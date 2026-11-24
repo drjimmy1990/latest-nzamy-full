@@ -11,7 +11,11 @@
  *   - the licence photo is uploaded and the AI check read it as a MATCH
  *     (skipped / doubt / mismatch / error → human review);
  *   - the code sent to the account's OWN e-mail was confirmed (no WhatsApp,
- *     no SMS, no registry-mobile code any more);
+ *     no SMS, no registry-mobile code any more) — OR, since batch l15 (the
+ *     user changed decision ٢٧: a WhatsApp code for every sign-up), the
+ *     account's mobile was confirmed by that WhatsApp code
+ *     (profiles.phone_verified_at). The e-mail code path stays as it was; it
+ *     is simply not asked of a lawyer whose mobile is confirmed;
  *   - his e-mail is not a throwaway address;
  *   - LAWYER_INSTANT_APPROVAL=on.
  * Everything else ends in «سجّلنا بياناتك وسنتواصل معك» (review) — never a
@@ -46,6 +50,11 @@ export type DecisionInput = {
   aiStatus: AiStatus | null;
   /** The code sent to the account's own e-mail was confirmed. */
   emailOtpVerified: boolean;
+  /**
+   * Batch l15: the account's mobile was confirmed by the WhatsApp sign-up code
+   * (profiles.phone_verified_at). Stands in for the e-mail code. Absent = false.
+   */
+  phoneOtpVerified?: boolean;
   /** The e-mail code can be sent (LAWYER_OTP_EMAIL=on + e-mail set up + pepper). */
   emailChannelAvailable: boolean;
   /**
@@ -106,7 +115,7 @@ export function decideLawyerSignup(i: DecisionInput): Decision {
   if (!i.licenceImageUploaded) return { outcome: "pending", next: "upload_licence", reasons: hard };
   if (hard.length > 0) return { outcome: "review", next: null, reasons: hard };
 
-  if (!i.emailOtpVerified) {
+  if (!i.emailOtpVerified && i.phoneOtpVerified !== true) {
     if (!i.emailChannelAvailable) return { outcome: "review", next: null, reasons: ["email_unavailable"] };
     return { outcome: "pending", next: "email_otp", reasons: [] };
   }

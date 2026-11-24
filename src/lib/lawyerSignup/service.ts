@@ -162,6 +162,11 @@ export async function evaluate(svc: Svc, user: User, opts: { fullName?: string |
 
   const emailVerified = row.email_otp_verified_at != null;
   const emailAvailable = config.email && !throwaway;
+  // Batch l15: a mobile confirmed by the WhatsApp sign-up code stands in for
+  // the e-mail code (the user changed decision ٢٧). A failed read counts as
+  // not confirmed — the e-mail step is then asked as before.
+  const { data: phoneRow } = await svc.from("profiles").select("phone_verified_at").eq("id", user.id).maybeSingle();
+  const phoneVerified = (phoneRow as { phone_verified_at?: unknown } | null)?.phone_verified_at != null;
   const decision: Decision = decideLawyerSignup({
     alreadyVerified: accountStatus === "verified",
     accountBlocked: accountStatus === "rejected" || accountStatus === "suspended",
@@ -172,6 +177,7 @@ export async function evaluate(svc: Svc, user: User, opts: { fullName?: string |
     licenceImageUploaded: image !== null,
     aiStatus: image?.ai_status ?? null,
     emailOtpVerified: emailVerified,
+    phoneOtpVerified: phoneVerified,
     emailChannelAvailable: emailAvailable,
     mobileChangeRequested: row.mobile_change_requested_at != null,
     emailThrowaway: throwaway,
