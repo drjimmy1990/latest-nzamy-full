@@ -3,6 +3,7 @@
 import { motion } from "framer-motion";
 import { latinSignedIntegerInput } from "@/lib/forms/latinDigits";
 import { useState, useEffect, useCallback } from "react";
+import UserTicketsPanel from "./_user-tickets";
 import { useParams } from "next/navigation";
 import {
   ArrowLeft, User, Robot, Ticket, Money, Star, Eye,
@@ -1372,22 +1373,10 @@ export default function UserProfilePage() {
       )}
 
       {tab==="tickets" && (
-        <motion.div key="tix" initial={{opacity:0}} animate={{opacity:1}} className={`${card} p-5`}>
-          <p className={`text-[13px] font-bold mb-4 ${isDark?"text-white":"text-slate-800"}`}>تذاكر الدعم</p>
-          {[
-            { id:"#١٢٨", title:"مشكلة في تصدير PDF", status:"open", date:"منذ أسبوع" },
-            { id:"#١٠٤", title:"طلب ترقية باقة", status:"closed", date:"منذ شهر" },
-            { id:"#٨٩", title:"استفسار عن حاسبة الأتعاب", status:"closed", date:"منذ شهرين" },
-          ].map((t,i)=>(
-            <div key={i} className={`flex items-center gap-3 py-3 ${i<2?`border-b ${isDark?"border-white/[0.04]":"border-slate-50"}`:""}`}>
-              <Ticket size={14} className={t.status==="open"?"text-orange-400":"text-zinc-500"}/>
-              <p className={`flex-1 text-[12px] ${isDark?"text-zinc-300":"text-slate-600"}`}>{t.title}</p>
-              <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${
-                t.status==="open"?"bg-orange-500/10 border-orange-500/20 text-orange-400":"bg-zinc-500/10 border-zinc-500/20 text-zinc-500"
-              }`}>{t.status==="open"?"مفتوح":"مغلق"}</span>
-              <span className={`text-[10px] ${isDark?"text-zinc-600":"text-slate-400"}`}>{t.date}</span>
-            </div>
-          ))}
+        // Live check of 13 Nov, row 31: this account's real tickets, not the
+        // three invented tickets every user used to show.
+        <motion.div key="tix" initial={{opacity:0}} animate={{opacity:1}}>
+          <UserTicketsPanel userId={userId} isDark={isDark} cardClass={card} timeAgo={timeAgo} />
         </motion.div>
       )}
 
