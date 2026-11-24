@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/access-control";
 import { createServiceClient } from "@/lib/supabase/server";
 import { monthlyEquivalent } from "@/lib/payments/planRowPrice";
+import { ERP_FIRMS_MAX, idChunks } from "@/lib/admin/erpOverview";
 
 export async function GET(request: NextRequest) {
   // 1. Auth check
@@ -16,34 +17,50 @@ export async function GET(request: NextRequest) {
   const adminClient = await createServiceClient();
 
   try {
-    // 2. Fetch all required tables in parallel for in-memory joins.
+    // 2. One page of firms, then only the rows that belong to them.
     // N05-E2 (owner package 13 Nov): only the columns this screen reads. The
     // plan embed stays `( * )`, as in admin/stats: monthlyEquivalent reads the
     // cycle price columns 20261026_10 added, and a missing column would fail
     // the whole read.
-    const [firmsRes, membersRes, casesRes, subsRes] = await Promise.all([
-      adminClient
-        .from("firm_profiles")
-        .select("id, owner_user_id, name_ar, size, verification_status, rating:metadata->rating, city:metadata->>city"),
-      adminClient.from("firm_members").select("firm_id, user_id").eq("status", "active"),
-      adminClient.from("cases").select("assigned_user_id, status").or("status.eq.active,status.eq.open"),
-      adminClient.from("subscriptions").select(`
+    // Live check row 49: the four reads used to be unbounded (every firm,
+    // member, open case and subscription on the platform). Now the newest
+    // ERP_FIRMS_MAX firms (with an exact total), and members, cases and
+    // subscriptions scoped to those firms by id, in URL-safe chunks.
+    const firmsRes = await adminClient
+      .from("firm_profiles")
+      .select("id, owner_user_id, name_ar, size, verification_status, rating:metadata->rating, city:metadata->>city", { count: "exact" })
+      .order("created_at", { ascending: false })
+      .limit(ERP_FIRMS_MAX);
+    if (firmsRes.error) throw firmsRes.error;
+    const firmsData = firmsRes.data || [];
+    const firmsTotal = typeof firmsRes.count === "number" ? firmsRes.count : firmsData.length;
+
+    const membersData: any[] = [];
+    for (const ids of idChunks(firmsData.map((f: any) => f.id))) {
+      const res = await adminClient.from("firm_members").select("firm_id, user_id").eq("status", "active").in("firm_id", ids);
+      if (res.error) throw res.error;
+      membersData.push(...(res.data || []));
+    }
+    const ownerIds = firmsData.map((f: any) => f.owner_user_id);
+    const staffIds = [...ownerIds, ...membersData.map((m: any) => m.user_id)];
+
+    const casesData: any[] = [];
+    const subsData: any[] = [];
+    for (const ids of idChunks(staffIds)) {
+      const res = await adminClient.from("cases").select("assigned_user_id, status").or("status.eq.active,status.eq.open").in("assigned_user_id", ids);
+      if (res.error) throw res.error;
+      casesData.push(...(res.data || []));
+    }
+    for (const ids of idChunks(ownerIds)) {
+      const res = await adminClient.from("subscriptions").select(`
         user_id,
         billing_cycle,
         status,
         subscription_plans ( * )
-      `).eq("status", "active")
-    ]);
-
-    if (firmsRes.error) throw firmsRes.error;
-    if (membersRes.error) throw membersRes.error;
-    if (casesRes.error) throw casesRes.error;
-    if (subsRes.error) throw subsRes.error;
-
-    const firmsData = firmsRes.data || [];
-    const membersData = membersRes.data || [];
-    const casesData = casesRes.data || [];
-    const subsData = subsRes.data || [];
+      `).eq("status", "active").in("user_id", ids);
+      if (res.error) throw res.error;
+      subsData.push(...(res.data || []));
+    }
 
     // 3. Map firms to the requested schema and calculate stats
     const firms = firmsData.map((firm: any) => {
@@ -102,13 +119,17 @@ export async function GET(request: NextRequest) {
     const totalMRR = firms.reduce((acc, f) => acc + f.mrr, 0);
     const totalLawyers = firms.reduce((acc, f) => acc + f.lawyers, 0);
     const totalCases = firms.reduce((acc, f) => acc + f.activeCases, 0);
-    const totalFirms = firms.length;
+    // The firm count is the exact platform total; the other three cover the
+    // firms listed, and `truncated` says when that is not every firm.
+    const totalFirms = firmsTotal;
 
     const summary = {
       totalMRR: Math.round(totalMRR * 100) / 100,
       totalLawyers,
       totalCases,
-      totalFirms
+      totalFirms,
+      listedFirms: firms.length,
+      truncated: firmsTotal > firms.length,
     };
 
     return NextResponse.json({

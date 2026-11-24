@@ -2,6 +2,7 @@
 import { motion } from "framer-motion";
 import { useState, useEffect } from "react";
 import { UsersThree, Briefcase, ChartBar, Eye, MagnifyingGlass, Buildings, Scales, Star } from "@phosphor-icons/react";
+import { erpTruncationNoteAr } from "@/lib/admin/erpOverview";
 
 const card = "bg-[#0f0f16] border border-white/[0.07] rounded-2xl";
 const STATUS_CFG: Record<string, { cls: string; label: string }> = {
@@ -60,6 +61,12 @@ export default function ERPTab() {
           </div>
         ))}
       </div>
+
+      {/* Live check row 49: the list is the newest firms only when there are
+          more than the route reads at once — say so instead of a partial sum. */}
+      {summary.truncated && (
+        <p className="text-[11px] text-amber-400">{erpTruncationNoteAr(summary.listedFirms ?? firms.length, summary.totalFirms)}</p>
+      )}
 
       {/* Search */}
       <div className={`${card} p-4`}>
