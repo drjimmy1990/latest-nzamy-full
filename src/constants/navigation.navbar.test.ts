@@ -29,6 +29,8 @@ import {
   isMegaMenu,
 } from "./navigation.navbar.ts";
 import type { NavItem } from "./navigation.types.ts";
+import { CLIENT_SERVICE_CATEGORIES } from "./clientServiceCatalog.ts";
+import { categoryFromSearch } from "../app/dashboard/client/services/_category-param.ts";
 
 // Every destination the visitor navbar linked on 18 Oct, before item 129.
 const HREFS_BEFORE_ITEM_129 = [
@@ -335,4 +337,28 @@ test("Navbar: the full-width panel box takes no clicks; only the bridge and the 
   assert.match(navbar, /className="pointer-events-none absolute inset-x-0 top-\[calc\(100%_-_1rem\)\] z-50"/);
   assert.match(navbar, /<div aria-hidden="true" className="pointer-events-auto h-6" \/>/);
   assert.match(navbar, /className="pointer-events-auto mx-auto grid max-w-5xl grid-cols-4/);
+});
+
+// ── Signed-in navbars (live check of 13 Nov, row 11) ─────────────────────────
+// The individual's «الخدمات» menu linked four pages that never existed
+// (/dashboard/client/services/{representation,notarization,drafting,hearings}).
+// No test walked the signed-in menus, so nobody saw the 404s.
+test("every signed-in navbar link resolves to a page.tsx, and every ?cat= is a real category", () => {
+  const signedIn = { LAWYER_NAV, FIRM_NAV, INDIVIDUAL_NAV, CORPORATE_NAV, MICRO_NAV, PROVIDER_NAV, ADMIN_NAV, GOVERNMENT_NAV, NGO_NAV };
+  const categoryIds = new Set(CLIENT_SERVICE_CATEGORIES.map((c) => c.categoryId as string));
+  for (const [name, nav] of Object.entries(signedIn)) {
+    for (const leaf of leaves(nav)) {
+      if (leaf.href.startsWith("#") || /^https?:/.test(leaf.href)) continue;
+      assert.ok(existsSync(pageFileFor(leaf.href)), `${name}: ${leaf.href} has no page`);
+      const cat = new URLSearchParams(leaf.href.split("?")[1] ?? "").get("cat");
+      if (cat !== null) assert.ok(categoryIds.has(cat), `${name}: ${leaf.href} names no category`);
+    }
+  }
+});
+
+test("categoryFromSearch opens only a category the page shows", () => {
+  assert.equal(categoryFromSearch("?cat=contracts", ["consultation", "contracts"]), "contracts");
+  assert.equal(categoryFromSearch("?cat=representation", ["consultation", "contracts"]), null);
+  assert.equal(categoryFromSearch("", ["contracts"]), null);
+  assert.equal(categoryFromSearch("?cat=", ["contracts"]), null);
 });
