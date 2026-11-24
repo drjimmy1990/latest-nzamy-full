@@ -110,8 +110,8 @@ select pg_temp.expect('P4 60 s cooldown after a sent/pending code',
   (select public.phone_otp_issue('00000000-0000-0000-0000-0000000015b1',
      pg_temp.h('+966500000201'), '…01', pg_temp.h('code-333333')) ->> 'reason'), 'cooldown');
 reset role;
-update public.phone_otp_challenges set delivery = 'sent'
- where user_id = '00000000-0000-0000-0000-0000000015b1' and delivery = 'pending';
+-- The second code stays 'pending' on purpose: the send went out but the
+-- server's «sent» stamp did not land — the code must still verify (P5).
 -- ten codes to one number from other accounts in 24 h → the number is capped
 insert into public.phone_otp_challenges (user_id, target_hash, code_hash, delivery, created_at)
 select '00000000-0000-0000-0000-0000000015a1', pg_temp.h('+966500000999'), pg_temp.h('x' || g), 'sent', now() - interval '2 hours'

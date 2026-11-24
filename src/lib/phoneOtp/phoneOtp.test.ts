@@ -154,11 +154,24 @@ test("rules: which /api/v1 paths a held account may still call", () => {
   assert.equal(isPhoneGatedApiPath("/api/library/search"), false);
 });
 
-test("rules: the post-verify destination is a short same-origin list", () => {
+test("rules: the post-verify destination is any path of this site, never another origin", () => {
   assert.equal(safePhoneNext("/register/provider/verify"), "/register/provider/verify");
-  assert.equal(safePhoneNext("/dashboard/lawyer?x=1"), "/dashboard/lawyer");
-  assert.equal(safePhoneNext("/onboarding"), "/onboarding");
-  for (const bad of ["//evil.example", "https://evil.example", "/\\evil", "/settings", "/dashboardx", "javascript:alert(1)", null, 5]) {
+  assert.equal(safePhoneNext("/dashboard/lawyer?x=1#top"), "/dashboard/lawyer?x=1");
+  assert.equal(safePhoneNext("/invite/abc123"), "/invite/abc123");
+  assert.equal(safePhoneNext("/login?from=/dashboard/client"), "/login?from=/dashboard/client");
+  for (const bad of [
+    "//evil.example",
+    "https://evil.example",
+    "/\\evil",
+    "javascript:alert(1)",
+    "/a b",
+    "/x\u0000y",
+    "/verify-phone",
+    "/verify-phone?next=/x",
+    "dashboard",
+    null,
+    5,
+  ]) {
     assert.equal(safePhoneNext(bad), null, String(bad));
   }
 });

@@ -17,7 +17,10 @@
  *     answer ever read, nobody is held (the code may run before the migration);
  *   - the gate read fails for a NEW account: held (fail closed — only accounts
  *     created after the switch-on ever reach this read; an old account is
- *     never locked out by an error).
+ *     never locked out by an error). Exception: an account the database has
+ *     already called exempt or confirmed (staff, test account, confirmed
+ *     mobile) in the last 24 h in this process keeps passing while the read
+ *     fails, so an exempt account is not locked out by an error either.
  *
  * A plain fetch to PostgREST as the service role (as readQuotaServer.ts and
  * publicGuardServer.ts), so the proxy bundle gains no client. The key is read
@@ -28,6 +31,8 @@ import { mayBeHeld, signupPhoneOtpFrom, SIGNUP_PHONE_OTP_KEY, type SignupPhoneOt
 const SETTING_TTL_MS = 30 * 1000;
 const SETTING_RETRY_MS = 15 * 1000;
 const PASS_TTL_MS = 60 * 1000;
+/** "Known not held" (staff / test account / confirmed), used only when the gate read fails. */
+const KNOWN_FREE_TTL_MS = 24 * 60 * 60 * 1000;
 const PASS_MAX = 5_000;
 const TIMEOUT_MS = 1_500;
 const OFF: SignupPhoneOtpSetting = { enabled: false, enabledAt: null };
@@ -82,8 +87,8 @@ export async function loadSignupPhoneOtpSetting(): Promise<SignupPhoneOtpSetting
   return settingInflight;
 }
 
-/** public.phone_otp_gate(user) → true (held) / false / null (could not be read). */
-async function readGate(userId: string): Promise<boolean | null> {
+/** public.phone_otp_gate(user) → { gated, reason } / null (could not be read). */
+async function readGate(userId: string): Promise<{ gated: boolean; reason: string } | null> {
   const r = rest();
   if (!r) return null;
   try {
@@ -100,9 +105,9 @@ async function readGate(userId: string): Promise<boolean | null> {
       cache: "no-store",
     });
     if (!res.ok) return null;
-    const j = (await res.json()) as { gated?: unknown } | null;
+    const j = (await res.json()) as { gated?: unknown; reason?: unknown } | null;
     if (!j || typeof j.gated !== "boolean") return null;
-    return j.gated;
+    return { gated: j.gated, reason: typeof j.reason === "string" ? j.reason : "" };
   } catch {
     return null;
   }
@@ -118,9 +123,9 @@ function hasPass(key: string, now: number): boolean {
   return true;
 }
 
-function remember(key: string, now: number): void {
+function remember(key: string, now: number, ttlMs: number = PASS_TTL_MS): void {
   passes.delete(key);
-  passes.set(key, now + PASS_TTL_MS);
+  passes.set(key, now + ttlMs);
   while (passes.size > PASS_MAX) {
     const oldest = passes.keys().next().value;
     if (oldest === undefined) break;
@@ -149,13 +154,17 @@ export async function phoneGateVerdict(
       if (extraPassKey) remember(`t:${extraPassKey}`, now);
       return "pass";
     }
-    const gated = await readGate(user.id);
-    if (gated === false) {
+    const gate = await readGate(user.id);
+    if (gate && !gate.gated) {
       remember(`u:${user.id}`, now);
       if (extraPassKey) remember(`t:${extraPassKey}`, now);
+      if (["staff", "test_account", "verified"].includes(gate.reason)) remember(`k:${user.id}`, now, KNOWN_FREE_TTL_MS);
       return "pass";
     }
-    if (gated === null) console.error("[phone-gate] gate read failed; a new account is held until it can be read");
+    if (gate === null) {
+      if (hasPass(`k:${user.id}`, now)) return "pass";
+      console.error("[phone-gate] gate read failed; a new account is held until it can be read");
+    }
     return "held";
   } catch {
     return "held";

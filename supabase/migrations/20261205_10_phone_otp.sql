@@ -26,7 +26,7 @@
 --          must not use up a person's tries; the route's per-process limits
 --          bound the retries);
 --        phone_otp_verify(user, target hash, phone, code hash) → under the
---          same lock: a hit (sent, open, same number) consumes every open code
+--          same lock: a hit (not a failed delivery, open, same number) consumes every open code
 --          of the account and stamps profiles.phone_verified_at — only while
 --          profiles.phone is still the number the code went to; a miss adds an
 --          attempt to every open code (5 = dead);
@@ -239,7 +239,7 @@ begin
 
   select c.id into v_hit
     from public.phone_otp_challenges c
-   where c.user_id = p_user and c.target_hash = p_target_hash and c.delivery = 'sent'
+   where c.user_id = p_user and c.target_hash = p_target_hash and c.delivery <> 'failed'
      and c.consumed_at is null and c.expires_at > pg_catalog.now() and c.attempts < 5
      and c.code_hash = p_code_hash
    order by c.created_at desc
@@ -261,11 +261,11 @@ begin
   end if;
 
   select count(*)::integer into v_open from public.phone_otp_challenges c
-   where c.user_id = p_user and c.delivery = 'sent'
+   where c.user_id = p_user and c.delivery <> 'failed'
      and c.consumed_at is null and c.expires_at > pg_catalog.now() and c.attempts < 5;
   if v_open = 0 then
     if exists (select 1 from public.phone_otp_challenges c
-                where c.user_id = p_user and c.delivery = 'sent'
+                where c.user_id = p_user and c.delivery <> 'failed'
                   and c.consumed_at is null and c.expires_at > pg_catalog.now() and c.attempts >= 5) then
       return pg_catalog.jsonb_build_object('ok', false, 'reason', 'locked');
     end if;
@@ -274,17 +274,17 @@ begin
 
   update public.phone_otp_challenges c
      set attempts = c.attempts + 1
-   where c.user_id = p_user and c.delivery = 'sent'
+   where c.user_id = p_user and c.delivery <> 'failed'
      and c.consumed_at is null and c.expires_at > pg_catalog.now() and c.attempts < 5;
   select max(c.attempts) into v_max from public.phone_otp_challenges c
-   where c.user_id = p_user and c.delivery = 'sent'
+   where c.user_id = p_user and c.delivery <> 'failed'
      and c.consumed_at is null and c.expires_at > pg_catalog.now();
   return pg_catalog.jsonb_build_object('ok', false, 'reason', 'wrong', 'attempts_left', greatest(0, 5 - coalesce(v_max, 5)));
 end
 $fn$;
 
 comment on function public.phone_otp_verify(uuid, text, text, text) is
-  '20261205_10: verify a WhatsApp sign-up code under an advisory lock — a hit (sent, open, same number, profiles.phone unchanged) consumes every open code and stamps profiles.phone_verified_at; a miss adds one attempt to every open code (5 = dead). service_role only.';
+  '20261205_10: verify a WhatsApp sign-up code under an advisory lock — a hit (not a failed delivery, open, same number, profiles.phone unchanged) consumes every open code and stamps profiles.phone_verified_at; a miss adds one attempt to every open code (5 = dead). service_role only.';
 
 -- ── 3c. is this account held until its mobile is confirmed? ─────────────────
 create or replace function public.phone_otp_gate(p_user uuid)

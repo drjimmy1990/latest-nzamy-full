@@ -87,15 +87,25 @@ export function isPhoneGatedApiPath(pathname: string): boolean {
   return under(pathname, "/api/v1") && !isPhoneGateOpenApiPath(pathname);
 }
 
-/** Where /verify-phone may send the user after success (same-origin paths only, a short list). */
-const NEXT_ALLOWED = ["/register/provider/verify", "/onboarding", "/dashboard"] as const;
-
+/**
+ * Where /verify-phone may send the user after success: any path of THIS site
+ * (path + query, no fragment) — the page the proxy held, a login `?from=`, an
+ * invitation link. Never another origin: a leading `//`, a backslash, a scheme,
+ * whitespace or a control character is refused, and so is the verify page itself.
+ */
 export function safePhoneNext(raw: unknown): string | null {
   if (typeof raw !== "string") return null;
   const s = raw.trim();
-  if (!s.startsWith("/") || s.startsWith("//") || s.includes("\\") || /[\s:]/.test(s)) return null;
-  const path = s.split(/[?#]/)[0];
-  return NEXT_ALLOWED.some((p) => under(path, p)) ? path : null;
+  if (!s.startsWith("/") || s.startsWith("//") || s.includes("\\") || /[\s\u0000-\u001f\u007f]/.test(s)) return null;
+  let url: URL;
+  try {
+    url = new URL(s, "https://same-origin.invalid");
+  } catch {
+    return null;
+  }
+  if (url.origin !== "https://same-origin.invalid") return null;
+  if (under(url.pathname, VERIFY_PHONE_PATH)) return null;
+  return `${url.pathname}${url.search}`;
 }
 
 /** «…٤٥٦٧» style hint for the screen: the last four digits only. */

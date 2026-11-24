@@ -7,7 +7,7 @@ process.env.SUPABASE_SERVICE_ROLE_KEY = "test-service-key";
 
 const SINCE = "2026-12-01T00:00:00.000Z";
 const calls: string[] = [];
-let gateAnswer: "held" | "free" | "error" = "held";
+let gateAnswer: "held" | "free" | "staff" | "error" = "held";
 
 globalThis.fetch = (async (input: string | URL) => {
   const url = String(input);
@@ -17,7 +17,8 @@ globalThis.fetch = (async (input: string | URL) => {
   }
   if (url.includes("/rest/v1/rpc/phone_otp_gate")) {
     if (gateAnswer === "error") return new Response("{}", { status: 500 });
-    return new Response(JSON.stringify({ gated: gateAnswer === "held" }), { status: 200 });
+    if (gateAnswer === "staff") return new Response(JSON.stringify({ gated: false, reason: "staff" }), { status: 200 });
+    return new Response(JSON.stringify({ gated: gateAnswer === "held", reason: gateAnswer === "held" ? "unverified" : "verified" }), { status: 200 });
   }
   return new Response("{}", { status: 404 });
 }) as typeof fetch;
@@ -57,6 +58,22 @@ test("a failed gate read holds a NEW account only (fail closed), never an old on
   gateAnswer = "error";
   assert.equal(await phoneGateVerdict({ id: "u-other", created_at: "2026-12-03T00:00:00Z" }), "held");
   assert.equal(await phoneGateVerdict({ id: "u-old-2", created_at: "2026-01-01T00:00:00Z" }), "pass");
+});
+
+test("an exempt account once seen keeps passing while the gate read fails", async () => {
+  gateAnswer = "staff";
+  assert.equal(await phoneGateVerdict({ id: "u-staff", created_at: "2026-12-04T00:00:00Z" }), "pass");
+  gateAnswer = "error";
+  // Two minutes later: the 60 s pass is gone, only the 24 h "known exempt" remains.
+  const realNow = Date.now;
+  const later = realNow() + 2 * 60 * 1000;
+  Date.now = () => later;
+  try {
+    assert.equal(await phoneGateVerdict({ id: "u-staff", created_at: "2026-12-04T00:00:00Z" }), "pass");
+    assert.equal(await phoneGateVerdict({ id: "u-never-seen", created_at: "2026-12-04T00:00:00Z" }), "held");
+  } finally {
+    Date.now = realNow;
+  }
 });
 
 test("the token key: same material → same key; nothing → null", async () => {

@@ -1253,6 +1253,9 @@ async function proxyRoutes(req: NextRequest) {
       const verifyUrl = req.nextUrl.clone();
       verifyUrl.pathname = VERIFY_PHONE_PATH;
       verifyUrl.search = "";
+      // Back to the page asked for once the mobile is confirmed (same-origin
+      // only: /verify-phone reads it through safePhoneNext).
+      verifyUrl.searchParams.set("next", `${pathname}${req.nextUrl.search}`);
       const verifyRedirect = NextResponse.redirect(verifyUrl);
       supabaseResponse.cookies.getAll().forEach((cookie) => verifyRedirect.cookies.set(cookie));
       return verifyRedirect;
