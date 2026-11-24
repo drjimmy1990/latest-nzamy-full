@@ -334,11 +334,11 @@ test("owner ١٥٦ (l13): the contract's tokens are the outline call's plus ever
   const clause = (b: string) => ({ json: raw(JSON.stringify({ body: b, cited: [] }), 2000, 300) });
   const r = run(def.assemble, body, { items: [clause("أ."), clause("ب."), clause("ج.")], nodes: { "Plan clauses": plan } })[0].json;
   assert.equal(r.status, "succeeded");
-  assert.deepEqual(r.usage, { model: "gemini-3.1-flash-lite", input_tokens: 7000, output_tokens: 1150, cache_read_tokens: 0 });
+  assert.deepEqual(r.usage, { model: "gemini-3.5-flash-lite", input_tokens: 7000, output_tokens: 1150, cache_read_tokens: 0 });
   // The old Agent shape still parses; its counts are simply 0.
   const old = run(def.assemble, body, { items: [{ json: { output: JSON.stringify({ body: "أ", cited: [] }) } }, { json: { output: JSON.stringify({ body: "ب", cited: [] }) } }, { json: { output: JSON.stringify({ body: "ج", cited: [] }) } }], nodes: { "Plan clauses": run(def.plan, body, { json: outlineReply(outline) }) } })[0].json;
   assert.equal(old.status, "succeeded");
-  assert.deepEqual(old.usage, { model: "gemini-3.1-flash-lite", input_tokens: 0, output_tokens: 0, cache_read_tokens: 0 });
+  assert.deepEqual(old.usage, { model: "gemini-3.5-flash-lite", input_tokens: 0, output_tokens: 0, cache_read_tokens: 0 });
 });
 
 test("assemble: the clauses in the outline's order become a contract the app accepts; one failed clause fails it all", () => {

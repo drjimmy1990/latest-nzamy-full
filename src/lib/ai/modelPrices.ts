@@ -33,7 +33,15 @@ export interface ModelPrice {
 export const SAR_PER_USD = 3.75;
 
 export const MODEL_PRICES: Readonly<Record<string, ModelPrice>> = Object.freeze({
-  // Every AI tool's workflow today (n8n/ai/workflows.mjs MODEL).
+  // Every AI tool's workflow since 2026-11-24 (n8n/ai/workflows.mjs MODEL): Google refused
+  // gemini-3.1-flash-lite ("Service unavailable") on 2026-11-23/24, so all workflows moved here.
+  "gemini-3.5-flash-lite": {
+    inputUsdPerM: 0.3,
+    outputUsdPerM: 2.5,
+    cachedUsdPerM: 0.03,
+    source: "https://aistudio.google.com/docs/pricing (Standard paid tier, read 2026-11-24; cached price assumed 10% of input as for 3.1)",
+  },
+  // The model before 2026-11-24 — kept so older runs are still priced.
   "gemini-3.1-flash-lite": {
     inputUsdPerM: 0.25,
     outputUsdPerM: 1.5,

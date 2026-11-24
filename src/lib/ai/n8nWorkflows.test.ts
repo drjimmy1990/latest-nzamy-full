@@ -1061,8 +1061,8 @@ const rawGemini = (text: string, meta: Record<string, number> = { promptTokenCou
 });
 
 test("owner ١٥٦: every parse step sends Gemini's real counts from the raw reply, and the old shapes still parse (counts 0)", () => {
-  const real = { model: "gemini-3.1-flash-lite", input_tokens: 1200, output_tokens: 340, cache_read_tokens: 200 };
-  const zero = { model: "gemini-3.1-flash-lite", input_tokens: 0, output_tokens: 0, cache_read_tokens: 0 };
+  const real = { model: "gemini-3.5-flash-lite", input_tokens: 1200, output_tokens: 340, cache_read_tokens: 200 };
+  const zero = { model: "gemini-3.5-flash-lite", input_tokens: 0, output_tokens: 0, cache_read_tokens: 0 };
   // A text tool (parse()).
   const body = pkg("communicate", {});
   const r = runCode(def("communicate").parse, body, rawGemini("السلام عليكم"))[0].json;
