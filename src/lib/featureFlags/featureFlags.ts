@@ -107,12 +107,18 @@ export function featureFlagsIssue(value: unknown): string | null {
 }
 
 /**
- * The beta gates: code constants (betaConfig.ts BETA_REVIEW_MODE /
- * BETA_MONOPOLY_MODE), shown read-only on the admin page, which pairs each id
- * with its constant.
+ * The beta gate that is a code constant (betaConfig.ts BETA_REVIEW_MODE),
+ * shown read-only on the admin page, which pairs the id with its constant.
+ *
+ * l16 (C36, owner package §٧.٢ P0-2.2): the «نظامي مقدّم الخدمة الوحيد —
+ * السوق مغلق» card is gone. It read the constant BETA_MONOPOLY_MODE (always
+ * true) while the lawyers' market is a database switch
+ * (platform_settings.marketplace_market, 20261202_70) that was already open,
+ * so the page said «مغلق» about an open market. The page now shows the real
+ * switch (MARKET_STATE_TEXT_AR below).
  */
 export interface FixedFlag {
-  readonly id: "review" | "single-provider";
+  readonly id: "review";
   readonly nameAr: string;
   readonly descriptionAr: string;
 }
@@ -123,12 +129,23 @@ export const FIXED_FLAGS: readonly FixedFlag[] = Object.freeze([
     nameAr: "مراجعة مخرجات الذكاء الاصطناعي للمحامين",
     descriptionAr: "تُعرض مخرجات أدوات الصياغة للمحامي والمكتب بعد مراجعتها خلال المرحلة التجريبية.",
   }),
-  Object.freeze({
-    id: "single-provider",
-    nameAr: "نظامي مقدّم الخدمة الوحيد",
-    descriptionAr: "سوق المحامين الخارجيين مغلق خلال المرحلة التجريبية، ونظامي هو مقدّم الخدمة.",
-  }),
 ]);
+
+/**
+ * l16 (C36): the market card's text, from what GET
+ * /api/v1/admin/marketplace/settings returns: `null` = it could not be read.
+ */
+export function marketStateTextAr(read: { open: boolean; installed: boolean } | null): { label: string; detail: string } {
+  if (!read) {
+    return { label: "تعذّرت القراءة", detail: "تعذّر قراءة حالة سوق المحامين الآن — افتح صفحة «طلبات السوق» أو حاول بعد قليل." };
+  }
+  if (!read.installed) {
+    return { label: "مغلق", detail: "إعداد السوق غير مثبَّت بعد، فالسوق مغلق: تُنشر الطلبات من فريق نظامي فقط." };
+  }
+  return read.open
+    ? { label: "مفتوح", detail: "سوق المحامين مفتوح: يرى المحامون الموثّقون الطلبات المفتوحة ويتقدّمون لها. يُفتح ويُغلق من صفحة «طلبات السوق»." }
+    : { label: "مغلق", detail: "سوق المحامين مغلق: لا تُعرض على المحامين إلا الطلبات التي ينشرها فريق نظامي. يُفتح من صفحة «طلبات السوق»." };
+}
 
 // ── the server cache (pure; featureFlagsServer.ts gives it the database read) ──
 

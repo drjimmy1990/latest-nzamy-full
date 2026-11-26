@@ -157,13 +157,13 @@ export function SignupPhoneOtpCard() {
             <span className={`text-[11px] ${muted}`}>أول تشغيل: {riyadh(diag.enabledAt)}</span>
           </div>
           {!diag.settingRead && (
-            <p className={`mb-3 text-[11px] ${muted}`}>صف الإعداد غير موجود بعد — شغّل ملف الترحيل 20261205_10 أولًا.</p>
+            <p className={`mb-3 text-[11px] ${muted}`}>إعداد هذه الخاصية غير مثبَّت بعد في قاعدة البيانات — يتولّاه الفريق التقني قبل التشغيل.</p>
           )}
 
           <ul className={`mb-4 grid gap-1 text-[11px] sm:grid-cols-2 ${muted}`}>
-            <li className="flex items-center gap-1.5">{okIcon(diag.apiKeySet)} مفتاح Zernio (ZERNIO_API_KEY)</li>
-            <li className="flex items-center gap-1.5">{okIcon(diag.accountIdSet)} معرّف حساب واتساب (ZERNIO_WHATSAPP_ACCOUNT_ID)</li>
-            <li className="flex items-center gap-1.5">{okIcon(diag.pepperSet)} مفتاح تجزئة الرموز (LAWYER_OTP_PEPPER)</li>
+            <li className="flex items-center gap-1.5">{okIcon(diag.apiKeySet)} مفتاح مزوّد رسائل واتساب</li>
+            <li className="flex items-center gap-1.5">{okIcon(diag.accountIdSet)} معرّف حساب واتساب المرسِل</li>
+            <li className="flex items-center gap-1.5">{okIcon(diag.pepperSet)} مفتاح حماية الرموز</li>
             <li className="flex items-center gap-1.5">
               القالب: <span dir="ltr" className="font-mono">{diag.template}</span> — اللغة: <span dir="ltr" className="font-mono">{diag.language}</span>
             </li>

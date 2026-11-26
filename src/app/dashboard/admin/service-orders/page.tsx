@@ -10,6 +10,7 @@ import { buildOrderPrompt } from "@/lib/services/orderPrompt";
 import PastedContractBlock from "@/components/orders/PastedContractBlock";
 import { ReceiptPanel } from "./_components/ReceiptPanel";
 import OpenRequestPublishBox from "./_components/OpenRequestPublishBox";
+import PendingOrderCancelBox from "./_components/PendingOrderCancelBox";
 import { uploadErrorMessage } from "./_errorCopy";
 import { orderReference, matchesOrderReference } from "@/lib/services/orderReference";
 import { estimateLineAr } from "@/lib/services/estimateLine";
@@ -19,6 +20,8 @@ import { isTestMetadata } from "@/lib/testAccounts/testRow";
 interface AdminOrder {
   id: string; title: string; description: string; status: string;
   created_at: string; metadata: Record<string, unknown>;
+  /** The service_requests.payment column (the list route selects every column); read by the cancel box (l16 D-04). */
+  payment?: unknown;
   // Owner ٢٣ (20261127_70): the row's own columns, read by the publish box.
   // Absent until that SQL has run — the box then shows «غير منشور».
   type?: string;
@@ -1481,6 +1484,16 @@ export default function AdminServiceOrdersPage() {
                     استلام
                   </button>
                 )}
+
+                {/* l16 D-04: cancel a waiting order too (the in-review block
+                    below keeps its own button). Two steps, reason optional. */}
+                <PendingOrderCancelBox
+                  key={`cancel-${o.id}`}
+                  order={o}
+                  isDark={isDark}
+                  busy={busy}
+                  onCancel={(reason) => act(o.id, { action: "cancel", reason })}
+                />
 
                 {o.status === "in_review" && (
                   <div className="space-y-2">

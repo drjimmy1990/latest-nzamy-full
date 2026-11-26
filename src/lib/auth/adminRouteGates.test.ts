@@ -339,6 +339,9 @@ const GATES: Array<{ file: string; method: string; action: StaffAction | "per-fi
   { file: "users/[id]/demo/route.ts", method: "PATCH", action: "users.change_type", logs: 1 },
   // l16 (owner س٢١٥): rejecting an appeal against a suspension.
   { file: "users/[id]/suspension-appeal/route.ts", method: "PATCH", action: "users.suspend", logs: 1 },
+  // l16 C14: the account-type converter. The audit row is written by the SQL function itself, in the
+  // same transaction as the conversion (20261206_80), so the route holds no logAdminAction.
+  { file: "users/[id]/account-type/route.ts", method: "POST", action: "users.change_type", logs: 0 },
   { file: "receipts/route.ts", method: "POST", action: "orders.manage", logs: 1 },
   { file: "tickets/route.ts", method: "POST", action: "tickets.manage", logs: 1 },
   { file: "tickets/[id]/route.ts", method: "PATCH", action: "tickets.manage", logs: 1 },

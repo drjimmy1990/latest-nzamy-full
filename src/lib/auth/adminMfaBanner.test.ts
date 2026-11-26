@@ -26,7 +26,9 @@ test("the banner shows for a staff caller while the mode is rollout, never other
   assert.equal(adminMfaMode({}), "rollout");
   assert.equal(adminMfaMode({ ADMIN_MFA_ENFORCE: "required" }), "required");
   assert.match(ADMIN_MFA_OFF_TITLE_AR, /متوقف/);
-  assert.match(ADMIN_MFA_OFF_BODY_AR, /ADMIN_MFA_ENFORCE=required/);
+  // l16 (C46): the text names no server variable; it says who switches it on.
+  assert.match(ADMIN_MFA_OFF_BODY_AR, /إعدادات الخادم بطلب إلى الفريق التقني/);
+  assert.doesNotMatch(ADMIN_MFA_OFF_BODY_AR, /[A-Za-z]/);
 });
 
 test("the banner sits on the console home and on «الأمان والحماية»; the two-step panel shows the OFF state as an alert", () => {
@@ -50,4 +52,23 @@ test("the device-limit panel offers one device or two, and never touches the swi
   assert.doesNotMatch(panel, /max=\{10\}/);
   assert.match(panel, /body: JSON\.stringify\(\{ enabled, limit \}\)/);
   assert.match(panel, /useState\(false\)/);
+});
+
+test("l16 C46: the admin screens print no server variable, migration file, question number or English console title", () => {
+  const strip = (s: string) =>
+    s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "").replace(/\{\/\*[\s\S]*?\*\/\}/g, "");
+  const screens: Array<[string[], RegExp[]]> = [
+    [["src", "app", "dashboard", "admin", "security", "TwoFactorPanel.tsx"], [/ADMIN_MFA_ENFORCE/]],
+    [["src", "app", "dashboard", "admin", "security", "LibraryDevicesPanel.tsx"], [/DEVICE_CODE_PEPPER/, /LAWYER_OTP_PEPPER/]],
+    [["src", "app", "dashboard", "admin", "settings", "_components", "SignupPhoneOtpCard.tsx"], [/ZERNIO_API_KEY/, /ZERNIO_WHATSAPP_ACCOUNT_ID/, /\(LAWYER_OTP_PEPPER\)/, /ملف الترحيل/]],
+    [["src", "app", "dashboard", "admin", "settings", "_components", "PaymentRulesCard.tsx"], [/\(founder_topup_discount_expires\)/, /س١١٤/]],
+    [["src", "app", "dashboard", "admin", "settings", "_components", "SimpleContractPriceCard.tsx"], [/السؤال ١٢٣/, /n8n/]],
+    [["src", "app", "dashboard", "admin", "settings", "_components", "DrafterRevisionsCard.tsx"], [/السؤال ١٦٦/]],
+    [["src", "app", "dashboard", "admin", "ai-usage", "page.tsx"], [/فعّل أداة echo-fast/, /<Play size=\{14\} \/> \{tool\}/]],
+    [["src", "components", "admin", "AdminSidebar.tsx"], [/Admin Panel/, /<Scales\b/]],
+  ];
+  for (const [path, gone] of screens) {
+    const code = strip(read(...path));
+    for (const re of gone) assert.doesNotMatch(code, re, `${path.at(-1)}: ${re}`);
+  }
 });

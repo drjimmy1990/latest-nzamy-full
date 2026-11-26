@@ -8858,3 +8858,34 @@ select 'l16 roles: firm team managers (managing_partner / hr_manager) — 2 poli
        and (to_regprocedure('public.set_firm_public_reviews(boolean)') is null
             or coalesce(pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.set_firm_public_reviews(boolean)')), 'managing_partner') > 0, false)) as ok;
 -- <<< verify:l16_roles
+
+-- >>> verify:l16_admin_account_type — supabase/tests/rls/admin_account_type_l16.test.sql
+-- Batch l16-admin (owner package 25 Nov §٣.٣, C14 first slice): the admin account-type converter.
+-- 20261206_80 runs BEFORE the deploy. Before it runs the checks below answer ok = false («run 20261206_80»).
+select 'l16 admin account type: the conversion history is server-only (RLS on, no policy, no anon/authenticated privilege) (run 20261206_80)' as check,
+       coalesce((select c.relrowsecurity
+                        and not exists (select 1 from pg_catalog.pg_policy p where p.polrelid = c.oid)
+                        and not has_table_privilege('anon', c.oid, 'SELECT')
+                        and not has_table_privilege('authenticated', c.oid, 'SELECT')
+                        and not has_table_privilege('authenticated', c.oid, 'INSERT')
+                        and not has_table_privilege('authenticated', c.oid, 'UPDATE')
+                        and not has_table_privilege('authenticated', c.oid, 'DELETE')
+                   from pg_catalog.pg_class c where c.oid = to_regclass('public.account_type_conversions')), false) as ok;
+select 'l16 admin account type: converter / state / blockers are SECURITY DEFINER with an empty search_path, service_role only (run 20261206_80)' as check,
+       coalesce((select count(*) = 3
+                        and bool_and(p.prosecdef
+                                     and p.proconfig @> array['search_path=""']
+                                     and not has_function_privilege('anon', p.oid, 'EXECUTE')
+                                     and not has_function_privilege('authenticated', p.oid, 'EXECUTE')
+                                     and has_function_privilege('service_role', p.oid, 'EXECUTE'))
+                   from pg_catalog.pg_proc p
+                  where p.oid in (to_regprocedure('public.admin_change_account_type(uuid,text,text,uuid)'),
+                                  to_regprocedure('public.admin_account_type_state(uuid)'),
+                                  to_regprocedure('public.admin_account_type_blockers(uuid)'))), false) as ok;
+select 'l16 admin account type: the converter refuses open commitments, writes the audit row and deletes nothing (run 20261206_80)' as check,
+       coalesce((select position('open_commitments' in d) > 0
+                        and position('account_type_converted' in d) > 0
+                        and position('admin_account_type_blockers' in d) > 0
+                        and position('delete from' in lower(d)) = 0
+                   from (select pg_catalog.pg_get_functiondef(to_regprocedure('public.admin_change_account_type(uuid,text,text,uuid)')) as d) f), false) as ok;
+-- <<< verify:l16_admin_account_type

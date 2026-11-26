@@ -28,6 +28,7 @@ import {
 import { apiErrorText } from "@/lib/services/apiErrorText";
 import { cyclePrice, cycleUnitAr, subscriptionCycleAr } from "@/lib/payments/planRowPrice";
 import UserLibraryDevicesCard from "./UserLibraryDevicesCard";
+import AccountTypeConverterCard from "./AccountTypeConverterCard";
 import { adminToast } from "@/components/admin/adminToast";
 import SuspendAccountDialog from "../SuspendAccountDialog";
 import { APPEAL_STATUS_AR, formatSuspensionEndAr, templateLabelAr, type AppealStatus } from "@/lib/auth/suspensionTerms";
@@ -1568,6 +1569,10 @@ export default function UserProfilePage() {
                             both checks — this list is convenience, not the guard. */}
                         {DB_USER_TYPES
                           .filter(t => isAssignableUserType(t) && t !== U.user_type)
+                          // l16 C14: individual → lawyer / provider goes through the
+                          // converter card (it creates the sector row, checks the
+                          // open commitments and audits), not this profiles-only write.
+                          .filter(t => !(U.user_type === "individual" && (t === "lawyer" || t === "provider")))
                           .map(t => <option key={t} value={t}>{ROLE_MAP[t]}</option>)}
                       </select>
                       <CaretDown size={12} className={`absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none ${isDark ? "text-zinc-500" : "text-slate-400"}`} />
@@ -1632,6 +1637,8 @@ export default function UserProfilePage() {
               ))}
             </div>
           </div>
+          {/* l16 C14: the full account type and its converter (first slice). */}
+          <AccountTypeConverterCard userId={U.id} isDark={isDark} card={card} onConverted={fetchUser} />
           {/* Owner ٤٢٧: the user's library devices + «إعادة تعيين الأجهزة». */}
           <UserLibraryDevicesCard userId={U.id} isDark={isDark} card={card} />
         </motion.div>
