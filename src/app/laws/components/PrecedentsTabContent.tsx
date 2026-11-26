@@ -3,7 +3,7 @@
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Gavel, Scales, Lock, Sparkle, ArrowRight, CaretLeft, CaretRight } from "@phosphor-icons/react";
+import { Gavel, Lock, Sparkle, ArrowRight, CaretLeft, CaretRight } from "@phosphor-icons/react";
 import {
   type DemoPrinciple,
   type DemoPrecedent,
@@ -626,7 +626,7 @@ export function PrecedentsTabContent({
       {(precMode === "all" || precMode === "principles") && filteredPrinciples.length > 0 && (
         <div className="mb-6">
           <p className={`text-[11px] font-bold uppercase tracking-wider mb-3 flex items-center gap-1.5 ${muted}`}>
-            <Scales size={13} />
+            <Gavel size={13} />
             {isRTL ? "المبادئ القضائية" : "Judicial Principles"}
             <span className={`px-1.5 py-0.5 rounded-full text-[10px] ${isDark ? "bg-[#C8A762]/10 text-[#C8A762]" : "bg-amber-50 text-amber-700"}`}>
               {searchCountLabel ?? filteredPrinciples.length}

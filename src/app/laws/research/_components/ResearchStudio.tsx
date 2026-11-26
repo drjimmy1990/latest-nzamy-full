@@ -196,7 +196,8 @@ function Studio({ access }: { access: Access }) {
   );
 
   return (
-    <div dir="rtl" className={`min-h-[calc(100dvh-4rem)] ${isDark ? "bg-[#0b0f11] text-zinc-100" : "bg-[#f7f8f7] text-slate-800"}`}>
+    // B-01 (batch l16): pt-28 / md:pt-32 clears the site's fixed bar (as on /laws).
+    <div dir="rtl" className={`min-h-dvh pt-28 md:pt-32 ${isDark ? "bg-[#0b0f11] text-zinc-100" : "bg-[#f7f8f7] text-slate-800"}`}>
       {/* Header */}
       <header className={`flex h-14 items-center justify-between gap-3 border-b px-4 lg:px-6 ${line} ${isDark ? "bg-[#0f1417]" : "bg-white"}`}>
         <div className="flex items-center gap-3">
@@ -216,7 +217,7 @@ function Studio({ access }: { access: Access }) {
         </div>
       </header>
 
-      <div className="flex min-h-[calc(100dvh-7.5rem)]">
+      <div className="flex min-h-[calc(100dvh-10.5rem)] md:min-h-[calc(100dvh-11.5rem)]">
         {/* History sidebar: open by default on wide screens, a panel on small ones. */}
         <aside className={`hidden w-72 shrink-0 border-l p-3.5 lg:block ${line} ${isDark ? "bg-[#0d1214]" : "bg-[#f1f3f2]"}`}>{sidebar}</aside>
         {historyOpen && (

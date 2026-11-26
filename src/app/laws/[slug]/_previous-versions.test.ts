@@ -145,3 +145,19 @@ test("L5: «عُدّلت بموجب … بتاريخ …» from the newest card 
   assert.equal(decreePageId(" " + uuid + " "), uuid.toLowerCase());
   assert.equal(decreePageId(null), "");
 });
+
+test("B-07 (batch l16): the line names the latest-dated instrument even when the source order runs oldest first", async () => {
+  const { amendedByLine } = await import("./_previous-versions.ts");
+  const cards = visibleAmendments([
+    { source: "المرسوم الملكي رقم (م/6)", date: "1440/01/02هـ", fullText: "أقدم", position: 0 },
+    { source: "المرسوم الملكي رقم (م/113)", date: "1443/11/09هـ", fullText: "أحدث", position: 1 },
+  ]);
+  assert.equal(cards[0].fullText, "أقدم", "the parser's order is kept for the cards");
+  assert.deepEqual(amendedByLine(cards), { kind: "source", text: "عُدّلت بموجب المرسوم الملكي رقم (م/113) بتاريخ 1443/11/09هـ" });
+  // An undated card among them: the first named card, as before.
+  const mixed = visibleAmendments([
+    { source: "المرسوم الملكي رقم (م/6)", date: "", fullText: "أ", position: 0 },
+    { source: "المرسوم الملكي رقم (م/113)", date: "1443/11/09هـ", fullText: "ب", position: 1 },
+  ]);
+  assert.deepEqual(amendedByLine(mixed), { kind: "source", text: "عُدّلت بموجب المرسوم الملكي رقم (م/6)" });
+});

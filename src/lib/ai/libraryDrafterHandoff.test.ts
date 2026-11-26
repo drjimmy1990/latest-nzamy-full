@@ -69,3 +69,10 @@ test("the drafter consumes ?from=library into the notes field and discards it ot
   const actions = readFileSync(join(process.cwd(), "src/app/laws/research/_components/ResearchAnswerActions.tsx"), "utf8");
   assert.ok(actions.includes("<SendToDrafterNotesButton"));
 });
+
+test("B-24 (batch l16, owner package 25-Nov §2.8 (5)): «أرسل إلى الصائغ» explains itself in two visible lines", () => {
+  const button = readFileSync(join(process.cwd(), "src/components/draft/SendToDrafterNotesButton.tsx"), "utf8");
+  assert.ok(button.includes('data-testid="send-to-drafter-hint"'));
+  assert.ok(button.includes("{DRAFTER_HINT[0]}") && button.includes("{DRAFTER_HINT[1]}"));
+  assert.ok(button.includes("لا يُرسل شيئاً ولا يخصم نقاطاً"));
+});

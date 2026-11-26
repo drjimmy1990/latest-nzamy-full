@@ -21,6 +21,12 @@ import { stripCitationMarkers } from "@/lib/ai/citationMarkers";
 import { sessionStorageOrNull, canSendToDrafter } from "@/lib/ai/transcriptHandoff";
 import { DRAFTER_LIBRARY_URL, writeLibraryHandoff } from "@/lib/ai/libraryDrafterHandoff";
 
+/** The two lines under the button (B-24). */
+const DRAFTER_HINT = [
+  "يفتح الصائغ القانوني ويضع هذا النص في خانة «ملاحظات ومرئيات».",
+  "لا يُرسل شيئاً ولا يخصم نقاطاً؛ تكمل أنت الطلب هناك.",
+] as const;
+
 interface Props {
   text: string;
   /** What the text is, shown in the drafter («باحث المكتبة», «نظام العمل — المادة ٧٧»). */
@@ -59,6 +65,11 @@ export default function SendToDrafterNotesButton({ text, sourceLabel, isDark, cl
       >
         <PencilSimpleLine size={12} /> أرسل إلى الصائغ
       </button>
+      {/* Owner package 25-Nov §2.8 (5) (batch l16, B-24): what it does, in two visible lines. */}
+      <span data-testid="send-to-drafter-hint" className={`max-w-[16rem] text-[10.5px] leading-snug ${isDark ? "text-zinc-500" : "text-slate-500"}`}>
+        <span className="block">{DRAFTER_HINT[0]}</span>
+        <span className="block">{DRAFTER_HINT[1]}</span>
+      </span>
       {error && <span role="alert" className={`text-[11px] ${isDark ? "text-red-400" : "text-red-600"}`}>{error}</span>}
     </span>
   );

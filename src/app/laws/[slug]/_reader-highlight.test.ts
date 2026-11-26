@@ -108,17 +108,30 @@ test("article number, title, regulation ref and the amendment history are colour
   assert.match(reader, /useTextHasHighlight\(isRepealed && !isLocked \? repealedText : ""\)/);
 });
 
-test("note ١٢ §٣: the coloured-diff toggle sits inside «الإصدارات السابقة», against the current text", () => {
+test("note ١٢ §٣ → package 25-Nov §2.4: the coloured-diff toggle sits inside «الإصدارات السابقة», chained, never hidden", () => {
   const start = reader.indexOf("الإصدارات السابقة (");
   const end = reader.indexOf("</details>", start);
   const block = reader.slice(start, end);
-  // O12 (batch l11, file 16 §4): against the clean current text, or its closest
-  // paragraph (or the regulation's) — pickDiffTarget, no toggle when none is close.
-  assert.match(block, /<PreviousVersionText\s+oldText=\{amend\.fullText\}\s+currentText=\{pickDiffTarget\(amend\.fullText, diffTargets\)\}/);
-  assert.match(block, /<PreviousVersionText\s+oldText=\{part\.text\}\s+currentText=\{pickDiffTarget\(part\.text, diffTargets\)\}/);
+  // O12 (batch l11, file 16 §4) → batch l16 (B-09/B-10): against the version that
+  // followed it (the newest against the clean current text), its closest paragraph
+  // (or the regulation's), else the whole text — diffChain + diffTargetFor, never hidden.
+  assert.match(block, /<PreviousVersionText\s+oldText=\{amend\.fullText\}\s+currentText=\{diffTargetFor\(amend\.fullText, diffLinks\[i\]\.candidates\)\}\s+against=\{diffLinks\[i\]\.against\}/);
+  assert.match(block, /<PreviousVersionText\s+oldText=\{part\.text\}\s+currentText=\{diffTargetFor\(part\.text, diffLinks\[i\]\.candidates\)\}\s+against=\{diffLinks\[i\]\.against\}/);
+  assert.match(reader, /const diffLinks = useMemo\(\(\) => diffChain\(previousVersions, diffTargets\), \[previousVersions, diffTargets\]\);/);
+  // The shortcut opens every card's diff, not only the first one.
+  assert.equal((block.match(/openDiffSignal=\{diffSignal\}/g) ?? []).length, 2);
+  assert.doesNotMatch(reader, /i === 0 \? diffSignal/);
+  // B-07: «عُدّلت بموجب …» in the fold's own header; the separate line is gone.
+  assert.doesNotMatch(reader, /data-testid="article-amended-by"/);
+  const summary = reader.slice(reader.lastIndexOf("<summary", start), reader.indexOf("</summary>", start));
+  assert.match(summary, /data-testid="history-amended-by"/);
+  assert.match(summary, /<Hl text=\{amendedLine\.text\} \/>/);
+  assert.doesNotMatch(summary, /<Link|<button/, "no link or button inside <summary>");
   assert.match(reader, /const diffTargets = useMemo\(\(\) => diffCandidates\(article\.text, mergedReg\?\.text \?\? ""\)/);
   assert.match(diffView, /"إظهار الفروق الملونة"/);
-  assert.match(diffView, /diffWords\(diffSourceText\(oldText\), diffSourceText\(currentText\)\)/);
+  assert.match(diffView, /diffTexts\(diffSourceText\(oldText\), diffSourceText\(currentText\)\)/);
+  assert.doesNotMatch(diffView, /أطول من أن تُعرض فروقه/, "never hidden for length (diffTexts)");
+  assert.match(diffView, /"مقارنةً بالصيغة التي تلتها:"/);
   // Struck through only as a deleted diff word.
   const strikes = diffView.match(/[^\n]*line-through[^\n]*/g) ?? [];
   assert.equal(strikes.filter((l) => l.includes("className")).length, 1);

@@ -195,6 +195,9 @@ test("A6: /laws/research is a static page under the section guard, not indexed, 
   const page = readFileSync(new URL("../page.tsx", import.meta.url), "utf8");
   assert.match(page, /robots: \{ index: false, follow: false \}/);
   assert.match(page, /<ResearchStudio \/>/);
+  // B-01 (batch l16, owner package 25-Nov §2.1): no footer band over the question box, room under the fixed bar.
+  assert.doesNotMatch(page, /Footer/);
+  assert.match(readFileSync(new URL("./ResearchStudio.tsx", import.meta.url), "utf8"), /className=\{`min-h-dvh pt-28 md:pt-32 /);
   const tour = readFileSync(new URL("./ResearchTour.tsx", import.meta.url), "utf8");
   assert.equal((tour.match(/^\s+target: "/gm) ?? []).length, 4);
   assert.match(tour, /إغلاق وعدم الإظهار/);

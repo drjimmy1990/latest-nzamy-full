@@ -462,3 +462,61 @@ export function pickDiffTarget(oldText: string, candidates: readonly string[]): 
   }
   return best && best.score >= DIFF_MIN_OVERLAP ? best.text : null;
 }
+
+/**
+ * Owner package 25-Nov §2.4 (batch l16, B-09): what a previous wording is
+ * compared with, so that «إظهار الفروق الملونة» never disappears — the close
+ * paragraph pickDiffTarget finds, else the whole following text (the first
+ * candidate: diffCandidates puts it first). A full rewrite then shows the old
+ * wording all red and the new one all green. null only when there is nothing
+ * to compare with (no candidate, or an old text with no words).
+ */
+export function diffTargetFor(oldText: string, candidates: readonly string[]): string | null {
+  if (words(oldText).length === 0) return null;
+  return pickDiffTarget(oldText, candidates) ?? candidates.find((c) => words(c).length > 0) ?? null;
+}
+
+/** The card shape the chain reads (PreviousVersionCard). */
+interface ChainCard {
+  source: string;
+  date: string;
+  fullText: string;
+  textMissing?: boolean;
+  parts?: ReadonlyArray<{ label: string; text: string }>;
+}
+
+/** A card's whole wording: its text, else its labelled parts joined. */
+export function cardText(card: ChainCard): string {
+  if (card.parts && card.parts.length > 0) return card.parts.map((p) => p.text).join("\n\n");
+  return card.fullText;
+}
+
+export type DiffChainLink = { candidates: string[]; against: "current" | "next" };
+
+/**
+ * Owner package 25-Nov §2.4 (2) (batch l16, B-10): each previous version is
+ * compared with the version that FOLLOWED it, and only the newest one with
+ * today's text. Which card is newer: by the Hijri date of its instrument when
+ * every card with a text has one; else the display order, newest first (the
+ * rule amendedByLine already follows). A card with no text is skipped: the
+ * one before it is compared with the next card that has one, or today's text.
+ */
+export function diffChain(cards: readonly ChainCard[], currentCandidates: readonly string[]): DiffChainLink[] {
+  const withText = cards.map((c, i) => ({ i, text: cardText(c).trim() })).filter((x) => x.text !== "");
+  const keys = new Map(withText.map(({ i }) => [i, hijriDateKey(cards[i].date) || hijriDateKey(cards[i].source)]));
+  const dated = withText.length > 1 && withText.every(({ i }) => keys.get(i)! > 0);
+  // Newest first.
+  const order = dated
+    ? [...withText].sort((a, b) => keys.get(b.i)! - keys.get(a.i)! || a.i - b.i)
+    : withText;
+  const next = new Map<number, string>();
+  order.forEach((x, k) => {
+    if (k > 0) next.set(x.i, order[k - 1].text);
+  });
+  return cards.map((_, i) => {
+    const following = next.get(i);
+    return following !== undefined
+      ? { candidates: diffCandidates(following), against: "next" as const }
+      : { candidates: [...currentCandidates], against: "current" as const };
+  });
+}

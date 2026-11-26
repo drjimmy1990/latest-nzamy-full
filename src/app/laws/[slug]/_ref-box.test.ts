@@ -31,7 +31,10 @@ test("the box sits in the side column for the article in view; the provider wrap
 });
 
 test("L1 (batch l12): the links under every article again, from ONE request for the law, the side box from the same cache", () => {
-  assert.match(ARTICLE, /\{viewMode !== "regulation" && refBox && <ArticleRefsInline articleId=\{article\.id\} \/>\}/);
+  // Batch l16 (owner package 25-Nov §2.6, B-13): the chip only in reading mode (the header
+  // buttons are hidden there); elsewhere the component stays as the fallback request, chip-less.
+  assert.match(ARTICLE, /\{viewMode !== "regulation" && refBox && <ArticleRefsInline articleId=\{article\.id\} chip=\{isReadingMode\} \/>\}/);
+  assert.match(BOX, /if \(!chip\) return <div ref=\{box\} aria-hidden="true" className="print:hidden" \/>;/);
   assert.doesNotMatch(ARTICLE + BOX, /RefSheetButton/, "the folded phone-only button is gone");
   // The page starts the law's links request beside its own, never after it.
   assert.match(PAGE, /useEffect\(\(\) => \{\s*prefetchLawLinks\(decodeURIComponent\(apiSlug\(slug\)\)\);\s*\}, \[slug\]\);/);

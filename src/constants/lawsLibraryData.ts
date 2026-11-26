@@ -76,7 +76,7 @@ export const CONTENT_TYPES: { id: ContentType; label: string; labelEn: string; i
   { id: "all",        label: "الكل",                  labelEn: "All",                    icon: PhosphorIcons.Books },
   { id: "laws",       label: "أنظمة ولوائح",          labelEn: "Laws & Regulations",     icon: BookOpen },
   { id: "orders",     label: "أوامر وتعاميم",         labelEn: "Orders & Circulars",     icon: PhosphorIcons.Scroll },
-  { id: "precedents", label: "مبادئ وسوابق قضائية",  labelEn: "Principles & Precedents", icon: PhosphorIcons.Scales },
+  { id: "precedents", label: "مبادئ وسوابق قضائية",  labelEn: "Principles & Precedents", icon: PhosphorIcons.Gavel },
   { id: "feqh",       label: "فقه ومراجع",           labelEn: "Fiqh & References",       icon: PhosphorIcons.Mosque },
 ];
 
@@ -168,7 +168,7 @@ export const PLACEHOLDERS_EN: Record<ContentType, string[]> = {
 
 export const PREC_MODES: { id: PrecMode; label: string; labelEn: string; icon: typeof BookOpen }[] = [
   { id: "all", label: "الكل", labelEn: "All", icon: PhosphorIcons.Books },
-  { id: "principles", label: "مبادئ قضائية", labelEn: "Principles", icon: PhosphorIcons.Scales },
+  { id: "principles", label: "مبادئ قضائية", labelEn: "Principles", icon: PhosphorIcons.Gavel },
   { id: "precedents", label: "سوابق قضائية", labelEn: "Precedents", icon: PhosphorIcons.Gavel },
 ];
 

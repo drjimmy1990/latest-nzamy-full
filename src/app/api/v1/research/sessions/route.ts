@@ -3,11 +3,20 @@ import { dbErrorJson } from "@/lib/api/dbError";
 import { createClient } from "@/lib/supabase/server";
 import { isAuthUnavailable, authUnavailableResponse, frozenAccountResponse } from "@/lib/auth/apiAuth";
 
+const MAX_PAGE = 100;
+const MAX_OFFSET = 100_000;
+
+/** An integer query value clamped to [min, max]; missing or malformed → `fallback`. */
+function pageParam(raw: string | null, fallback: number, min: number, max: number): number {
+  const n = raw !== null && /^\d{1,9}$/.test(raw.trim()) ? Number(raw.trim()) : fallback;
+  return Math.min(max, Math.max(min, n));
+}
+
 /**
  * GET /api/v1/research/sessions — List user's research sessions
  * Query params:
  *   - archived ('true'|'false', default: all)
- *   - limit (default: 20)
+ *   - limit (default: 20, at most 100)
  *   - offset (default: 0)
  */
 export async function GET(request: NextRequest) {
@@ -23,8 +32,9 @@ export async function GET(request: NextRequest) {
   }
 
   const { searchParams } = new URL(request.url);
-  const limit = parseInt(searchParams.get("limit") ?? "20", 10);
-  const offset = parseInt(searchParams.get("offset") ?? "0", 10);
+  // Batch l16 (B-43b): a page is 1-100 rows from offset 0 up (a malformed value reads as the default).
+  const limit = pageParam(searchParams.get("limit"), 20, 1, MAX_PAGE);
+  const offset = pageParam(searchParams.get("offset"), 0, 0, MAX_OFFSET);
   const archived = searchParams.get("archived");
 
   let query = supabase

@@ -8,10 +8,12 @@
  *
  * Built as a reversible SETTING: platform_settings
  * 'library_summaries_reviewed_only' = {"on": boolean} (20261202_50).
- * OFF by default (l12 integration): decree summaries have no status yet (the
- * loader does not write decrees_circulars.summary_status), so ON at deploy
- * would hide every decree summary. A missing, malformed or unreadable row
- * reads OFF; the admin switches it on once the statuses are loaded.
+ * OFF by default (l12 integration): decree summaries had no status (the
+ * loader did not write decrees_circulars.summary_status until batch l16), so
+ * ON before the next full load would hide every decree summary. A missing,
+ * malformed or unreadable row reads OFF; the admin switches it on once the
+ * statuses are loaded — the settings card counts them (GET
+ * /api/v1/admin/library-summary-status).
  *
  * Statuses: library.laws.summary_status (20261129_70) and
  * library.decrees_circulars.summary_status (20261202_50) — 'reviewed' |

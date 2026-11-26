@@ -3,8 +3,11 @@
 /**
  * «إظهار الفروق الملونة» — the text of one previous version inside an amended
  * article's «الإصدارات السابقة», with a toggle that shows it word by word
- * against the article's CURRENT text (owner note ١٢ §٣, 2026-10-30): deleted
- * words red and struck through, added words green. The diff is computed in
+ * against the article's CURRENT text (owner note ١٢ §٣, 2026-10-30) — or,
+ * since batch l16 (owner package 25-Nov §2.4), against the version that
+ * followed it, the newest one against today's text: deleted words red and
+ * struck through, added words green. Never hidden for length: diffTexts
+ * falls back to lines, then to the whole texts. The diff is computed in
  * the browser (src/lib/library/wordDiff.ts) from texts the reader already has
  * — amendments reach the page only for unlocked articles (the law API's
  * `if (!isLocked)`), so nothing new is exposed.
@@ -16,7 +19,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Hl } from "@/components/search/MultiColorHighlight";
-import { diffSourceText, diffWords } from "@/lib/library/wordDiff";
+import { diffSourceText, diffTexts } from "@/lib/library/wordDiff";
 
 export function PreviousVersionText({
   oldText,
@@ -25,6 +28,7 @@ export function PreviousVersionText({
   isRTL = true,
   className = "",
   openDiffSignal = 0,
+  against = "current",
 }: {
   /** The previous version (an amendment card's fullText). */
   oldText: string;
@@ -33,8 +37,14 @@ export function PreviousVersionText({
    * the article bumps this number; each new value turns the diff on.
    */
   openDiffSignal?: number;
-  /** The article's current text; no toggle when empty. */
+  /**
+   * What the version is compared with (batch l16, B-10): the article's current
+   * text for the newest version, else the version that followed it. No toggle
+   * when empty.
+   */
   currentText?: string | null;
+  /** «current» (today's text) or «next» (the version that followed this one). */
+  against?: "current" | "next";
   isDark: boolean;
   isRTL?: boolean;
   className?: string;
@@ -45,7 +55,7 @@ export function PreviousVersionText({
     if (openDiffSignal > 0 && canDiff) setShowDiff(true);
   }, [openDiffSignal, canDiff]);
   const diff = useMemo(
-    () => (showDiff && canDiff ? diffWords(diffSourceText(oldText), diffSourceText(currentText)) : undefined),
+    () => (showDiff && canDiff ? diffTexts(diffSourceText(oldText), diffSourceText(currentText)) : undefined),
     [showDiff, canDiff, oldText, currentText],
   );
 
@@ -69,7 +79,9 @@ export function PreviousVersionText({
           </button>
           {showDiff && diff && (
             <span className={`text-[10px] ${isDark ? "text-zinc-400" : "text-slate-600"}`}>
-              {isRTL ? "مقارنةً بالنص الحالي:" : "Compared with the current text:"}{" "}
+              {against === "next"
+                ? (isRTL ? "مقارنةً بالصيغة التي تلتها:" : "Compared with the wording that followed it:")
+                : (isRTL ? "مقارنةً بالنص الحالي:" : "Compared with the current text:")}{" "}
               <span className={isDark ? "text-red-300" : "text-red-700"}>{isRTL ? `${diff.removed} كلمة محذوفة` : `${diff.removed} removed`}</span>
               {" · "}
               <span className={isDark ? "text-emerald-300" : "text-emerald-700"}>{isRTL ? `${diff.added} كلمة مضافة` : `${diff.added} added`}</span>
@@ -78,28 +90,22 @@ export function PreviousVersionText({
         </div>
       )}
 
-      {showDiff && diff === null && (
-        <p className={`text-[10.5px] mb-1.5 ${isDark ? "text-zinc-400" : "text-slate-600"}`}>
-          {isRTL ? "النص أطول من أن تُعرض فروقه هنا؛ يظهر كما هو." : "Too long to compare here; shown as is."}
-        </p>
-      )}
-
       {showDiff && diff ? (
         <p className={`text-[12px] leading-relaxed whitespace-pre-line ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>
           {diff.runs.map((run, i) =>
             run.op === "del" ? (
               <del
                 key={i}
-                title={isRTL ? "محذوف من النص الحالي" : "Removed in the current text"}
-                className={`line-through rounded px-0.5 ${isDark ? "bg-red-500/25 text-red-200" : "bg-red-200/70 text-red-900"}`}
+                title={against === "next" ? (isRTL ? "محذوف في الصيغة التالية" : "Removed in the next wording") : (isRTL ? "محذوف من النص الحالي" : "Removed in the current text")}
+                className={`line-through rounded-sm ${isDark ? "bg-red-500/25 text-red-200" : "bg-red-200/70 text-red-900"}`}
               >
                 <Hl text={run.text} />
               </del>
             ) : run.op === "add" ? (
               <ins
                 key={i}
-                title={isRTL ? "مضاف في النص الحالي" : "Added in the current text"}
-                className={`no-underline rounded px-0.5 ${isDark ? "bg-emerald-500/25 text-emerald-200" : "bg-emerald-200/70 text-emerald-900"}`}
+                title={against === "next" ? (isRTL ? "مضاف في الصيغة التالية" : "Added in the next wording") : (isRTL ? "مضاف في النص الحالي" : "Added in the current text")}
+                className={`no-underline rounded-sm ${isDark ? "bg-emerald-500/25 text-emerald-200" : "bg-emerald-200/70 text-emerald-900"}`}
               >
                 <Hl text={run.text} />
               </ins>

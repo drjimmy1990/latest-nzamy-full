@@ -34,7 +34,7 @@ function Highlighted({ text, query, isDark }: { text: string; query: string; isD
     <>
       {parts.map((p, i) =>
         i % 2 === 1 ? (
-          <mark key={i} className={`rounded px-0.5 ${isDark ? "bg-[#C8A762]/30 text-white" : "bg-amber-200 text-slate-900"}`}>{p}</mark>
+          <mark key={i} className={`rounded-sm ${isDark ? "bg-[#C8A762]/30 text-white" : "bg-amber-200 text-slate-900"}`}>{p}</mark>
         ) : (
           <span key={i}>{p}</span>
         ),

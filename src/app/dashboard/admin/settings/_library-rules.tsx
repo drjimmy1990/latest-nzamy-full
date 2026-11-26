@@ -9,6 +9,7 @@ import {
   type IndividualFreeQuestionTool,
 } from "@/lib/ai/freeQuestion";
 import { arabicVoices, LISTEN_VOICE_DEFAULT, LISTEN_VOICE_SETTING, parseListenVoice, pickVoice } from "@/lib/ai/listenVoice";
+import { parseSummaryStatusCount, summaryStatusLines, summaryStatusWarning, type SummaryStatusCounts } from "@/lib/library/summaryStatusCounts";
 
 /**
  * «قواعد المكتبة والأسئلة المجانية» on the admin settings page (batch l12
@@ -31,6 +32,24 @@ export function LibraryRulesSettings({ isDark }: { isDark: boolean }) {
   const [voiceNames, setVoiceNames] = useState<string[]>([]);
   const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null);
   const [saving, setSaving] = useState(false);
+  // B-50 (batch l16): how many summaries are reviewed / draft / without a status, beside the switch.
+  const [statusCounts, setStatusCounts] = useState<SummaryStatusCounts | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/v1/admin/library-summary-status", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((body) => {
+        if (cancelled || !body) return;
+        setStatusCounts({ laws: parseSummaryStatusCount(body.laws), decrees: parseSummaryStatusCount(body.decrees) });
+      })
+      .catch(() => {
+        /* the card shows no count */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -116,6 +135,16 @@ export function LibraryRulesSettings({ isDark }: { isDark: boolean }) {
           <span className={`text-xs ${muted}`}>
             عند تشغيله يظهر الموجز في صفحة النظام وبطاقات المكتبة والقرارات ونتائج البحث فقط إذا كانت حالته «مراجَع». لا تشغّله قبل تحديد حالة موجزات المراسيم، وإلا اختفت كلها.
           </span>
+          {statusCounts && (
+            <span data-testid="summary-status-counts" className={`mt-1.5 block text-xs ${isDark ? "text-zinc-300" : "text-slate-600"}`}>
+              {summaryStatusLines(statusCounts).map((line) => (
+                <span key={line} className="block">{line}</span>
+              ))}
+              {summaryStatusWarning(statusCounts) && (
+                <span role="note" className={`mt-1 block font-bold ${isDark ? "text-amber-300" : "text-amber-700"}`}>{summaryStatusWarning(statusCounts)}</span>
+              )}
+            </span>
+          )}
         </span>
       </label>
       <label className="mt-4 block max-w-sm">

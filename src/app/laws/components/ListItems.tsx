@@ -57,7 +57,7 @@ export function highlightText(text: string, q: string, isDark: boolean) {
     <>
       {parts.map((part, i) => 
         part.toLowerCase() === q.trim().toLowerCase() ? (
-          <mark key={i} className={isDark ? "bg-amber-400/20 text-amber-300 px-0.5 rounded font-semibold animate-pulse" : "bg-amber-100 text-amber-800 px-0.5 rounded font-semibold"}>
+          <mark key={i} className={isDark ? "bg-amber-400/20 text-amber-300 rounded-sm font-semibold animate-pulse" : "bg-amber-100 text-amber-800 rounded-sm font-semibold"}>
             {part}
           </mark>
         ) : (

@@ -116,10 +116,11 @@ test("every src/app/laws/*.ts module keeps at most 150 characters per string (DE
   }
 });
 
-test("the feqh preview's inline demo book keeps at most 150 characters per string (DEMO_BOOK)", () => {
-  const book = declaration("app/laws/feqh-preview/page.tsx", "const DEMO_BOOK: FeqhBook = {", "\n};");
-  assert.ok(book.includes("matn:") && book.includes("chapters:"), "DEMO_BOOK declaration not found whole");
-  assert.deepEqual(longLiterals(book, 150), [], "DEMO_BOOK");
+test("the feqh preview carries no library text at all: it answers 404 (batch l16, B-40)", () => {
+  const page = readFileSync(at("app/laws/feqh-preview/page.tsx"), "utf8");
+  assert.match(page, /notFound\(\);/);
+  assert.doesNotMatch(page, /DEMO_BOOK|"use client"/);
+  assert.deepEqual(longLiterals(page, 150), []);
 });
 
 test("the scanner sees a long literal (negative control)", () => {

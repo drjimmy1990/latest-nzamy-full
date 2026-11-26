@@ -89,7 +89,9 @@ export const OWNER_LOADER_TABLES: readonly OwnerLoaderTable[] = [
   },
   { name: "article_regulations", pkey: "id", batchSize: 200, stripKeys: [] },
   // owner_links (migration 20261118_10): written on every decree row — REQUIRED.
-  { name: "decrees_circulars", pkey: "id", batchSize: 100, stripKeys: ["needs_human_review", "review_reason"], requiredColumns: ["owner_links"] },
+  // summary_status (migration 20261202_50, batch l16 B-49): written on every
+  // decree row — REQUIRED the same way.
+  { name: "decrees_circulars", pkey: "id", batchSize: 100, stripKeys: ["needs_human_review", "review_reason"], requiredColumns: ["owner_links", "summary_status"] },
   { name: "decree_pages", pkey: "id", batchSize: 200, stripKeys: [] },
   { name: "judicial_collections", pkey: "id", batchSize: 100, stripKeys: [] },
   // printed_page (owner 2026-11-06, file 10 §ب1; migration 20261109_21): the

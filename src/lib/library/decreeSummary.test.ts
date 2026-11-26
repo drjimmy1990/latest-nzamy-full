@@ -65,7 +65,7 @@ test("an empty or unclosed موجز block is not read", () => {
 });
 
 test("parse-decrees uses it for the markdown files and keeps the body unchanged", () => {
-  assert.match(PARSER, /import \{ decreeSummaries \} from "\.\.\/\.\.\/src\/lib\/library\/decreeSummary";/);
+  assert.match(PARSER, /import \{ decreeSummaries(?:, decreeSummaryStatus)? \} from "\.\.\/\.\.\/src\/lib\/library\/decreeSummary";/);
   assert.match(PARSER, /const summaries = decreeSummaries\(meta, body\);/);
   assert.match(PARSER, /summary: summaries\.summary,\n\s*summary_brief: summaries\.summary_brief,/);
   // the preamble is still the body's text before the first article, untouched
@@ -78,4 +78,26 @@ test("owner file 18 item 4: summary_status draft keeps the front-matter summarie
   assert.equal(decreeSummaries(meta, BODY).summary_brief, decreeSummaries({}, BODY).summary_brief);
   assert.deepEqual(decreeSummaries({ ...meta, summary_status: "reviewed" }, "# بلا موجز"), { summary: "موجز مسودة.", summary_brief: "سطر مسودة." });
   assert.deepEqual(decreeSummaries({ summary: "أ", summary_brief: "ب" }, "# بلا موجز"), { summary: "أ", summary_brief: "ب" }, "no status: as before");
+});
+
+// ── batch l16 (B-49): the decree summary's review status reaches the row ─────
+test("decreeSummaryStatus: draft | reviewed (any case), anything else null — the column's CHECK", async () => {
+  const { decreeSummaryStatus } = await import("./decreeSummary.ts");
+  assert.equal(decreeSummaryStatus({ summary_status: "reviewed" }), "reviewed");
+  assert.equal(decreeSummaryStatus({ summary_status: " Draft " }), "draft");
+  assert.equal(decreeSummaryStatus({ summary_status: "approved" }), null);
+  assert.equal(decreeSummaryStatus({ summary_status: null }), null);
+  assert.equal(decreeSummaryStatus({}), null);
+  // A draft is still not loaded as a summary: the status rides along, the text stays off.
+  assert.deepEqual(decreeSummaries({ summary: "مسودة", summary_status: "draft" }, "# بلا موجز"), { summary: "", summary_brief: "" });
+});
+
+test("B-49: both parse paths carry summary_status, the decree row writes it, the owner loader requires the column", () => {
+  assert.match(PARSER, /import \{ decreeSummaries, decreeSummaryStatus \} from "\.\.\/\.\.\/src\/lib\/library\/decreeSummary";/);
+  assert.match(PARSER, /summary_status: "draft" \| "reviewed" \| null;/);
+  assert.match(PARSER, /summary_status: decreeSummaryStatus\(entry as Record<string, unknown>\),/, "the unified index");
+  assert.match(PARSER, /summary_status: decreeSummaryStatus\(meta\),/, "the markdown files");
+  const seeder = readFileSync(path.join(here, "../../../scripts/seed-library.ts"), "utf8").replace(/\r\n/g, "\n");
+  const row = seeder.slice(seeder.indexOf("decreeRows.push({"), seeder.indexOf("});", seeder.indexOf("decreeRows.push({")));
+  assert.match(row, /summary_status: dec\.summary_status === "draft" \|\| dec\.summary_status === "reviewed" \? dec\.summary_status : null,/);
 });

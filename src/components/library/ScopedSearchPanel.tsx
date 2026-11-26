@@ -102,7 +102,7 @@ function Highlighted({ text }: { text: string }) {
         seg.term === null || (focus !== null && focus !== seg.term) ? (
           <span key={i}>{seg.text}</span>
         ) : (
-          <mark key={i} data-hl-term={seg.term} className={`${paletteFor(terms[seg.term].color).mark} rounded px-0.5`}>
+          <mark key={i} data-hl-term={seg.term} className={`${paletteFor(terms[seg.term].color).mark} rounded-sm`}>
             {seg.text}
           </mark>
         ),

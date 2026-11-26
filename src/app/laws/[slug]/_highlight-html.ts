@@ -44,7 +44,7 @@ function highlightTextRun(text: string, terms: readonly HighlightTerm[], focus: 
     .map((seg) => {
       const raw = restore(seg.text);
       if (seg.term === null || (focus !== null && focus !== seg.term)) return raw;
-      return `<mark data-hl-term="${seg.term}" class="${paletteFor(terms[seg.term].color).mark} rounded px-0.5">${raw}</mark>`;
+      return `<mark data-hl-term="${seg.term}" class="${paletteFor(terms[seg.term].color).mark} rounded-sm">${raw}</mark>`;
     })
     .join("");
 }
