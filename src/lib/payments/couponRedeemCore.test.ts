@@ -103,11 +103,33 @@ test("a points code: credited by the RPC with gift_valid_days; nothing else gran
   assert.equal(rpcs(log, "grant_plan_subscription").length, 0);
 });
 
-test("a discount code is recognised, never redeemed here", async () => {
+test("a discount code is recognised only when this buyer could use it, never redeemed here; every call spends a try", async () => {
+  const budget = createCouponAttemptBudget({ max: 3 });
   const { client, log } = db({ coupon: DISCOUNT_COUPON });
-  const r = await redeemCouponWith(deps(client), { userId: USER, code: "nzamy50" });
+  const r = await redeemCouponWith(deps(client, { attempts: budget }), { userId: USER, code: "nzamy50" });
   assert.deepEqual(r, { status: 200, body: { kind: "discount", code: "NZAMY50", note: DISCOUNT_CODE_NOTE_AR } });
   assert.equal(log.filter((q) => q.op === "rpc").length, 0);
+  await redeemCouponWith(deps(client, { attempts: budget }), { userId: USER, code: "nzamy50" });
+  await redeemCouponWith(deps(client, { attempts: budget }), { userId: USER, code: "nzamy50" });
+  assert.equal((await redeemCouponWith(deps(client, { attempts: budget }), { userId: USER, code: "nzamy50" })).status, 429, "a valid answer spends a try too");
+  // the same sentence when he could not use it: wrong audience, already used, a first-order code after a paid order
+  const wrong = db({ coupon: { ...DISCOUNT_COUPON, eligible_user_types: ["individual"] } });
+  assert.deepEqual(await redeemCouponWith(deps(wrong.client), { userId: USER, code: "NZAMY50" }), { status: 400, body: { error: COUPON_INVALID_AR } });
+  const used = db({ coupon: DISCOUNT_COUPON }, (q) => (q.table === "coupon_usage" ? { data: [{ id: 1 }] } : undefined));
+  assert.deepEqual(await redeemCouponWith(deps(used.client), { userId: USER, code: "NZAMY50" }), { status: 400, body: { error: COUPON_INVALID_AR } });
+  const first = db({ coupon: { ...DISCOUNT_COUPON, metadata: { first_paid_order_only: true } } }, (q) =>
+    q.table === "payment_orders" ? { data: [{ id: "o1", live: true, metadata: {} }] } : undefined);
+  assert.deepEqual(await redeemCouponWith(deps(first.client), { userId: USER, code: "NZAMY50" }), { status: 400, body: { error: COUPON_INVALID_AR } });
+});
+
+test("a plan row granted by a code (no payment order behind it) gives no credit and no 503 at a later checkout read", async () => {
+  const { upgradeDecision } = await import("./upgradeProration.ts");
+  const d = upgradeDecision({
+    userId: USER, tier: "enterprise", now: NOW, ranks: RANKS,
+    rows: [{ id: "s1", plan_id: "lawyer-pro", tier: "pro", status: "active", started_at: "2026-11-01T00:00:00Z", current_period_start: "2026-11-01T00:00:00Z", current_period_end: "2027-11-01T00:00:00Z", metadata: { order_id: RED, method: "coupon" } }] as never,
+    orders: new Map(),
+  });
+  assert.equal(d.kind, "none", "a free grant is not paid money to credit");
 });
 
 test("unknown / inactive / expired / used / exhausted all answer the one sentence and spend a try", async () => {

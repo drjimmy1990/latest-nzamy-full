@@ -296,12 +296,14 @@ const SETTINGS_VALUE_VALIDATORS: Record<string, SettingValidator> = {
  * on the GoTrue user, and this request's session at aal2. Anything that
  * cannot be read counts as false, so live stays refused.
  */
-async function readLiveActor(role: string): Promise<LiveGatewayActor> {
+async function readLiveActor(
+  role: string,
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  user: Parameters<typeof hasVerifiedFactor>[0],
+): Promise<LiveGatewayActor> {
   const actor: LiveGatewayActor = { superAdmin: role === "super_admin", verifiedFactor: false, aal2: false };
+  if (!user) return actor;
   try {
-    const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return actor;
     return {
       superAdmin: actor.superAdmin,
       verifiedFactor: hasVerifiedFactor(user),
@@ -492,7 +494,12 @@ export async function PATCH(request: NextRequest) {
   if (validate) {
     const invalid = await validate(toStore, {
       billingCompanyComplete: readBillingCompanyComplete,
-      liveActor: () => readLiveActor(gate.role),
+      // the session read stays inside the handler (accountFreezeWrites.test.ts)
+      liveActor: async () => {
+        const supabase = await createClient();
+        const { data: { user } } = await supabase.auth.getUser();
+        return readLiveActor(gate.role, supabase, user);
+      },
     });
     if (invalid) {
       return NextResponse.json({ error: invalid }, { status: 400 });

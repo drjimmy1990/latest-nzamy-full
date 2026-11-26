@@ -190,7 +190,7 @@ export function orderConsumedCoupon(row: { live?: boolean | null; metadata?: Rec
  * order that granted nothing (already_entitled). null = could not tell: the
  * caller refuses rather than guesses.
  */
-async function hasEarlierPaidOrder(admin: SupabaseClient, userId: string): Promise<boolean | null> {
+export async function hasEarlierPaidOrder(admin: SupabaseClient, userId: string): Promise<boolean | null> {
   const { data, error } = await admin
     .from("payment_orders")
     .select("id, live, metadata")
@@ -206,7 +206,7 @@ async function hasEarlierPaidOrder(admin: SupabaseClient, userId: string): Promi
 }
 
 /** null = could not tell (an error): the caller refuses rather than guesses. */
-async function alreadyUsed(admin: SupabaseClient, couponId: string, userId: string): Promise<boolean | null> {
+export async function alreadyUsed(admin: SupabaseClient, couponId: string, userId: string): Promise<boolean | null> {
   const [orders, usage] = await Promise.all([
     admin
       .from("payment_orders")

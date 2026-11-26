@@ -104,7 +104,11 @@ export default function PricingPage() {
   const comparisonList = getComparisonList(audience, isAr);
   // The table's columns are the cards it has rows for: the individuals'
   // top-ups (owner ٣٠٢) are cards with no column.
-  const comparisonPlans = planList.filter((p) => comparisonList.some((c) => c.rows.some((r) => Object.hasOwn(r, p.id))));
+  // l16 (A-15): the table drops the consultant-refused columns too
+  const comparisonPlans = withoutConsultantRefusedPlans(
+    planList.filter((p) => comparisonList.some((c) => c.rows.some((r) => Object.hasOwn(r, p.id)))),
+    isLoggedIn && isIndependentConsultantSession(userType, practiceKind, !!firmMembership),
+  );
   // The cycle toggle (§2 rule 1): the audience's allowed cycles that a card on
   // screen prices; the cards are drawn in the picked cycle while it is offered.
   const cycles         = offeredCycles(audience, cardPlanList);

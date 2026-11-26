@@ -61,7 +61,8 @@ test("/checkout: a guest goes to /login?next=<this page>; the gateway and the au
 
 test("/checkout shows the listed price, the VAT sentence and the catalog notes", () => {
   assert.match(page, /formatHalalas\(listed\)/);
-  assert.match(page, /listedVatNotice\(item\)/);
+  // l16 (A-01): the sentence follows the saved VAT number
+  assert.match(page, /listedVatNotice\(item, vatRegistered\)/);
   // l11 O7: the library-lock line for a holder of a gated library plan
   // l14: and the cycle, for the ERP + library bundle's lines
   assert.match(page, /checkoutItemNotes\(item, \{\s*libraryMinPoints,\s*libraryQuestionPoints: aiToolPointRange\("library-assistant"\)\[1\],\s*billing: parsed\.billing,\s*\}\)/);
@@ -99,7 +100,7 @@ test("MoyasarCheckout POSTs the checkout from the click, never from an effect", 
   assert.match(form, /if \(inFlight\.current \|\| current\.current\) return;\s*inFlight\.current = true;/);
   assert.match(form, /متابعة الدفع/);
   // the quote shown is the server's
-  for (const field of ["ready.quote.net", "ready.quote.vat", "ready.quote.total", "quoteVatNotice(ready.quote.vatMode)"]) {
+  for (const field of ["ready.quote.net", "ready.quote.vat", "ready.quote.total", "quoteVatNotice(ready.quote.vatMode, ready.quote.vat)"]) {
     assert.ok(form.includes(field), field);
   }
   // a 403 shows the server's copy with the way back to /pricing
@@ -143,11 +144,12 @@ test("the Moyasar config carries the pinned values and the order id as metadata"
 test("the buy buttons go to /checkout only through buyButtonAction, wait while the status loads, and keep the request flow otherwise (٢٤٦)", () => {
   assert.match(cards, /const action = buyButtonAction\(plan\.id, billing, payments, isLoggedIn\);/);
   assert.match(cards, /if \(action\.kind === "wait"\) return true;/);
-  assert.match(cards, /requestEntitlement\(planEntitlementRequest\(plan, \{ libraryMode \}\)\)/);
+  // l16 (A-59): an attached discount code may ride along
+  assert.match(cards, /requestEntitlement\(\{ \.\.\.planEntitlementRequest\(plan, \{ libraryMode \}\),/);
   // the checkout branch sits after the /contact pass-through and before the request
   const contactAt = cards.indexOf("if (!isSubscribeCta(plan.ctaHref)) return false;");
   const payAt = cards.indexOf("const action = buyButtonAction(");
-  const requestAt = cards.indexOf("requestEntitlement(planEntitlementRequest(");
+  const requestAt = cards.indexOf("requestEntitlement({ ...planEntitlementRequest(");
   assert.ok(contactAt > -1 && contactAt < payAt && payAt < requestAt);
 
   assert.match(subscribe, /const action = buyButtonAction\(planId, "once", payments, isLoggedIn\);/);

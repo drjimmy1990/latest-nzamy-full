@@ -11,7 +11,9 @@
  *      dates → 400 COUPON_INVALID_AR (one sentence for all — the answer must
  *      not tell a guesser which codes exist); unreadable / not migrated → 503;
  *   3. a DISCOUNT code (fixed / percentage) is not redeemed here: 200
- *      {kind: "discount"} — the box says it applies at checkout, and while
+ *      {kind: "discount"} only when this buyer could use it (audience, not
+ *      used before, first-order rule — the same sentence otherwise; every
+ *      call spends a try) — the box says it applies at checkout, and while
  *      online payment is off it rides on the activation request
  *      (manualRequest.ts);
  *   4. a FREE-PLAN code: the plan it names on sale in its billing
@@ -42,7 +44,8 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { buyerAllowed, resolveItem, PAYABLE_ITEMS, type Billing, type PayableItem } from "./catalog.ts";
-import { COUPON_INVALID_AR, normalizeCouponCode } from "./couponRules.ts";
+import { COUPON_INVALID_AR, isFirstOrderCoupon, normalizeCouponCode } from "./couponRules.ts";
+import { alreadyUsed, hasEarlierPaidOrder } from "./couponServer.ts";
 import { COUPON_ATTEMPTS, RATE_LIMITED_AR, type CouponAttemptBudget } from "./couponAttempts.ts";
 import { grantablePlan, isGrantCouponType } from "./couponGrantRules.ts";
 import { readUpgrade } from "./upgradeProration.ts";
@@ -90,6 +93,7 @@ interface CouponRedeemRow {
   active: boolean;
   valid_from: string | null;
   valid_until: string | null;
+  eligible_user_types: readonly string[] | null;
   metadata: Record<string, unknown> | null;
 }
 
@@ -133,13 +137,11 @@ export async function redeemCouponWith(deps: RedeemDeps, input: { userId: string
   const catalog = deps.catalog ?? PAYABLE_ITEMS;
   const now = deps.now?.() ?? new Date();
 
-  // 0. the try budget
+  // 0. the try budget — every call spends a try, as the preview does (the answer is an oracle)
   if (!attempts.check(input.userId).ok) return fail(429, RATE_LIMITED_AR);
+  attempts.spend(input.userId);
   const code = normalizeCouponCode(input.code);
-  if (!code) {
-    attempts.spend(input.userId);
-    return fail(400, COUPON_INVALID_AR);
-  }
+  if (!code) return fail(400, COUPON_INVALID_AR);
 
   // 1. the account type
   const { data: profile, error: profileErr } = await admin.from("profiles").select("user_type").eq("id", input.userId).maybeSingle();
@@ -150,7 +152,7 @@ export async function redeemCouponWith(deps: RedeemDeps, input: { userId: string
   // 2. the coupon
   const { data, error } = await admin
     .from("coupons")
-    .select("id, code, discount_type, plan_granted, points_granted, active, valid_from, valid_until, metadata")
+    .select("id, code, discount_type, plan_granted, points_granted, active, valid_from, valid_until, eligible_user_types, metadata")
     .eq("code", code)
     .maybeSingle();
   if (error) {
@@ -158,13 +160,22 @@ export async function redeemCouponWith(deps: RedeemDeps, input: { userId: string
     return fail(503, REDEEM_UNAVAILABLE_AR);
   }
   const row = data as CouponRedeemRow | null;
-  if (!row || row.active !== true || !insideDates(row, now)) {
-    attempts.spend(input.userId);
-    return fail(400, COUPON_INVALID_AR);
-  }
+  if (!row || row.active !== true || !insideDates(row, now)) return fail(400, COUPON_INVALID_AR);
+  const audience = Array.isArray(row.eligible_user_types) ? row.eligible_user_types : [];
+  if (audience.length > 0 && !(userType !== null && audience.includes(userType))) return fail(400, COUPON_INVALID_AR);
 
-  // 3. a discount code applies at checkout (or rides on the request)
+  // 3. a discount code applies at checkout (or rides on the request) — said
+  // only when this buyer could use it: not used before, and a first-order
+  // code only before his first paid order (the same sentence otherwise)
   if (!isGrantCouponType(row.discount_type)) {
+    const used = await alreadyUsed(admin, row.id, input.userId);
+    if (used === null) return fail(503, REDEEM_UNAVAILABLE_AR);
+    if (used) return fail(400, COUPON_INVALID_AR);
+    if (isFirstOrderCoupon(row)) {
+      const earlier = await hasEarlierPaidOrder(admin, input.userId);
+      if (earlier === null) return fail(503, REDEEM_UNAVAILABLE_AR);
+      if (earlier) return fail(400, COUPON_INVALID_AR);
+    }
     return { status: 200, body: { kind: "discount", code: row.code, note: DISCOUNT_CODE_NOTE_AR } };
   }
 
@@ -177,7 +188,6 @@ export async function redeemCouponWith(deps: RedeemDeps, input: { userId: string
     const listNet = item && typeof billing === "string" && Object.hasOwn(item.prices, billing) ? item.prices[billing as Billing] : undefined;
     if (!item || !item.tier || typeof listNet !== "number" || listNet <= 0) {
       console.error("[coupons/redeem] a free-plan code names no plan on sale:", row.id);
-      attempts.spend(input.userId);
       return fail(400, COUPON_INVALID_AR);
     }
     if (!buyerAllowed(item, userType)) return fail(403, REDEEM_AUDIENCE_AR);
@@ -215,7 +225,6 @@ export async function redeemCouponWith(deps: RedeemDeps, input: { userId: string
   const id = typeof answer.id === "string" ? answer.id : "";
   const receiptNumber = typeof answer.receipt_number === "string" ? answer.receipt_number : "";
   if (status === "invalid" || status === "not_grant" || status === "already_used" || status === "exhausted") {
-    attempts.spend(input.userId);
     return fail(400, COUPON_INVALID_AR);
   }
   if (status === "granted" && row.discount_type === "points_grant" && id && receiptNumber) {

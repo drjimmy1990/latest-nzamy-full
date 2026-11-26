@@ -24,3 +24,9 @@ test("A-18: the profile page shows no «الخدمات» tab to an independent c
   assert.match(page, /\{shownTabs\.map\(\(t\) => \(/);
   assert.match(page, /!servicesRequested && !independentConsultant/);
 });
+
+test("A-15: /pricing drops the consultant-refused columns from the comparison table too", () => {
+  const page = read("../../app/pricing/page.tsx");
+  assert.match(page, /const comparisonPlans = withoutConsultantRefusedPlans\(/);
+  assert.match(page, /const cardPlanList   = withoutConsultantRefusedPlans\(/);
+});
