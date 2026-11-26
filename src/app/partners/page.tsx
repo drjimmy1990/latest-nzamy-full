@@ -6,15 +6,12 @@ import {
   Handshake,
   Buildings,
   Globe,
-  ChartLineUp,
   ArrowLeft,
   ArrowRight,
   CheckCircle,
   Scales,
   CaretRight,
   Star,
-  Users,
-  CurrencyDollar,
   ShieldCheck,
   Megaphone,
   Code,
@@ -22,6 +19,8 @@ import {
   PaperPlaneTilt,
   Warning,
 } from "@phosphor-icons/react";
+import Navbar from "@/components/Navbar";
+import Footer from "@/components/Footer";
 import { useTheme } from "@/components/ThemeProvider";
 import { normalizeSaudiMobile, sanitizePhoneDigits, saudiMobileMessage } from "@/lib/services/saudiMobile";
 
@@ -30,8 +29,8 @@ const partnerTypes = [
     icon: Gavel,
     titleAr: "شركات محاماة وكُتّاب عدل",
     titleEn: "Law Firms & Notaries",
-    descAr: "احصل على تدفق مستمر من العملاء المؤهّلين وروّج لخدماتك لآلاف المستخدمين يومياً.",
-    descEn: "Get a steady flow of qualified clients and promote your services to thousands daily.",
+    descAr: "قدّم خدماتك القانونية لمستخدمي المنصة من الأفراد والشركات.",
+    descEn: "Offer your legal services to the platform's individuals and businesses.",
     badge: "🏢",
     color: "from-royal/10 to-royal/5",
     accent: "text-royal dark:text-gold",
@@ -72,20 +71,14 @@ const partnerTypes = [
   },
 ];
 
+// Owner package 25-Nov (D-37): no made-up numbers. «أكثر من ١٢٠,٠٠٠ مستخدم
+// نشط», «عمولات مضمونة» and a partner dashboard that does not exist are gone,
+// and so is the stats grid («+١٢٠ ألف», «٥,٢٠٠+», «٩٧٪», «+٣٤٠»): none was a
+// measured figure. Terms of any partnership are agreed one by one.
 const benefits = [
-  { icon: Users,         ar: "الوصول لأكثر من ١٢٠,٠٠٠ مستخدم نشط", en: "Access 120K+ active users" },
-  { icon: CurrencyDollar, ar: "عمولات وعائدات مضمونة وشفافة", en: "Guaranteed & transparent revenue" },
-  { icon: ChartLineUp,   ar: "لوحة تحكم شريك متخصصة وتقارير تفصيلية", en: "Dedicated partner dashboard & detailed reports" },
-  { icon: ShieldCheck,   ar: "دعم مخصص من فريق نظامي طوال الوقت", en: "Dedicated support from Nezamy's team" },
+  { icon: ShieldCheck,   ar: "تواصل مباشر مع فريق نظامي", en: "Direct contact with Nezamy's team" },
   { icon: Globe,         ar: "حضور وتسويق مشترك في المملكة العربية السعودية", en: "Co-marketing presence across Saudi Arabia" },
   { icon: Star,          ar: "برنامج احتفاء وتقدير للشركاء المتميزين", en: "Recognition & rewards for top partners" },
-];
-
-const stats = [
-  { valueAr: "+١٢٠ ألف", valueEn: "120K+", labelAr: "مستخدم نشط", labelEn: "Active Users" },
-  { valueAr: "٥,٢٠٠+", valueEn: "5,200+", labelAr: "قضية مُنجزة", labelEn: "Cases Resolved" },
-  { valueAr: "٩٧٪", valueEn: "97%", labelAr: "رضا العملاء", labelEn: "Client Satisfaction" },
-  { valueAr: "+٣٤٠", valueEn: "340+", labelAr: "شريك وموفر", labelEn: "Partners & Providers" },
 ];
 
 const container = {
@@ -148,7 +141,8 @@ export default function PartnersPage() {
 
   return (
     <div dir={dir} className="min-h-screen bg-surface font-body dark:bg-dark-bg">
-      {/* Navbar placeholder spacer */}
+      <Navbar />
+      {/* Room for the fixed navbar. */}
       <div className="h-16" />
 
       {/* ── Hero ── */}
@@ -180,8 +174,8 @@ export default function PartnersPage() {
             </motion.h1>
             <motion.p variants={item} className="text-base text-ink-muted dark:text-gray-400 leading-relaxed max-w-[56ch] mb-8">
               {isAr
-                ? "سواء كنت محامياً، شركة تقنية، أو مؤثراً رقمياً — نظامي يوفر لك شراكة مخصصة تضمن لك عملاء منتظمين وعائداً حقيقياً."
-                : "Whether you're a law firm, tech company, or digital influencer — Nezamy offers a tailored partnership that guarantees steady clients and real revenue."}
+                ? "سواء كنت محامياً، شركة تقنية، أو مؤثراً رقمياً — نظامي يوفر لك شراكة مخصصة تناسب نوع عملك."
+                : "Whether you're a law firm, tech company, or digital influencer — Nezamy offers a partnership tailored to your kind of work."}
             </motion.p>
             <motion.div variants={item} className="flex flex-wrap gap-3">
               <motion.a
@@ -199,27 +193,31 @@ export default function PartnersPage() {
             </motion.div>
           </motion.div>
 
-          {/* Stats grid */}
+          {/* The partnership types at a glance — words, not figures (D-37). */}
           <motion.div
             variants={container}
             initial="hidden"
             animate="visible"
             className="mt-14 lg:mt-0 grid grid-cols-2 gap-4"
           >
-            {stats.map((s, i) => (
-              <motion.div
-                key={i}
-                variants={item}
-                className="rounded-2xl border border-slate-200/60 dark:border-white/8 bg-white dark:bg-dark-card p-6 shadow-[0_4px_20px_-8px_rgba(0,0,0,0.06)]"
-              >
-                <div className="font-brand text-3xl font-bold text-royal dark:text-gold mb-1">
-                  {isAr ? s.valueAr : s.valueEn}
-                </div>
-                <div className="text-sm text-ink-muted dark:text-gray-400">
-                  {isAr ? s.labelAr : s.labelEn}
-                </div>
-              </motion.div>
-            ))}
+            {partnerTypes.map((t, i) => {
+              const Icon = t.icon;
+              return (
+                <motion.a
+                  key={i}
+                  href="#types"
+                  variants={item}
+                  className="rounded-2xl border border-slate-200/60 dark:border-white/8 bg-white dark:bg-dark-card p-6 shadow-[0_4px_20px_-8px_rgba(0,0,0,0.06)] hover:border-royal/20 transition-colors"
+                >
+                  <div className={`mb-3 ${t.accent}`}>
+                    <Icon size={28} weight="duotone" />
+                  </div>
+                  <div className="text-sm font-semibold text-ink">
+                    {isAr ? t.titleAr : t.titleEn}
+                  </div>
+                </motion.a>
+              );
+            })}
           </motion.div>
         </div>
       </section>
@@ -263,10 +261,10 @@ export default function PartnersPage() {
                   <p className="text-sm text-ink-muted dark:text-gray-400 leading-relaxed">
                     {isAr ? type.descAr : type.descEn}
                   </p>
-                  <div className={`mt-4 flex items-center gap-1.5 text-xs font-semibold ${type.accent} group-hover:gap-2.5 transition-all`}>
-                    {isAr ? "تعرف على المزيد" : "Learn more"}
+                  <a href="#apply" className={`mt-4 inline-flex items-center gap-1.5 text-xs font-semibold ${type.accent} group-hover:gap-2.5 transition-all hover:underline`}>
+                    {isAr ? "قدّم طلب شراكة" : "Apply for partnership"}
                     {isAr ? <ArrowLeft size={13} /> : <CaretRight size={13} />}
-                  </div>
+                  </a>
                 </motion.div>
               );
             })}
@@ -506,6 +504,7 @@ export default function PartnersPage() {
           </motion.div>
         </div>
       </section>
+      <Footer />
     </div>
   );
 }
