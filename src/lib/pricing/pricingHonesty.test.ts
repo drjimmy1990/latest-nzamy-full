@@ -209,7 +209,8 @@ test("checkout: the pay-per-piece CTA points at a client page that exists", () =
 test("checkout: /pricing asks for a plan by id, not by its display name", () => {
   const cards = code("components/pricing/PricingCards.tsx");
   assert.doesNotMatch(cards, /requested_ref:\s*plan\.name/);
-  assert.match(cards, /requestEntitlement\(planEntitlementRequest\(plan, \{ libraryMode \}\)\)/);
+  // l16 (A-59): an attached discount code may ride along (manualRequest.readRequestCoupon)
+  assert.match(cards, /requestEntitlement\(\{ \.\.\.planEntitlementRequest\(plan, \{ libraryMode \}\),/);
 });
 
 test("checkout: client signup keeps ?plan= and no longer offers the retired shield/group plans", () => {

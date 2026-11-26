@@ -8,6 +8,8 @@ import { BILLING_UNAVAILABLE_AR, getBillingWith } from "@/lib/payments/billingCo
 import { arabicDigits, billingDateAr, billingOrderItemAr, cardTitleAr, hasReceipt, orderStatusAr, pointsByType, POINTS_SPEND_ORDER_AR, POINTS_SPEND_REFUND_NOTE_AR, type BillingData } from "@/lib/payments/billingView";
 import { formatHalalas } from "@/lib/payments/catalog";
 import { TOPUP_BUTTON_AR, TOPUP_HREF } from "@/lib/payments/topUpLinks";
+import { RedeemCodeBox } from "@/components/payments/RedeemCodeBox";
+import { FREE_ACTIVATION_COLUMNS, freeActivationItemAr, type FreeActivationRow } from "@/lib/payments/freeActivationView";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "الفوترة والمدفوعات | نظامي", robots: { index: false, follow: false } };
@@ -24,6 +26,12 @@ export default async function BillingPage() {
     if (result.status === 200) data = result.body as BillingData;
   } catch { /* The page keeps a useful unavailable state while configuration is missing. */ }
   const groups = data ? pointsByType(data.lots) : [];
+  // l16 (A-08 / س٢١٣): the user's free activations by code (his own rows; a failed read shows no section)
+  let activations: FreeActivationRow[] = [];
+  try {
+    const { data: rows, error } = await supabase.from("coupon_redemptions").select(FREE_ACTIVATION_COLUMNS).eq("status", "granted").order("created_at", { ascending: false }).limit(50);
+    if (!error && Array.isArray(rows)) activations = rows as unknown as FreeActivationRow[];
+  } catch { activations = []; }
   // Live check row 12: the viewer's own dashboard sidebar, not the site navbar.
   return <AccountDashboardShell>
     <main dir="rtl" className="min-h-[75dvh] bg-zinc-50 px-4 pb-20 pt-8 text-zinc-900 dark:bg-[#0A0A0A] dark:text-zinc-100">
@@ -38,6 +46,14 @@ export default async function BillingPage() {
           <h2 className="mb-3 text-xl font-bold">باقتك الحالية</h2>
           <CurrentPlanCard plansHref="/settings?tab=subscription#account-plans" />
         </section>
+        {/* l16 (A-59, owner 25 Nov §7.7.3): «هل لديك كود خصم أو قسيمة؟» */}
+        <RedeemCodeBox />
+        {activations.length > 0 && (
+          <section className={PANEL} aria-label="التفعيلات المجانية بالأكواد">
+            <h2 className="text-xl font-bold">التفعيلات المجانية بالأكواد</h2>
+            <ul className="mt-4 divide-y divide-zinc-200 dark:divide-zinc-800">{activations.map(a => <li key={a.id} className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm"><span className="font-semibold">{freeActivationItemAr(a)}</span><span className="text-zinc-500 dark:text-zinc-400">{billingDateAr(a.granted_at ?? a.created_at)}</span><Link href={`/dashboard/billing/activation/${a.id}`} className="font-semibold text-[#0B3D2E] dark:text-[#C8A762]">إيصال التفعيل المجاني</Link></li>)}</ul>
+          </section>
+        )}
         {!data ? <p role="alert" className={PANEL}>{BILLING_UNAVAILABLE_AR}</p> : <>
           <section className={PANEL}>
             <div className="flex flex-wrap items-center justify-between gap-3">

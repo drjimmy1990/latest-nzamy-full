@@ -274,13 +274,13 @@ test("preview: the same 409 as checkout, before the pay button", async () => {
   const none = db();
   const r = await validateCouponWith(
     { admin: none.client, now: () => NOW, catalog: CATALOG, book: BOOK, attempts: createCouponAttemptBudget() },
-    { userId: USER, code: "FREE100", itemId: "ind-preventive", billing: "yearly", gatewayMode: "test" },
+    { userId: USER, code: "FREE100", itemId: "ind-preventive", billing: "yearly", gatewayMode: "test", vatPercent: 15 },
   );
   assert.deepEqual(r, { status: 409, body: { error: FULL_DISCOUNT_CARD_REQUIRED_AR, code: FULL_DISCOUNT_CARD_REQUIRED_CODE } });
   const withCard = db({ cards: [LIVE_CARD] });
   const r2 = await validateCouponWith(
     { admin: withCard.client, now: () => NOW, catalog: CATALOG, book: BOOK, attempts: createCouponAttemptBudget() },
-    { userId: USER, code: "FREE100", itemId: "ind-preventive", billing: "yearly", gatewayMode: "test" },
+    { userId: USER, code: "FREE100", itemId: "ind-preventive", billing: "yearly", gatewayMode: "test", vatPercent: 15 },
   );
   assert.deepEqual(r2, { status: 409, body: { error: FULL_DISCOUNT_PENDING_AR, code: FULL_DISCOUNT_PENDING_CODE } });
   // no gateway mode (the gateway is off) → no card counts

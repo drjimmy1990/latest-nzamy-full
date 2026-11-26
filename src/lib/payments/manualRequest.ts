@@ -46,3 +46,31 @@ export function noteWithCoupon<T>(note: T, code: string | null): T | string | nu
   const base = typeof note === "string" ? note.trim() : "";
   return base ? `${base}\n${couponNoteLine(code)}` : couponNoteLine(code);
 }
+
+/**
+ * l16 (A-59): the discount code the «تفعيل كود» box recognised, kept for this
+ * tab only (sessionStorage) so the next activation request filed from a plan
+ * card carries it. Shape-checked on the way in and out; a storage that throws
+ * (private mode, blocked) keeps nothing.
+ */
+export const REQUEST_COUPON_KEY = "nz.requestCoupon";
+
+export function saveRequestCoupon(storage: Pick<Storage, "setItem"> | null, code: unknown): boolean {
+  const c = normalizeRequestCoupon(code);
+  if (!storage || !c) return false;
+  try {
+    storage.setItem(REQUEST_COUPON_KEY, c);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function readRequestCoupon(storage: Pick<Storage, "getItem"> | null): string | null {
+  if (!storage) return null;
+  try {
+    return normalizeRequestCoupon(storage.getItem(REQUEST_COUPON_KEY));
+  } catch {
+    return null;
+  }
+}

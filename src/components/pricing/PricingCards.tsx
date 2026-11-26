@@ -21,7 +21,7 @@ import { vatNoticeFor, VAT_UNREGISTERED_NOTICE } from "@/lib/pricing/vatNotice";
 import { useVatRegistered } from "@/hooks/useVatRegistered";
 import { cardLaunch, cardPrice, cardTotalWithVat, shownCards, type LaunchPriceMap } from "@/lib/pricing/cardPrice";
 import { signedInCta } from "@/lib/pricing/cardCta";
-import { requestFiledAr } from "@/lib/payments/manualRequest";
+import { readRequestCoupon, requestFiledAr } from "@/lib/payments/manualRequest";
 import { TOPUP_PACKS_ANCHOR } from "@/lib/payments/topUpLinks";
 import { useLaunchPrices } from "@/hooks/useLaunchPrices";
 
@@ -638,7 +638,15 @@ export function PricingCards({ planList, billing, isAr, audience, libraryMode }:
       return true;
     }
     // requested_ref = Plan.id (the name rides in `note`) — see planEntitlementRequest.
-    void requestEntitlement(planEntitlementRequest(plan, { libraryMode })).then((res) => {
+    // l16 (A-59): a discount code the «تفعيل كود» box recognised rides on the request
+    let storage: Storage | null = null;
+    try {
+      storage = window.sessionStorage;
+    } catch {
+      storage = null;
+    }
+    const couponCode = readRequestCoupon(storage);
+    void requestEntitlement({ ...planEntitlementRequest(plan, { libraryMode }), ...(couponCode ? { coupon_code: couponCode } : {}) }).then((res) => {
       // l16 (A-56): the request's reference and that online payment is paused
       setToast(
         res.ok

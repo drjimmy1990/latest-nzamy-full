@@ -10,6 +10,7 @@ import { getPlanList } from "@/constants/pricingData";
 import type { AudienceTab, Billing } from "@/constants/pricingData";
 import { audienceForUserType, extraPlanIdsFor, withExtraPlans, withoutConsultantRefusedPlans } from "@/lib/pricing/audienceForUserType";
 import { isIndependentConsultantSession } from "@/lib/auth/consultantScope";
+import { RedeemCodeBox } from "@/components/payments/RedeemCodeBox";
 import { displayCycle, offeredCycles } from "@/lib/pricing/cardPrice";
 import { BILLING_LABEL_AR, isCycle } from "@/lib/pricing/priceBook";
 import { CurrentPlanCard } from "@/components/payments/CurrentPlanCard";
@@ -90,6 +91,12 @@ export function SubscriptionTab() {
           <PointsBalanceCard data={billingRead.data} />
         </div>
       ) : null}
+
+      {/* l16 (A-59, owner 25 Nov §7.7.3): «هل لديك كود خصم أو قسيمة؟» */}
+      <div>
+        <SectionTitle>تفعيل كود</SectionTitle>
+        <RedeemCodeBox />
+      </div>
 
       {/* l16 (A-62): clear of the fixed Navbar when opened at #account-plans */}
       <div id={PLANS_ANCHOR} className="scroll-mt-32">

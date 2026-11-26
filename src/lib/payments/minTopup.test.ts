@@ -89,7 +89,7 @@ test("checkout: a lawyer below his stored minimum gets the minimum, not the gene
     client: {} as CheckoutDeps["client"],
     now: () => new Date("2026-11-20T08:00:00.000Z"),
   } as CheckoutDeps;
-  const r = await startCheckoutWith(deps, { user: { id: USER }, itemId: "topup-100", billing: "once", origin: "https://example.test", publishableKey: "pk_test" });
+  const r = await startCheckoutWith(deps, { user: { id: USER }, itemId: "topup-100", billing: "once", origin: "https://example.test", publishableKey: "pk_test", vatPercent: 15 });
   assert.equal(r.status, 403);
   assert.deepEqual(r.body, { error: "الحد الأدنى للشحن لحسابك ٥٠٠ نقطة (٥٠٠ ريال قبل الضريبة)", code: "topup_below_minimum" });
   assert.equal(audits(log).length, 1);
