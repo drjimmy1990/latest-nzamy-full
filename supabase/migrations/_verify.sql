@@ -9021,12 +9021,6 @@ select 'l18 signup: only an e-mail sign-up from the forms is marked (GoTrue''s p
 -- account has it confirmed. 20261208_20 runs BEFORE the deploy (after 20261207_10). Before it runs
 -- the checks below answer ok = false («run 20261208_20»).
 select 'l18 phone login: phone_sign_in_target / pw_reset_target_by_phone are SECURITY DEFINER with an empty search_path, service_role only (run 20261208_20)' as check,
--- >>> verify:l18_pay — supabase/tests/rls/l18_pay_free_activation.test.sql
--- Batch l18-pay (owner ق٢٦-١١, س٢٢٤ settled): a discount code that covers the whole price is activated at
--- 0 SAR with no card (coupon_redemptions), and a free-plan code may grant the library or the bundle.
--- 20261208_30 runs BEFORE the deploy; 20261208_31 (billing_company identity) any time. Before a file runs,
--- its checks answer ok = false («run …»).
-select 'l18 pay: coupon_redeem_full_open / coupon_redeem_grant_library are SECURITY DEFINER with an empty search_path, service_role only (run 20261208_30)' as check,
        coalesce((select count(*) = 2
                         and bool_and(p.prosecdef
                                      and p.proconfig @> array['search_path=""']
@@ -9054,6 +9048,19 @@ select 'l18 access: the free questions setting names the law firm (10 by default
                    from public.platform_settings ps
                   where ps.key = 'free_questions_by_account_type'), false) as ok;
 -- <<< verify:l18_access
+-- >>> verify:l18_pay — supabase/tests/rls/l18_pay_free_activation.test.sql
+-- Batch l18-pay (owner ق٢٦-١١, س٢٢٤ settled): a discount code that covers the whole price is activated at
+-- 0 SAR with no card (coupon_redemptions), and a free-plan code may grant the library or the bundle.
+-- 20261208_30 runs BEFORE the deploy; 20261208_31 (billing_company identity) any time. Before a file runs,
+-- its checks answer ok = false («run …»).
+select 'l18 pay: coupon_redeem_full_open / coupon_redeem_grant_library are SECURITY DEFINER with an empty search_path, service_role only (run 20261208_30)' as check,
+       coalesce((select count(*) = 2
+                        and bool_and(p.prosecdef
+                                     and p.proconfig @> array['search_path=""']
+                                     and not has_function_privilege('anon', p.oid, 'EXECUTE')
+                                     and not has_function_privilege('authenticated', p.oid, 'EXECUTE')
+                                     and has_function_privilege('service_role', p.oid, 'EXECUTE'))
+                   from pg_catalog.pg_proc p
                   where p.oid in (to_regprocedure('public.coupon_redeem_full_open(uuid,uuid,text,text,text,integer,timestamp with time zone)'),
                                   to_regprocedure('public.coupon_redeem_grant_library(uuid,text,integer,integer,timestamp with time zone)'))), false) as ok;
 select 'l18 pay: a 0 SAR activation locks the coupon row and refuses a code that does not cover the price (run 20261208_30)' as check,
