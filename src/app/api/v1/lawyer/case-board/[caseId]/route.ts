@@ -1,6 +1,7 @@
 import { NextResponse, NextRequest } from "next/server";
 import { DB_ERROR_AR } from "@/lib/api/dbError";
 import { assertRole } from "@/lib/auth/assertRole";
+import { assertCaseWorker } from "@/lib/auth/assertCaseWorker";
 import { checkFreeBoard } from "@/lib/services/caseFreeBoard";
 
 /**
@@ -49,7 +50,7 @@ function validCaseId(v: unknown): v is string {
 
 export async function GET(_request: NextRequest, context: { params: Promise<{ caseId: string }> }) {
   try {
-    const auth = await assertRole(["lawyer", "firm"]);
+    const auth = await assertCaseWorker();
     if (!auth.ok) return auth.response;
     const { supabase } = auth;
     const { caseId } = await context.params;
@@ -79,7 +80,7 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ ca
 
 export async function PUT(request: NextRequest, context: { params: Promise<{ caseId: string }> }) {
   try {
-    const auth = await assertRole(["lawyer", "firm"]);
+    const auth = await assertCaseWorker();
     if (!auth.ok) return auth.response;
     const { user, supabase } = auth;
     const { caseId } = await context.params;

@@ -107,9 +107,27 @@ test('the narrow intake rules are ordered before the broad client rule', () => {
 });
 
 test('no other account type gained the intake', () => {
-  for (const type of ['lawyer', 'firm', 'micro', 'provider', 'government', 'ngo']) {
+  for (const type of ['lawyer', 'firm', 'provider', 'government', 'ngo']) {
     assert.equal(isRouteAllowedFor('/dashboard/client/requests/new', type), false, type);
   }
+});
+
+test('E-108 (l16): the small-business account files through the shared intake, and nothing else of /dashboard/client', () => {
+  for (const path of ['/dashboard/client/requests/new', '/dashboard/client/services', '/dashboard/client/consultation/new']) {
+    assert.equal(isRouteAllowedFor(path, 'micro'), true, path);
+  }
+  for (const path of ['/dashboard/client', '/dashboard/client/cases', '/dashboard/client/wallet']) {
+    assert.equal(isRouteAllowedFor(path, 'micro'), false, path);
+  }
+});
+
+test("D-73 (l16): memo-studio is the simulator (lawyer / firm), gov and ngo tools are their sector's", () => {
+  assert.equal(isRouteAllowedFor('/ai/memo-studio', 'lawyer'), true);
+  assert.equal(isRouteAllowedFor('/ai/memo-studio', 'individual'), false);
+  assert.equal(isRouteAllowedFor('/ai/gov/judgment-drafter', 'government'), true);
+  assert.equal(isRouteAllowedFor('/ai/gov/judgment-drafter', 'individual'), false);
+  assert.equal(isRouteAllowedFor('/ai/ngo/donation-analyzer', 'ngo'), true);
+  assert.equal(isRouteAllowedFor('/ai/ngo/donation-analyzer', 'corporate'), false);
 });
 
 test('an unresolved user_type is refused, never defaulted', () => {

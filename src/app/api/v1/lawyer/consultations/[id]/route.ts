@@ -1,6 +1,6 @@
 import { NextResponse, NextRequest } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { assertRole } from "@/lib/auth/assertRole";
+import { assertCaseWorker } from "@/lib/auth/assertCaseWorker";
 import { recordEvent, RequestEvent } from "@/lib/events";
 import { recordNotification } from "@/lib/notify";
 import {
@@ -32,7 +32,7 @@ function loadRow(supabase: SupabaseClient, id: string) {
 /** GET /api/v1/lawyer/consultations/[id] — { data } or 404. */
 export async function GET(_request: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
-    const auth = await assertRole(["lawyer", "firm"]);
+    const auth = await assertCaseWorker();
     if (!auth.ok) return auth.response;
     const { supabase } = auth;
     const { id } = await context.params;
@@ -85,7 +85,7 @@ const NOTIFY_TITLE: Partial<Record<ConsultationStatus, string>> = {
  */
 export async function PATCH(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
-    const auth = await assertRole(["lawyer", "firm"]);
+    const auth = await assertCaseWorker();
     if (!auth.ok) return auth.response;
     const { user, supabase } = auth;
     const { id } = await context.params;

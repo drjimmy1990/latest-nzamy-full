@@ -1,5 +1,5 @@
 import { NextResponse, NextRequest } from "next/server";
-import { assertRole } from "@/lib/auth/assertRole";
+import { assertCaseWorker } from "@/lib/auth/assertCaseWorker";
 import { parseIsoDate } from "@/lib/services/deadlineEngine";
 import { isObligationKind, isObligationStatus } from "@/lib/services/contractVocabulary";
 import { OBLIGATION_SELECT, ISO_DATE_RE, toObligationDto, dbErrorResponse, type ObligationRow } from "../../_shared";
@@ -26,7 +26,7 @@ interface ObligationBody {
 
 export async function POST(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
-    const auth = await assertRole(["lawyer", "firm"]);
+    const auth = await assertCaseWorker();
     if (!auth.ok) return auth.response;
     const { supabase, user } = auth;
     const { id } = await context.params;

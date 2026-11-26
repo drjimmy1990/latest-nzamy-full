@@ -70,9 +70,11 @@ export const ROUTE_ACCESS: readonly RouteAccessRule[] = [
 
   // The shared intake — listed BEFORE /dashboard/client, which would otherwise
   // match first and refuse the corporate account these three exist for.
+  // E-108 (batch l16): the small-business account (micro) files through the
+  // same form too — its own «طلب جديد» had no working destination.
   ...CLIENT_INTAKE_PREFIXES.map((prefix) => ({
     prefix,
-    allowedTypes: ["individual", "corporate"] as const,
+    allowedTypes: ["individual", "corporate", "micro"] as const,
   })),
 
   { prefix: "/dashboard/client", allowedTypes: ["individual"] },
@@ -113,6 +115,13 @@ export const ROUTE_ACCESS: readonly RouteAccessRule[] = [
   // N05-V2 (owner package 13 Nov): the company tools (/ai/corp/*) are for the
   // corporate account only; the proxy's PROTECTED list carries "/ai/corp".
   { prefix: "/ai/corp", allowedTypes: ["corporate"] },
+
+  // D-73 (batch l16): /ai/memo-studio is the simulator (it re-exports
+  // /ai/wargaming), so it takes wargaming's lawyer/firm rule; the government
+  // and NGO tool pages are their sector's. Each prefix is also PROTECTED.
+  { prefix: "/ai/memo-studio", allowedTypes: ["lawyer", "firm"] },
+  { prefix: "/ai/gov", allowedTypes: ["government"] },
+  { prefix: "/ai/ngo", allowedTypes: ["ngo"] },
 ];
 
 /**

@@ -3,6 +3,7 @@ import { assertRole } from "@/lib/auth/assertRole";
 import { createServiceClient } from "@/lib/supabase/server";
 import type { FirmRole } from "@/types/firmBackendReady";
 import { limitRefusal, limitRefusalBody } from "@/lib/api/dbErrorCore";
+import { resolveCallerFirm, teamWriteRefusal } from "@/lib/auth/firmMembershipAccess";
 
 /**
  * /api/v1/firm/members/[memberId] — Phase 2, sibling of `../route.ts`. See
@@ -59,7 +60,9 @@ interface FirmMemberRow {
  */
 export async function PATCH(request: NextRequest, context: { params: Promise<{ memberId: string }> }) {
   try {
-    const auth = await assertRole(["firm"]);
+    // D-53: the owner account, or the firm's managing partner / HR manager
+    // (teamWriteRefusal below; the database holds the same rule).
+    const auth = await assertRole();
     if (!auth.ok) return auth.response;
     const { user, supabase } = auth;
     const { memberId } = await context.params;
@@ -83,11 +86,8 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ m
       );
     }
 
-    const { data: firm, error: firmError } = await supabase
-      .from("firm_profiles")
-      .select("id, owner_user_id")
-      .eq("owner_user_id", user.id)
-      .maybeSingle();
+    const { data: caller, error: firmError } = await resolveCallerFirm(supabase, user.id);
+    const firm = caller ? { id: caller.id, owner_user_id: caller.ownerUserId } : null;
     if (firmError) {
       console.error("[firm/members/[id] PATCH] firm_profiles lookup failed:", firmError.message, firmError.code);
       return NextResponse.json({ error: "تعذّر تعديل العضوية." }, { status: 500 });
@@ -100,7 +100,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ m
     // current state has to be known BEFORE the update, not after it.
     const { data: existing, error: existingError } = await supabase
       .from("firm_members")
-      .select("id, firm_id, user_id, status, accepted_at")
+      .select("id, firm_id, user_id, role, status, accepted_at")
       .eq("id", memberId)
       .eq("firm_id", firm.id)
       .maybeSingle();
@@ -114,6 +114,13 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ m
     if (existing.user_id === firm.owner_user_id) {
       return NextResponse.json({ error: "لا يمكن تعديل عضوية صاحب المكتب." }, { status: 403 });
     }
+    const refused = teamWriteRefusal({
+      caller: caller!,
+      callerUserId: user.id,
+      target: { userId: existing.user_id as string, role: (existing as { role?: string }).role ?? "" },
+      newRole: role,
+    });
+    if (refused) return NextResponse.json({ error: refused }, { status: 403 });
 
     // CONSENT — see the header. An invitation is answered by the invitee, and
     // by nobody else. 409 rather than 403: the caller IS allowed here, the row

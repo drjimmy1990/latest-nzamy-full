@@ -20,6 +20,10 @@ import { UserTypeGuard } from "@/components/dashboard/UserTypeGuard";
  * (proxy.ts Gate 2), which redirects the request to /dashboard/business
  * before this component — or any client JS — ever runs. This guard only
  * needs to admit what the edge already admits.
+ *
+ * E-108 (batch l16): "micro" for the same reason — the small-business account
+ * files through the same three intake subtrees (routeAccess.ts); the rest of
+ * /dashboard/client stays individual-only at the edge.
  */
 export default function ClientDashboardLayout({
   children,
@@ -32,7 +36,7 @@ export default function ClientDashboardLayout({
   }, []);
 
   return (
-    <UserTypeGuard allowedTypes={["individual", "corporate", "admin"]}>
+    <UserTypeGuard allowedTypes={["individual", "corporate", "micro", "admin"]}>
       <div className="min-h-[100dvh] bg-surface dark:bg-dark-bg" dir="rtl" suppressHydrationWarning>
         {/* SharedSidebar renders its own mobile top-header (60px) + desktop sidebar + mobile drawer */}
         <SharedSidebar />

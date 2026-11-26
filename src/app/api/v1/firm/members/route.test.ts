@@ -61,13 +61,15 @@ test("the service client is created only AFTER the RLS-scoped membership check",
   assert.ok(callerFirm < viewGate, "the view-role gate runs before the membership read");
   assert.ok(viewGate < serviceCall, "a service client is created before the 403 gate");
 
-  // POST: the owner read keyed on owner_user_id = user.id, and the 404 that
-  // acts on it, both precede the invite lookup's key.
-  const ownerCheck = routeSource.indexOf("await resolveOwnFirm(supabase, user.id)");
+  // POST (D-53, l16): the RLS-scoped managed-firm read, the 404 that acts on
+  // it and the team-manager gate all precede the invite lookup's key.
+  const ownerCheck = routeSource.indexOf("await resolveManagedFirm(supabase, user.id)");
   const notFound = routeSource.indexOf("if (!firm) {");
+  const managerGate = routeSource.indexOf("teamWriteRefusal({ caller: firm, callerUserId: user.id, target: null, newRole: role })");
+  const planGate = routeSource.indexOf('officePlanRefusal(supabase, "team")');
   const postServiceCall = routeSource.lastIndexOf("const service = await createServiceClient();");
   assert.ok(ownerCheck > 0, "POST ownership check missing");
-  assert.ok(ownerCheck < notFound && notFound < postServiceCall);
+  assert.ok(ownerCheck < notFound && notFound < managerGate && managerGate < planGate && planGate < postServiceCall);
 });
 
 test("`profiles` is only ever read through the narrow projection", () => {
@@ -101,12 +103,14 @@ test("the invite lookup is one e-mail, restricted to the account types a firm ma
 
 test("the [memberId] sibling uses the same client and the same projection", () => {
   assert.match(memberRouteSource, /import \{ createServiceClient \} from "@\/lib\/supabase\/server";/);
-  const owner = memberRouteSource.indexOf('.eq("owner_user_id", user.id)');
+  const owner = memberRouteSource.indexOf("await resolveCallerFirm(supabase, user.id)");
   const rowCheck = memberRouteSource.indexOf('.eq("firm_id", firm.id)');
+  const managerGate = memberRouteSource.indexOf("teamWriteRefusal({");
   const service = firstServiceCallIndex(memberRouteSource);
-  assert.ok(owner > 0, "owner check missing");
-  assert.ok(rowCheck > owner, "the row-belongs-to-this-firm check runs before the owner check");
-  assert.ok(service > rowCheck, "the service client is created before the row check");
+  assert.ok(owner > 0, "firm check missing");
+  assert.ok(rowCheck > owner, "the row-belongs-to-this-firm check runs before the firm check");
+  assert.ok(managerGate > rowCheck, "the team-manager gate reads the row first");
+  assert.ok(service > managerGate, "the service client is created before the manager gate");
 });
 
 test("the writes a firm owner can actually fail are Arabic, not Postgres codes", () => {
@@ -154,8 +158,8 @@ test("the firm invitee is notified in Arabic, with the office name and the role"
   assert.match(body, /href: inviteeDashboardHref\(account\.user_type as string \| null\),/);
 });
 
-test("the office name is read from the owner's own RLS-scoped firm row", () => {
-  assert.match(routeSource, /\.select\("id, owner_user_id, name_ar"\)\s*\n\s*\.eq\("owner_user_id", userId\)/);
+test("the office name is read from the caller's own RLS-scoped firm row", () => {
+  assert.match(routeSource, /\.select\("id, owner_user_id, name_ar"\)\s*\n\s*\.eq\("id", caller\.data\.id\)/);
 });
 
 test("the firm invite lookup matches the e-mail literally — LIKE/PostgREST wildcards are escaped first", () => {

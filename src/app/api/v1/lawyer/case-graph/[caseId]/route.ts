@@ -1,6 +1,6 @@
 import { NextResponse, NextRequest } from "next/server";
 import { DB_ERROR_AR } from "@/lib/api/dbError";
-import { assertRole } from "@/lib/auth/assertRole";
+import { assertCaseWorker } from "@/lib/auth/assertCaseWorker";
 
 /**
  * /api/v1/lawyer/case-graph/[caseId] — Phase 1, step 4 (خطة_البناء_الكاملة §5).
@@ -45,7 +45,7 @@ export async function GET(
     // canvas sat at «تعذّرت القراءة — الحفظ متوقّف» for its one intended
     // audience. RLS is unchanged: the owner arm of can_access_case_row already
     // admits a corporate user to rows they wrote themselves.
-    const auth = await assertRole(["lawyer", "firm", "corporate"]);
+    const auth = await assertCaseWorker(["corporate"]);
     if (!auth.ok) return auth.response;
     const { supabase } = auth;
     const { caseId } = await context.params;
@@ -121,7 +121,7 @@ export async function PUT(
     // canvas sat at «تعذّرت القراءة — الحفظ متوقّف» for its one intended
     // audience. RLS is unchanged: the owner arm of can_access_case_row already
     // admits a corporate user to rows they wrote themselves.
-    const auth = await assertRole(["lawyer", "firm", "corporate"]);
+    const auth = await assertCaseWorker(["corporate"]);
     if (!auth.ok) return auth.response;
     const { user, supabase } = auth;
     const { caseId } = await context.params;

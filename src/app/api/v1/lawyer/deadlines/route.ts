@@ -1,6 +1,7 @@
 import { NextResponse, NextRequest } from "next/server";
+import { officePlanRefusal } from "@/lib/auth/assertOfficePlan";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { assertRole } from "@/lib/auth/assertRole";
+import { assertCaseWorker } from "@/lib/auth/assertCaseWorker";
 import { assertCourtPractice } from "@/lib/auth/assertCourtPractice";
 import { recordActivity, RequestEvent } from "@/lib/events";
 import { hijriLabelAr } from "@/lib/services/hijri";
@@ -138,7 +139,7 @@ function dbErrorResponse(error: { code?: string; message?: string } | null | und
  */
 export async function GET(request: NextRequest) {
   try {
-    const auth = await assertRole(["lawyer", "firm"]);
+    const auth = await assertCaseWorker();
     if (!auth.ok) return auth.response;
     const { supabase } = auth;
 
@@ -204,12 +205,15 @@ function validOffsets(offsets: unknown): offsets is number[] {
  */
 export async function POST(request: NextRequest) {
   try {
-    const auth = await assertRole(["lawyer", "firm"]);
+    const auth = await assertCaseWorker();
     if (!auth.ok) return auth.response;
     const { user, supabase } = auth;
     // Art. 18: the deadline radar is a court tool; a legal consultant does not plead.
     const refused = await assertCourtPractice(supabase, user.id);
     if (refused) return refused;
+    // Owner س٢١٢: court deadlines are «إدارة المكتب» — refused on the free side.
+    const locked = await officePlanRefusal(supabase, "deadlines");
+    if (locked) return locked;
 
     const body = (await request.json()) as CreateBody;
     const { title, triggerDate, ruleId, dueDate, kind, caseRequestId, stageId, hearingId, priority, reminderOffsetsDays, notes } = body;

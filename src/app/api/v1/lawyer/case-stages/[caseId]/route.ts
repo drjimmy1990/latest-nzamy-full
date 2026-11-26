@@ -1,7 +1,7 @@
 import { NextResponse, NextRequest } from "next/server";
 import { dbErrorJson, DB_ERROR_AR } from "@/lib/api/dbError";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { assertRole } from "@/lib/auth/assertRole";
+import { assertCaseWorker } from "@/lib/auth/assertCaseWorker";
 import { assertCourtPractice } from "@/lib/auth/assertCourtPractice";
 import { recordActivity, RequestEvent } from "@/lib/events";
 import type { AutoDeadlineResult, AutoDeadlineSummary, LinkedStageDeadline } from "@/lib/services/caseStagesService";
@@ -148,7 +148,7 @@ function linkedByStage(rows: AutoDeadlineRow[]): Map<string, LinkedStageDeadline
  */
 export async function GET(_request: NextRequest, context: { params: Promise<{ caseId: string }> }) {
   try {
-    const auth = await assertRole(["lawyer", "firm"]);
+    const auth = await assertCaseWorker();
     if (!auth.ok) return auth.response;
     const { supabase } = auth;
     const { caseId } = await context.params;
@@ -199,7 +199,7 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ ca
  */
 export async function POST(request: NextRequest, context: { params: Promise<{ caseId: string }> }) {
   try {
-    const auth = await assertRole(["lawyer", "firm"]);
+    const auth = await assertCaseWorker();
     if (!auth.ok) return auth.response;
     const { user, supabase } = auth;
     // Art. 18: a legal consultant does not plead, so he records no court degree.
@@ -622,7 +622,7 @@ async function syncStatutoryDeadline(params: {
  */
 export async function PATCH(request: NextRequest, context: { params: Promise<{ caseId: string }> }) {
   try {
-    const auth = await assertRole(["lawyer", "firm"]);
+    const auth = await assertCaseWorker();
     if (!auth.ok) return auth.response;
     const { user, supabase } = auth;
     // Art. 18: a legal consultant does not plead, so he records no judgment

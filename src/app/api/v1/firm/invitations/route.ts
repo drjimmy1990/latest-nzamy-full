@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { officePlanRefusal } from "@/lib/auth/assertOfficePlan";
 import { assertRole } from "@/lib/auth/assertRole";
 import { resolveCallerFirm } from "@/lib/auth/firmMembershipAccess";
 import { createServiceClient } from "@/lib/supabase/server";
@@ -155,6 +156,9 @@ export async function POST(request: NextRequest) {
     if (!auth.ok) return auth.response;
     const r = await callerFirm(auth);
     if ("response" in r) return r.response;
+    // Owner س٢١٢: the team and its seats are «إدارة المكتب» — refused on the free side.
+    const locked = await officePlanRefusal(auth.supabase, "team");
+    if (locked) return locked;
 
     const body = (await request.json().catch(() => ({}))) as { email?: unknown; role?: unknown };
     const email = normaliseInviteEmail(body.email);

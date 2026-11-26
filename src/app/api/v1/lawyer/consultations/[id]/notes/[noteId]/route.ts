@@ -1,5 +1,5 @@
 import { NextResponse, NextRequest } from "next/server";
-import { assertRole } from "@/lib/auth/assertRole";
+import { assertCaseWorker } from "@/lib/auth/assertCaseWorker";
 
 /**
  * DELETE /api/v1/lawyer/consultations/[id]/notes/[noteId]
@@ -12,7 +12,7 @@ import { assertRole } from "@/lib/auth/assertRole";
  */
 export async function DELETE(_request: NextRequest, context: { params: Promise<{ id: string; noteId: string }> }) {
   try {
-    const auth = await assertRole(["lawyer", "firm"]);
+    const auth = await assertCaseWorker();
     if (!auth.ok) return auth.response;
     const { supabase } = auth;
     const { id, noteId } = await context.params;

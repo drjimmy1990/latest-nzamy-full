@@ -3,7 +3,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { assertRole } from "@/lib/auth/assertRole";
 import { createServiceClient } from "@/lib/supabase/server";
 import type { FirmRole } from "@/types/firmBackendReady";
-import { FIRM_TEAM_VIEW_ROLES, resolveCallerFirm } from "@/lib/auth/firmMembershipAccess";
+import { FIRM_TEAM_VIEW_ROLES, resolveCallerFirm, teamWriteRefusal } from "@/lib/auth/firmMembershipAccess";
+import { officePlanRefusal } from "@/lib/auth/assertOfficePlan";
 import { escapeLikePattern } from "@/lib/services/likePattern";
 import { FIRM_ROLE_LABEL } from "@/constants/firmProfileReadiness";
 import { recordNotification } from "@/lib/notify";
@@ -100,15 +101,35 @@ function toDto(row: FirmMemberRow, profile: ProfileLite | undefined, ownerUserId
  * build task) is a 404, not an empty list: a member roster with no firm
  * behind it is a broken account state, not a genuinely empty one.
  */
-async function resolveOwnFirm(supabase: SupabaseClient, userId: string) {
-  return supabase
+/**
+ * D-53 (batch l16): the firm the caller manages — his own (the owner account)
+ * or the one where he is an ACTIVE member; teamWriteRefusal() then decides
+ * whether his role may write (owner, managing partner, HR manager). Both
+ * reads are RLS-scoped: `resolveCallerFirm` (own row / own membership) and
+ * the firm row, which "firm_profiles: owner, member or admin can read" admits.
+ * `name_ar` is read for the invitation notification only — an invitee has to
+ * be told WHICH office is asking.
+ */
+async function resolveManagedFirm(supabase: SupabaseClient, userId: string) {
+  const caller = await resolveCallerFirm(supabase, userId);
+  if (caller.error || !caller.data) return { data: null, error: caller.error };
+  const { data: row, error } = await supabase
     .from("firm_profiles")
-    // `name_ar` is read for the invitation notification only — an invitee has
-    // to be told WHICH office is asking — and `firm_profiles` RLS already
-    // admits the owner's own row.
     .select("id, owner_user_id, name_ar")
-    .eq("owner_user_id", userId)
+    .eq("id", caller.data.id)
     .maybeSingle();
+  if (error) return { data: null, error };
+  if (!row) return { data: null, error: null };
+  return {
+    data: {
+      id: row.id as string,
+      owner_user_id: row.owner_user_id as string,
+      name_ar: (row.name_ar as string | null) ?? null,
+      role: caller.data.role,
+      isOwner: caller.data.isOwner,
+    },
+    error: null,
+  };
 }
 
 /**
@@ -207,7 +228,9 @@ export async function GET(_request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
-    const auth = await assertRole(["firm"]);
+    // D-53: the owner account, or the firm's managing partner / HR manager
+    // (teamWriteRefusal below; the database holds the same rule).
+    const auth = await assertRole();
     if (!auth.ok) return auth.response;
     const { user, supabase } = auth;
 
@@ -224,7 +247,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { data: firm, error: firmError } = await resolveOwnFirm(supabase, user.id);
+    const { data: firm, error: firmError } = await resolveManagedFirm(supabase, user.id);
     if (firmError) {
       console.error("[firm/members POST] firm_profiles lookup failed:", firmError.message, firmError.code);
       return NextResponse.json({ error: "تعذّر إضافة العضو." }, { status: 500 });
@@ -232,6 +255,11 @@ export async function POST(request: NextRequest) {
     if (!firm) {
       return NextResponse.json({ error: "لا يوجد مكتب مرتبط بهذا الحساب." }, { status: 404 });
     }
+    const refused = teamWriteRefusal({ caller: firm, callerUserId: user.id, target: null, newRole: role });
+    if (refused) return NextResponse.json({ error: refused }, { status: 403 });
+    // Owner س٢١٢: the team and its seats are «إدارة المكتب».
+    const locked = await officePlanRefusal(supabase, "team");
+    if (locked) return locked;
 
     const service = await createServiceClient();
     // PostgREST maps `*` to `%` and hands the rest to SQL ILIKE, where `%` and

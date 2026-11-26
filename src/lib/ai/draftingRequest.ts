@@ -294,6 +294,43 @@ const CLIENT_CONTRACTS_HINT = " يمكنك طلب صياغة عقدك من مح�
 const LAWYER_SIDE_TYPES: ReadonlySet<string> = new Set(["lawyer", "firm", "admin"]);
 
 /**
+ * Owner س٢٦ (25 Nov 2026, D-134): an individual or a business is offered
+ * «صائغ العقود المبسّط» (/ai/simple-contract — simpleContract.ts; the page
+ * carries the «not a lawyer» notice and the upgrade link to /services/contracts)
+ * BEFORE drafting through a lawyer. A high-risk contract — real estate, a
+ * capital partnership, a government contract, a complex employment contract —
+ * goes straight to a lawyer (/services/contracts, where the order and its
+ * consent are taken). Mirrors simpleContract.SIMPLE_CONTRACT_PAGE / _ROLES
+ * (kept literal: this file has no imports).
+ */
+export const SIMPLE_CONTRACT_HREF = "/ai/simple-contract";
+export const SIMPLE_CONTRACT_ACTION_LABEL = "اكتب عقدك المبسّط";
+const SIMPLE_CONTRACT_FIRST_TYPES: ReadonlySet<string> = new Set(["individual", "corporate"]);
+const SIMPLE_CONTRACT_HINT =
+  " يمكنك كتابة عقد مبسّط استرشادي بنفسك في «صائغ العقود المبسّط»، وهو لا يغني عن محامٍ؛ ومنه تطلب صياغة احترافية من محامٍ في المنصة متى شئت.";
+const HIGH_RISK_HINT =
+  " هذا النوع من العقود عالي المخاطر، فننصح بأن يصوغه محامٍ: يمكنك طلب صياغته من محامٍ في المنصة.";
+
+const HIGH_RISK_CONTRACT = new RegExp(
+  [
+    // real estate
+    "عقار", "عقاري", "أرض", "شقة", "فيلا", "مبنى", "صك", "وحدة سكنية", "بيع منزل", "شراء منزل",
+    // capital partnerships
+    "شراكة", "شركاء", "شريك", "رأس المال", "رأسمال", "راس المال", "حصص", "أسهم", "اسهم", "تأسيس شركة", "مساهمة",
+    // government
+    "حكومي", "حكومية", "جهة حكومية", "منافسة حكومية", "مشتريات حكومية", "وزارة",
+    // complex employment
+    "عدم المنافسة", "عدم منافسة", "عقد عمل تنفيذي", "حوافز وأسهم",
+  ].join("|"),
+);
+
+/** True for a contract the owner's س٢٦ sends straight to a lawyer. */
+export function isHighRiskContractRequest(message: string | null | undefined): boolean {
+  if (typeof message !== "string" || message.trim() === "") return false;
+  return HIGH_RISK_CONTRACT.test(message.normalize("NFC"));
+}
+
+/**
  * Owner ٢٢: the reply body for a refused contract-writing request.
  * `canUseContracts` is whether this caller may run «محترف العقود» (lawyers and
  * firms, consultants included, or an admin): only then does it carry that link.
@@ -303,13 +340,29 @@ const LAWYER_SIDE_TYPES: ReadonlySet<string> = new Set(["lawyer", "firm", "admin
  * /services/contracts. A lawyer-side caller refused for another reason gets
  * no link (as before).
  */
-export function contractDraftingRefusal(canUseContracts: boolean, userType?: string | null): {
+export function contractDraftingRefusal(canUseContracts: boolean, userType?: string | null, message?: string | null): {
   error: string;
   code: typeof DRAFTING_REFUSED_CODE;
   action?: { label: string; href: string };
 } {
   if (!canUseContracts) {
     if (!userType || LAWYER_SIDE_TYPES.has(userType)) return { error: CONTRACT_REFUSAL_TEXT, code: DRAFTING_REFUSED_CODE };
+    // س٢٦: the individual and the business — the simplified drafter first,
+    // a high-risk contract straight to a lawyer.
+    if (SIMPLE_CONTRACT_FIRST_TYPES.has(userType)) {
+      if (isHighRiskContractRequest(message)) {
+        return {
+          error: CONTRACT_REFUSAL_TEXT + HIGH_RISK_HINT,
+          code: DRAFTING_REFUSED_CODE,
+          action: { label: CLIENT_CONTRACT_DRAFTING_LABEL, href: CONTRACT_SERVICES_HREF },
+        };
+      }
+      return {
+        error: CONTRACT_REFUSAL_TEXT + SIMPLE_CONTRACT_HINT,
+        code: DRAFTING_REFUSED_CODE,
+        action: { label: SIMPLE_CONTRACT_ACTION_LABEL, href: SIMPLE_CONTRACT_HREF },
+      };
+    }
     return {
       error: CONTRACT_REFUSAL_TEXT + CLIENT_CONTRACTS_HINT,
       code: DRAFTING_REFUSED_CODE,

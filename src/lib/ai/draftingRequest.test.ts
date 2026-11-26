@@ -17,6 +17,9 @@ import {
   DRAFTING_REFUSAL_TEXT,
   DRAFTING_REFUSED_CODE,
   contractDraftingRefusal,
+  isHighRiskContractRequest,
+  SIMPLE_CONTRACT_ACTION_LABEL,
+  SIMPLE_CONTRACT_HREF,
   draftingRefusal,
   draftingRequestKind,
   foldArabic,
@@ -178,8 +181,29 @@ test("the contract refusal: «محترف العقود» only for a caller who ma
   assert.equal(CONTRACTS_HREF, "/ai/contracts");
 });
 
-test("owner ٢٦ + 02 [78] / 06 هـ2 (l12): every non-lawyer account is refused politely, uncharged, with «اطلب صياغة عقد» → /services/contracts", () => {
-  for (const userType of ["individual", "corporate", "micro", "provider", "government", "ngo"]) {
+test("owner س٢٦ (l16): an individual / a business is offered the simplified drafter first; a high-risk contract goes to a lawyer", () => {
+  for (const userType of ["individual", "corporate"]) {
+    const r = contractDraftingRefusal(false, userType, "اكتب لي عقد بيع سيارة");
+    assert.equal(r.code, DRAFTING_REFUSED_CODE);
+    assert.ok(r.error.startsWith(CONTRACT_REFUSAL_TEXT), userType);
+    assert.match(r.error, /صائغ العقود المبسّط/);
+    assert.match(r.error, /لا يغني عن محامٍ/, "the not-a-lawyer notice");
+    assert.deepEqual(r.action, { label: SIMPLE_CONTRACT_ACTION_LABEL, href: SIMPLE_CONTRACT_HREF }, userType);
+    for (const risky of ["اكتب لي عقد بيع أرض", "صياغة عقد شراكة برأس المال", "عقد توريد لجهة حكومية", "عقد عمل مع شرط عدم المنافسة", "عقد إيجار شقة"]) {
+      const h = contractDraftingRefusal(false, userType, risky);
+      assert.deepEqual(h.action, { label: CLIENT_CONTRACT_DRAFTING_LABEL, href: CONTRACT_SERVICES_HREF }, risky);
+      assert.match(h.error, /عالي المخاطر/);
+    }
+  }
+  assert.equal(SIMPLE_CONTRACT_HREF, "/ai/simple-contract");
+  assert.equal(isHighRiskContractRequest("اكتب لي عقد بيع سيارة مستعملة"), false);
+  assert.equal(isHighRiskContractRequest("عقد معارضة"), false, "no false hit inside a word");
+  assert.equal(isHighRiskContractRequest(""), false);
+  assert.equal(isHighRiskContractRequest(null), false);
+});
+
+test("owner ٢٦ + 02 [78] / 06 هـ2 (l12): every other non-lawyer account is refused politely, uncharged, with «اطلب صياغة عقد» → /services/contracts", () => {
+  for (const userType of ["micro", "provider", "government", "ngo"]) {
     const r = contractDraftingRefusal(false, userType);
     assert.equal(r.code, DRAFTING_REFUSED_CODE);
     assert.ok(r.error.startsWith(CONTRACT_REFUSAL_TEXT), userType);
@@ -200,7 +224,8 @@ test("owner ٢٦ + 02 [78] / 06 هـ2 (l12): every non-lawyer account is refused
 test("owner ٢٦: runCore passes the caller's type; the library client lets the services link through", async () => {
   const { readFileSync } = await import("node:fs");
   const core = readFileSync(new URL("./runCore.ts", import.meta.url), "utf8");
-  assert.match(core, /contractDraftingRefusal\(pro !== null && toolRoleRefusal\(pro, actor\) === null, actor\.userType\)/);
+  assert.match(core, /contractDraftingRefusal\(pro !== null && toolRoleRefusal\(pro, actor\) === null, actor\.userType, draftingText\)/);
   const client = readFileSync(new URL("../../app/laws/[slug]/_library-assistant.ts", import.meta.url), "utf8");
   assert.ok(client.includes(`"${CONTRACT_SERVICES_HREF}"`));
+  assert.ok(client.includes(`"${SIMPLE_CONTRACT_HREF}"`), "س٢٦: the library client lets the simplified drafter link through");
 });

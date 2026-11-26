@@ -807,6 +807,15 @@ const PROTECTED = [
   // The public listing (/marketplace, /marketplace/<id>) and /pro/marketplace
   // stay open on purpose. Any signed-in type is admitted (no routeAccess rule).
   "/ai/templates",
+  // D-73 (batch l16): five tool pages had no sign-in at the edge (their runs
+  // were already gated in /api/v1/ai/runs). memo-studio re-exports the
+  // simulator (wargaming) and takes its lawyer/firm rule; gov/* and ngo/* take
+  // their sector's rule (routeAccess.ts); the other two need an account.
+  "/ai/memo-studio",
+  "/ai/debt-collection",
+  "/ai/gov",
+  "/ai/ngo",
+  "/ai/smart-inspector",
   "/marketplace/post",
   "/marketplace/order",
   "/marketplace/workspace",

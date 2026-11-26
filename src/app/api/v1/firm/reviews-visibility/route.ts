@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { assertRole } from "@/lib/auth/assertRole";
+import { FIRM_TEAM_VIEW_ROLES, resolveCallerFirm } from "@/lib/auth/firmMembershipAccess";
 
 /**
  * /api/v1/firm/reviews-visibility — owner decision ٢٠: «تقييمات المكاتب لا
@@ -15,6 +16,10 @@ import { assertRole } from "@/lib/auth/assertRole";
  * firm and refuses everyone else. The database enforces who may switch it and
  * what "public" means (the restrictive SELECT policy on reviews); this route
  * only carries the request.
+ *
+ * D-53 (l16, 20261206_70): the firm's ACTIVE managing partner may switch it
+ * too (set_firm_public_reviews admits him), and the members who read the
+ * office (FIRM_TEAM_VIEW_ROLES) may read it.
  */
 
 const AR = {
@@ -22,7 +27,8 @@ const AR = {
   saveFailed: "تعذّر حفظ إعداد ظهور التقييمات.",
   notReady: "إعداد ظهور التقييمات غير مفعّل بعد على الخادم.",
   noFirm: "لا يوجد مكتب مرتبط بهذا الحساب.",
-  ownerOnly: "تغيير ظهور التقييمات متاح لحساب المكتب نفسه فقط.",
+  ownerOnly: "تغيير ظهور التقييمات متاح لحساب المكتب وللشريك المدير فقط.",
+  viewersOnly: "غير مصرح — صلاحيات غير كافية",
   badBody: "حدّد هل تُعرض التقييمات علناً أم لا.",
 } as const;
 
@@ -30,14 +36,26 @@ const MISSING = new Set(["42703", "PGRST204", "PGRST202", "42883"]);
 
 export async function GET() {
   try {
-    const auth = await assertRole(["firm"]);
+    const auth = await assertRole();
     if (!auth.ok) return auth.response;
     const { user, supabase } = auth;
+
+    // The owner account's own firm, or (D-53) the firm of an active member
+    // whose role reads the office.
+    const { data: callerFirm, error: callerError } = await resolveCallerFirm(supabase, user.id);
+    if (callerError) {
+      console.error("[firm/reviews-visibility GET] firm lookup failed:", callerError.message, callerError.code);
+      return NextResponse.json({ error: AR.readFailed }, { status: 500 });
+    }
+    if (!callerFirm) return NextResponse.json({ error: AR.noFirm }, { status: 404 });
+    if (!callerFirm.isOwner && !FIRM_TEAM_VIEW_ROLES.has(callerFirm.role)) {
+      return NextResponse.json({ error: AR.viewersOnly }, { status: 403 });
+    }
 
     const { data, error } = await supabase
       .from("firm_profiles")
       .select("public_reviews, public_reviews_changed_at")
-      .eq("owner_user_id", user.id)
+      .eq("id", callerFirm.id)
       .limit(1)
       .maybeSingle();
     if (error) {
@@ -59,7 +77,9 @@ export async function GET() {
 
 export async function PATCH(request: NextRequest) {
   try {
-    const auth = await assertRole(["firm"]);
+    // The database decides: the firm account or its active managing partner
+    // (set_firm_public_reviews, 20261206_70); anyone else gets 42501 → 403.
+    const auth = await assertRole();
     if (!auth.ok) return auth.response;
     const { supabase } = auth;
 

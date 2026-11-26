@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo, useEffect, useCallback, useRef } from "react";
+import LimitRefusalLink from "@/components/limits/LimitRefusalLink";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Receipt, CheckCircle, Clock, Warning, Plus, MagnifyingGlass,
@@ -1739,7 +1740,7 @@ export default function FinancePage() {
                     {invoiceError && (
                       <div className={`p-3 rounded-xl flex items-center gap-2 text-[11px] font-semibold ${isDark ? "bg-red-500/10 border border-red-500/20 text-red-400" : "bg-red-50 border border-red-200 text-red-700"}`}>
                         <Warning size={14} weight="fill" className="flex-shrink-0" />
-                        <span>{invoiceError}</span>
+                        <span>{invoiceError}{" "}<LimitRefusalLink message={invoiceError} /></span>
                       </div>
                     )}
 

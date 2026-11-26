@@ -1,5 +1,5 @@
 import { NextResponse, NextRequest } from "next/server";
-import { assertRole } from "@/lib/auth/assertRole";
+import { assertCaseWorker } from "@/lib/auth/assertCaseWorker";
 import { liveRowsOnly, isMissingColumnError } from "@/lib/services/archivedRows";
 import { NOTE_SELECT, NOTE_SELECT_WITH_ARCHIVE, toNoteDto, type NoteRow } from "./_shared";
 
@@ -35,7 +35,7 @@ const VALID_VISIBILITY = new Set(["private", "firm"]);
  */
 export async function GET(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
-    const auth = await assertRole(["lawyer", "firm"]);
+    const auth = await assertCaseWorker();
     if (!auth.ok) return auth.response;
     const { user, supabase } = auth;
     const { id } = await context.params;
@@ -92,7 +92,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
  */
 export async function POST(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
-    const auth = await assertRole(["lawyer", "firm"]);
+    const auth = await assertCaseWorker();
     if (!auth.ok) return auth.response;
     const { user, supabase } = auth;
     const { id } = await context.params;

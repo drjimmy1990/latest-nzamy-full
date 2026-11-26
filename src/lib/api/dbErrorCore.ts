@@ -9,9 +9,18 @@
  * object → 503, an RPC reason token → its own Arabic text) keep doing that
  * themselves; this is the fallback for everything else.
  *
- * No imports, so `node --test` can load it (next/server does not resolve
- * there). The NextResponse wrapper lives in ./dbError.ts.
+ * One relative, import-free `.ts` import (../auth/officePlan.ts), so
+ * `node --test` can still load it (next/server does not resolve there). The
+ * NextResponse wrapper lives in ./dbError.ts.
  */
+
+import {
+  OFFICE_PLAN_LINK_AR,
+  OFFICE_PLAN_PRICING_HREF,
+  STORAGE_QUOTA_FULL_AR,
+  isOfficePlanMessage,
+  officePlanMessageAr,
+} from "../auth/officePlan.ts";
 
 export const DB_ERROR_AR = "تعذّر إتمام العملية، حاول مرة أخرى";
 
@@ -125,13 +134,18 @@ export function demoRefusal(err: unknown): DemoRefusal | null {
  * tokens: our own text, mapped to a fixed Arabic sentence (SAST-06), plus a
  * link the screen renders as a real link (`linkHref` / `linkLabel`).
  */
-export const PLAN_LIMIT_UPGRADE_HREF = "/pricing";
+//
+// Owner س٢١٢ (l16, 20261206_70): cases and clients are «إدارة المكتب»
+// features. The two tokens are the same; the free allowance behind them is
+// solo_lawyer_limits() (0 / 0 by default), so the sentence names the plan, not
+// a number. `storage_quota_full` is the 1 GB free storage trigger.
+export const PLAN_LIMIT_UPGRADE_HREF = OFFICE_PLAN_PRICING_HREF;
 export const FIRM_SEATS_CONTACT_HREF = "/contact?type=firm-seats";
 export const PLAN_LIMIT_AR: Readonly<Record<"cases" | "clients", string>> = Object.freeze({
-  cases: "بلغت الحد المجاني للمحامي الفرد: ٥ قضايا نشطة. أغلق قضية منتهية أو رقِّ باقتك لإضافة المزيد.",
-  clients: "بلغت الحد المجاني للمحامي الفرد: ١٠ موكلين. أرشف موكلاً سابقاً أو رقِّ باقتك لإضافة المزيد.",
+  cases: officePlanMessageAr("cases"),
+  clients: officePlanMessageAr("clients"),
 });
-export const PLAN_LIMIT_LINK_AR = "ترقية الباقة";
+export const PLAN_LIMIT_LINK_AR = OFFICE_PLAN_LINK_AR;
 export const FIRM_SEATS_FULL_AR = "اكتملت مقاعد المكتب. لزيادة المقاعد تواصل معنا.";
 export const FIRM_SEATS_LINK_AR = "لزيادة المقاعد تواصل معنا";
 /** Company seat cap (20261129_10, owner file 15 row 36) — the firm's wording for a company. */
@@ -141,15 +155,15 @@ export const BUSINESS_SEATS_FULL_AR = "اكتملت مقاعد الشركة. ل�
 export type LimitRefusal = {
   status: 403;
   message: string;
-  token: "plan_limit:cases" | "plan_limit:clients" | "firm_seats_full" | "business_seats_full";
+  token: "plan_limit:cases" | "plan_limit:clients" | "firm_seats_full" | "business_seats_full" | "storage_quota_full";
   linkHref: string;
   linkLabel: string;
 };
 
 /**
  * The plan-limit / seat refusal carried by a database / PostgREST error, or
- * null. Reads only `message` and accepts only the exact tokens 20261126_50
- * and 20261129_10 (business_seats_full) raise.
+ * null. Reads only `message` and accepts only the exact tokens 20261126_50,
+ * 20261129_10 (business_seats_full) and 20261206_70 (storage_quota_full) raise.
  */
 export function limitRefusal(err: unknown): LimitRefusal | null {
   const message = describeDbError(err).message?.trim();
@@ -162,6 +176,8 @@ export function limitRefusal(err: unknown): LimitRefusal | null {
       return { status: 403, message: FIRM_SEATS_FULL_AR, token: message, linkHref: FIRM_SEATS_CONTACT_HREF, linkLabel: FIRM_SEATS_LINK_AR };
     case "business_seats_full":
       return { status: 403, message: BUSINESS_SEATS_FULL_AR, token: message, linkHref: BUSINESS_SEATS_CONTACT_HREF, linkLabel: FIRM_SEATS_LINK_AR };
+    case "storage_quota_full":
+      return { status: 403, message: STORAGE_QUOTA_FULL_AR, token: message, linkHref: PLAN_LIMIT_UPGRADE_HREF, linkLabel: PLAN_LIMIT_LINK_AR };
     default:
       return null;
   }
@@ -179,7 +195,7 @@ export function limitRefusalBody(r: LimitRefusal, extra?: Record<string, unknown
  */
 export function limitLinkForMessage(message: string | null | undefined): { href: string; label: string } | null {
   if (!message) return null;
-  if (message.includes(PLAN_LIMIT_AR.cases) || message.includes(PLAN_LIMIT_AR.clients)) {
+  if (message.includes(PLAN_LIMIT_AR.cases) || message.includes(PLAN_LIMIT_AR.clients) || isOfficePlanMessage(message)) {
     return { href: PLAN_LIMIT_UPGRADE_HREF, label: PLAN_LIMIT_LINK_AR };
   }
   if (message.includes(FIRM_SEATS_FULL_AR)) return { href: FIRM_SEATS_CONTACT_HREF, label: FIRM_SEATS_LINK_AR };

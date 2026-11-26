@@ -1,6 +1,7 @@
 import { NextResponse, NextRequest } from "next/server";
+import { officePlanRefusal } from "@/lib/auth/assertOfficePlan";
 import { dbErrorJson, DB_ERROR_AR } from "@/lib/api/dbError";
-import { assertRole } from "@/lib/auth/assertRole";
+import { assertCaseWorker } from "@/lib/auth/assertCaseWorker";
 import { assertCourtPractice } from "@/lib/auth/assertCourtPractice";
 import { recordActivity, RequestEvent } from "@/lib/events";
 import {
@@ -72,7 +73,7 @@ const VALID_URGENCIES = new Set<string>(VALID_UI_URGENCIES);
  */
 export async function GET(request: NextRequest) {
   try {
-    const auth = await assertRole(["lawyer", "firm"]);
+    const auth = await assertCaseWorker();
     if (!auth.ok) return auth.response;
     const { user, supabase } = auth;
 
@@ -134,12 +135,15 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
-    const auth = await assertRole(["lawyer", "firm"]);
+    const auth = await assertCaseWorker();
     if (!auth.ok) return auth.response;
     const { user, supabase } = auth;
     // Art. 18: a legal consultant does not manage hearings.
     const refused = await assertCourtPractice(supabase, user.id);
     if (refused) return refused;
+    // Owner س٢١٢: hearings are «إدارة المكتب» — refused on the free side.
+    const locked = await officePlanRefusal(supabase, "hearings");
+    if (locked) return locked;
 
     const body = await request.json();
     const {
