@@ -15,6 +15,7 @@ import {
   confirmedPhoneTakenElsewhere,
   isConfirmedPhoneDbError,
   PHONE_UNUSABLE_AR,
+  PROFILE_PHONE_CHANGE_LIMIT,
 } from "./confirmedPhone.ts";
 
 const ROOT = process.cwd();
@@ -101,4 +102,15 @@ test("20261208_50: the guard fires after the clearing guard, on INSERT and UPDAT
   const report = read("supabase/migrations/20261208_51_duplicate_phones_report.sql");
   assert.doesNotMatch(report.toLowerCase().replace(/--.*$/gm, ""), /\b(insert|update|delete|alter|create|drop|truncate)\b/);
   assert.match(report, /'…' \|\| pg_catalog\.right\(f\.number, 3\)/);
+});
+
+// l18 review S2: a number change is bounded per account BEFORE the
+// confirmed-elsewhere question is asked (the phone-otp/start bound).
+test("PATCH /profile: a per-account limit on number changes comes before the taken-elsewhere check", () => {
+  const route = read("src/app/api/v1/profile/route.ts");
+  assert.deepEqual({ ...PROFILE_PHONE_CHANGE_LIMIT }, { limit: 8, windowMs: 10 * 60_000 });
+  const limit = route.indexOf("rateLimit(`profile-phone:u:${user.id}`, PROFILE_PHONE_CHANGE_LIMIT)");
+  const check = route.indexOf("confirmedPhoneTakenElsewhere(svc, user.id, phoneDecision.e164)");
+  assert.ok(limit > 0 && check > limit, "the limit is spent before the question is asked");
+  assert.match(route, /if \(!tries\.ok\) \{\n\s+return NextResponse\.json\(\n[^\n]+\n\s+\{ status: 429,/);
 });

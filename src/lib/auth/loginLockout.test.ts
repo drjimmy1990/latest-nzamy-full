@@ -87,14 +87,18 @@ test("wiring: the login page signs in through the route; the route checks the lo
   assert.match(page, /signInRes\.status === 423/);
   assert.doesNotMatch(page, /node:crypto|loginLockoutKey/, "the client never pulls the hashing");
   const route = src("app", "api", "v1", "auth", "sign-in", "route.ts");
-  const status = route.indexOf("lockStatus(service, key, lockId)");
+  const status = route.indexOf("lockStatusAll(service, keys, lockId)");
   const signIn = route.indexOf("supabase.auth.signInWithPassword(credentials)");
   assert.ok(status > 0 && status < signIn, "the lock is checked before GoTrue is asked");
-  assert.match(route, /if \(isCredentialFailure\(error\)\) \{\s*const after = await record\(service, key, lockId, false\);/);
+  assert.match(route, /if \(isCredentialFailure\(error\)\) \{\s*const after = await recordAll\(service, keys, lockId, false\);/);
   // l18 LIVE-05: the counter key is still the typed identifier; a mobile only
   // tells the lock functions which account it named.
   assert.match(route, /const key = loginLockKey\(body\.id\);/);
   assert.match(route, /const lockId: LoginIdentifier = target \? \{ kind: "email", value: target\.email \} : body\.id;/);
+  // l18 review S1: a mobile that names an account shares the address's budget.
+  assert.match(route, /const keys = phoneSignInLockKeys\(key, target \? loginLockKey\(\{ kind: "email", value: target\.email \}\) : null\);/);
+  assert.match(route, /if \(before\.some\(\(b\) => b\.locked\)\) \{/);
+  assert.match(route, /await recordAll\(service, keys, lockId, true\);/);
   // l16 D-31: no service client → the sign-in is refused (503), never let through uncounted
   {
     const svc = route.indexOf("service = await createServiceClient();");

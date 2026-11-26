@@ -69,7 +69,7 @@ import {
   providerPaidPlanIds,
   providerPlanFromParams,
 } from "@/lib/pricing/signupPlan";
-import { savePendingPlanChoice, sessionStorageOrNull } from "@/lib/pricing/pendingPlan";
+import { clearPendingPlan, savePendingPlanChoice, sessionStorageOrNull } from "@/lib/pricing/pendingPlan";
 import type { Cycle } from "@/lib/pricing/priceBook";
 import SignupPlanNextStep from "@/components/pricing/SignupPlanNextStep";
 
@@ -129,7 +129,12 @@ export default function RegisterProviderPage() {
   const [phoneStepPending, setPhoneStepPending] = useState(false);
   // l16 review: stable callbacks — PhoneOtpPanel's effect keys on onDone, and
   // the licence panel hands a phone_unverified refusal back to this step.
-  const onPhoneDone = useCallback(() => setPhoneStepPending(false), []);
+  // The code is confirmed here: the plan is shown on this page, so the kept
+  // choice (for a reload before the code) is no longer needed.
+  const onPhoneDone = useCallback(() => {
+    clearPendingPlan(sessionStorageOrNull());
+    setPhoneStepPending(false);
+  }, []);
   const onPhoneUnverified = useCallback(() => setPhoneStepPending(true), []);
   const [authError, setAuthError] = useState<string | null>(null);
   const [authLoading, setAuthLoading] = useState(false);
@@ -675,10 +680,14 @@ export default function RegisterProviderPage() {
                             // goes to /verify-phone. Without a session nothing
                             // changes.
                             if (signUpData.session && (await phoneOtpRequiredNow())) {
+                              // LIVE-04: the chosen plan waits for the code
+                              // (/verify-phone sends it on to payment). A
+                              // lawyer stays here on step 5, but a reload
+                              // before his code lands on /verify-phone, so
+                              // his choice is kept too (l18 review N7); it is
+                              // cleared once he confirms here.
+                              if (selectedBilling) savePendingPlanChoice(sessionStorageOrNull(), selectedPlan, selectedBilling);
                               if (!needsLicenceProofFor(providerType)) {
-                                // LIVE-04: the chosen plan waits for the code
-                                // (/verify-phone sends it on to payment).
-                                if (selectedBilling) savePendingPlanChoice(sessionStorageOrNull(), selectedPlan, selectedBilling);
                                 window.location.assign("/verify-phone");
                                 return;
                               }

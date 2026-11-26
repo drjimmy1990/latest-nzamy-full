@@ -21,6 +21,14 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 export const PHONE_UNUSABLE_AR = "تعذّر استعمال هذا الرقم، استعمل رقمًا آخر أو تواصل معنا";
 
 /**
+ * l18 review: how many number CHANGES one account may try on PATCH
+ * /api/v1/profile — the same bound as phone-otp/start (8 per 10 minutes per
+ * user), checked BEFORE the confirmed-elsewhere question is asked, so the
+ * route cannot be used to sweep numbers.
+ */
+export const PROFILE_PHONE_CHANGE_LIMIT = Object.freeze({ limit: 8, windowMs: 10 * 60_000 });
+
+/**
  * The database's refusal (20261208_50): the guard's own message, or — once the
  * partial unique index exists — a race the guard did not see, refused by the
  * index profiles_confirmed_phone_unique.

@@ -758,7 +758,9 @@ async function signedInSignupPageRedirect(req: NextRequest, pathname: string): P
       dest = pathname.toLowerCase().startsWith("/login") ? postLoginPath(params.get("next") ?? params.get("from"), home) : home;
     }
     const redirect = NextResponse.redirect(new URL(dest, req.url));
-    redirect.headers.set("Cache-Control", "no-store");
+    // l18 review: this answer depends on the session cookie, so no shared
+    // cache in front of Next (nginx, Cloudflare) may keep it for a guest.
+    redirect.headers.set("Cache-Control", "private, no-store");
     response.cookies.getAll().forEach((cookie) => redirect.cookies.set(cookie));
     return redirect;
   } catch {

@@ -14,7 +14,9 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import {
+  PHONE_SIGN_IN_REFUSAL_FLOOR_MS,
   PHONE_SIGN_IN_SINK_DOMAIN,
+  phoneSignInLockKeys,
   phoneSignInSinkAddress,
   phoneSignInVerdict,
   phoneTargetFromRpc,
@@ -104,9 +106,28 @@ test("route wiring: the number is resolved on the server; unknown numbers still 
   assert.match(route, /if \(verdict\.undo\) \{\s*try \{\s*await supabase\.auth\.signOut\(\{ scope: "local" \}\);/);
   // The resolution comes before the lock check, the lock check before GoTrue.
   const resolve = route.indexOf("await phoneTarget(service, body.id.value)");
-  const lock = route.indexOf("lockStatus(service, key, lockId)");
+  const lock = route.indexOf("lockStatusAll(service, keys, lockId)");
   const signIn = route.indexOf("supabase.auth.signInWithPassword(credentials)");
   assert.ok(resolve > 0 && lock > resolve && signIn > lock);
   // A lookup that fails reads as "no account" (fail closed).
   assert.match(route, /console\.error\("\[auth\/sign-in\] phone lookup failed:", error\.code\);\s*\}\s*return null;/);
+});
+
+// l18 review S1: the typed mobile and the account's address share one budget.
+test("phoneSignInLockKeys: the typed key, plus the account address's key when the number names one", () => {
+  assert.deepEqual(phoneSignInLockKeys("i:phone", null), ["i:phone"]);
+  assert.deepEqual(phoneSignInLockKeys("i:phone", "i:mail"), ["i:phone", "i:mail"]);
+  assert.deepEqual(phoneSignInLockKeys("i:mail", "i:mail"), ["i:mail"]);
+});
+
+// l18 review S3: every refusal on the mobile path waits out the same floor.
+test("route wiring: every mobile-path refusal is held to the floor; the e-mail path is not", () => {
+  const route = readFileSync(join(import.meta.dirname, "..", "..", "app", "api", "v1", "auth", "sign-in", "route.ts"), "utf8").replace(/\r\n/g, "\n");
+  assert.ok(PHONE_SIGN_IN_REFUSAL_FLOOR_MS >= 500);
+  assert.match(route, /const startedAt = Date\.now\(\);\n\s+let raw: unknown;/);
+  assert.match(route, /if \(body\.id\.kind === "phone"\) \{\n\s+const wait = startedAt \+ PHONE_SIGN_IN_REFUSAL_FLOOR_MS - Date\.now\(\);/);
+  // the 423s and the 401 all go through refuse(); no bare return locked() left
+  assert.equal((route.match(/return refuse\(locked\(\)\);/g) ?? []).length, 3);
+  assert.doesNotMatch(route, /return locked\(\);/);
+  assert.match(route, /return refuse\(NextResponse\.json\(\n\s+\{\n\s+authError:/);
 });

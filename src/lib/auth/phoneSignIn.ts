@@ -15,10 +15,16 @@
  *     security-check token and a throw-away address nobody can own (a fresh
  *     random id under the reserved «.invalid» domain). So a bad token is
  *     refused as a bad token whatever the number, and the answer takes a
- *     GoTrue round trip either way;
+ *     GoTrue round trip either way. GoTrue answers an unknown address at
+ *     once but runs a password-hash compare for a real one, so every refusal
+ *     on this path is held to PHONE_SIGN_IN_REFUSAL_FLOOR_MS from the start
+ *     of the request (the route) — the time no longer tells them apart;
  *   - every other refusal on the phone path (wrong password, an unconfirmed
  *     address, a ban, anything) becomes the one wrong-password answer, and is
- *     counted by the lockout like a wrong password;
+ *     counted by the lockout like a wrong password. A ban is not named here
+ *     as the e-mail path names it: GoTrue can report a ban without the right
+ *     password, so naming it would tell anyone that the number has an
+ *     account (l18 review N3 — support: signing in by e-mail shows the reason);
  *   - a sign-in that lands on any account but the one the number named is
  *     undone and refused.
  * Passed through unchanged, as on the e-mail path: the security-check
@@ -41,6 +47,22 @@ export function phoneSignInSinkAddress(randomId: string): string {
   const id = String(randomId).toLowerCase().replace(/[^0-9a-f-]/g, "");
   if (id.length < 32) throw new Error("phoneSignInSinkAddress: a random id is required");
   return `${id}@${PHONE_SIGN_IN_SINK_DOMAIN}`;
+}
+
+/**
+ * The least time any refusal on the mobile path takes, from the start of the
+ * request: above a real password-hash compare plus the lockout reads (the
+ * same idea and value as VERIFY_FAILURE_FLOOR_MS in whatsappReset.ts).
+ */
+export const PHONE_SIGN_IN_REFUSAL_FLOOR_MS = 600;
+
+/**
+ * The lockout keys a sign-in is checked and counted under (l18 review): the
+ * typed identifier's key, plus — when a mobile names an account — the key of
+ * that account's address, so the e-mail and the mobile share ONE budget.
+ */
+export function phoneSignInLockKeys(typedKey: string, accountEmailKey: string | null): string[] {
+  return accountEmailKey && accountEmailKey !== typedKey ? [typedKey, accountEmailKey] : [typedKey];
 }
 
 /** The e-mail path's wrong-password refusal, exactly as GoTrue words it. */

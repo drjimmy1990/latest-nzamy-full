@@ -18,8 +18,9 @@ const code = (p: string) => read(p).replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\
 test("the lawyer's sign-up keeps the WhatsApp step but never leaves the page for it", () => {
   const page = code("src/app/register/provider/page.tsx");
   assert.doesNotMatch(page, /verify-phone\?next=\/register\/provider\/verify/, "no full redirect that drops the File");
-  // l18 LIVE-04: the chosen plan is saved for /verify-phone just before it.
-  assert.match(page, /if \(signUpData\.session && \(await phoneOtpRequiredNow\(\)\)\) \{\s*if \(!needsLicenceProofFor\(providerType\)\) \{\s*if \(selectedBilling\) savePendingPlanChoice\(sessionStorageOrNull\(\), selectedPlan, selectedBilling\);\s*window\.location\.assign\("\/verify-phone"\);/);
+  // l18 LIVE-04: the chosen plan is saved for /verify-phone just before it —
+  // for the lawyer too (review N7: a reload before his inline code lands there).
+  assert.match(page, /if \(signUpData\.session && \(await phoneOtpRequiredNow\(\)\)\) \{\s*if \(selectedBilling\) savePendingPlanChoice\(sessionStorageOrNull\(\), selectedPlan, selectedBilling\);\s*if \(!needsLicenceProofFor\(providerType\)\) \{\s*window\.location\.assign\("\/verify-phone"\);/);
   assert.match(page, /setPhoneStepPending\(true\)/);
   // The phone panel first; the licence panel (with the File) only after it.
   const phone = page.indexOf("<PhoneOtpPanel");
@@ -27,7 +28,7 @@ test("the lawyer's sign-up keeps the WhatsApp step but never leaves the page for
   assert.ok(phone > 0 && licence > phone, "PhoneOtpPanel renders before the licence panel");
   // l16 review: stable callbacks; the licence panel's phone_unverified refusal comes back to this step
   assert.match(page, /signupHasSession && phoneStepPending \? \(\s*<PhoneOtpPanel showSignOut=\{false\} onDone=\{onPhoneDone\} \/>/);
-  assert.match(page, /const onPhoneDone = useCallback\(\(\) => setPhoneStepPending\(false\), \[\]\);/);
+  assert.match(page, /const onPhoneDone = useCallback\(\(\) => \{\s*clearPendingPlan\(sessionStorageOrNull\(\)\);\s*setPhoneStepPending\(false\);\s*\}, \[\]\);/);
   assert.match(page, /const onPhoneUnverified = useCallback\(\(\) => setPhoneStepPending\(true\), \[\]\);/);
   assert.match(page, /<LawyerVerificationPanel [^>]*onPhoneUnverified=\{onPhoneUnverified\} \/>/);
   const panel = code("src/components/lawyerSignup/LawyerVerificationPanel.tsx");

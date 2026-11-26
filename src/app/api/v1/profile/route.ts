@@ -34,7 +34,8 @@ import { normalizeCrNumber, isLegalRepCapacity } from "@/app/register/client/com
 import { isAuthUnavailable, authUnavailableResponse, frozenAccountResponse } from "@/lib/auth/apiAuth";
 import { profilePhoneDecision } from "./_phone";
 import { isVerifiedPhoneDbError, VERIFIED_PHONE_PROFILE_REFUSAL_AR } from "@/lib/lawyerSignup/verifiedPhone";
-import { confirmedPhoneTakenElsewhere, PHONE_UNUSABLE_AR } from "@/lib/phoneOtp/confirmedPhone";
+import { confirmedPhoneTakenElsewhere, PHONE_UNUSABLE_AR, PROFILE_PHONE_CHANGE_LIMIT } from "@/lib/phoneOtp/confirmedPhone";
+import { rateLimit } from "@/lib/rateLimit";
 import { licenceFormatIssue, normaliseLicence } from "@/lib/lawyerSignup/licenceFormat";
 import {
   resolveBusinessProfileScope,
@@ -583,6 +584,17 @@ export async function PATCH(request: Request) {
     const svc = await createServiceClient();
     const { data: own } = await svc.from("profiles").select("phone").eq("id", user.id).maybeSingle();
     const ownPhone = (own as { phone?: unknown } | null)?.phone;
+    if (ownPhone !== phoneDecision.e164) {
+      // l18 review: a per-account bound on number changes, before the
+      // question is asked (the same bound as phone-otp/start).
+      const tries = rateLimit(`profile-phone:u:${user.id}`, PROFILE_PHONE_CHANGE_LIMIT);
+      if (!tries.ok) {
+        return NextResponse.json(
+          { error: "محاولات كثيرة لتغيير الرقم — حاول بعد قليل.", field: "phone", retryAfterSec: tries.retryAfterSec },
+          { status: 429, headers: { "Retry-After": String(tries.retryAfterSec) } },
+        );
+      }
+    }
     if (ownPhone !== phoneDecision.e164 && (await confirmedPhoneTakenElsewhere(svc, user.id, phoneDecision.e164)) === true) {
       return NextResponse.json({ error: PHONE_UNUSABLE_AR, field: "phone" }, { status: 409 });
     }

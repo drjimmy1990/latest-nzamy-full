@@ -73,6 +73,8 @@ test("proxy: the signed-in guard runs before the public-page early return, fails
   assert.match(fn, /if \(profileError\) return passThrough;/);
   assert.match(fn, /postLoginPath\(params\.get\("next"\) \?\? params\.get\("from"\), home\)/);
   assert.match(fn, /response\.cookies\.getAll\(\)\.forEach\(\(cookie\) => redirect\.cookies\.set\(cookie\)\);/);
+  // l18 review N6: the redirect depends on the session cookie — never kept by a shared cache
+  assert.match(fn, /redirect\.headers\.set\("Cache-Control", "private, no-store"\);/);
   assert.match(fn, /\} catch \{\s*return null;\s*\}/);
 });
 
