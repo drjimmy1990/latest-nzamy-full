@@ -25,7 +25,11 @@ import { assertRole } from "@/lib/auth/assertRole";
  * tables already admit an active colleague of the same firm (or only the
  * caller's own rows). The market routes (open-requests, market-requests), the
  * public services list, invoices (finance) and reviews keep their lawyer/firm
- * gate: a member does not claim market requests or bill in his own name.
+ * gate: a member does not claim market requests or bill in his own name. So
+ * do a contract's fee schedule writes (POST contracts/[id]/payments, PATCH /
+ * DELETE contracts/[id]/payments/[pid]) and deleting a contract version
+ * (DELETE contracts/[id]/versions/[vid]) — l16 review: they keep the gate
+ * they had before D-52; a member still reads the contract.
  *
  * `extraTypes` admits further account types as they are (the case graph is
  * also a company's: `assertCaseWorker(["corporate"])`).

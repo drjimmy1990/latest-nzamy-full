@@ -188,8 +188,12 @@ test("D-52: the lawyer workspace APIs admit an active firm member (assertCaseWor
   }
 });
 
-test("D-52: the market, the public services list and invoices keep the lawyer / firm gate", () => {
-  for (const r of ["open-requests", "open-requests/[id]/accept", "market-requests", "services", "finance", "finance/issuer"]) {
+test("D-52: the market, the public services list, invoices and the contract fee schedule keep the lawyer / firm gate", () => {
+  for (const r of [
+    "open-requests", "open-requests/[id]/accept", "market-requests", "services", "finance", "finance/issuer",
+    // l16 review: the contract's fee schedule writes and a version's deletion keep their pre-D-52 gate
+    "contracts/[id]/payments", "contracts/[id]/payments/[pid]", "contracts/[id]/versions/[vid]",
+  ]) {
     assert.ok(code(`src/app/api/v1/lawyer/${r}/route.ts`).includes('assertRole(["lawyer", "firm"])'), r);
   }
   const worker = code("src/lib/auth/assertCaseWorker.ts");

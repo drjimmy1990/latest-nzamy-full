@@ -1,5 +1,5 @@
 import { NextResponse, NextRequest } from "next/server";
-import { assertCaseWorker } from "@/lib/auth/assertCaseWorker";
+import { assertRole } from "@/lib/auth/assertRole";
 import { createServiceClient } from "@/lib/supabase/server";
 import { storageObjectHeldByAnotherRow, storageObjectHeldByCaseDocument } from "@/lib/services/caseDocumentObject";
 import { isMissingFolderOwnerColumn, isRemovableWithRow } from "@/lib/storagePathOwnership";
@@ -17,7 +17,7 @@ import { dbErrorResponse } from "../../../_shared";
  */
 export async function DELETE(_request: NextRequest, context: { params: Promise<{ id: string; vid: string }> }) {
   try {
-    const auth = await assertCaseWorker();
+    const auth = await assertRole(["lawyer", "firm"]);
     if (!auth.ok) return auth.response;
     const { supabase } = auth;
     const { id, vid } = await context.params;

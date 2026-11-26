@@ -1,5 +1,5 @@
 import { NextResponse, NextRequest } from "next/server";
-import { assertCaseWorker } from "@/lib/auth/assertCaseWorker";
+import { assertRole } from "@/lib/auth/assertRole";
 import { parseIsoDate } from "@/lib/services/deadlineEngine";
 import { isPaymentStage, isPaymentStatus } from "@/lib/services/contractVocabulary";
 import { PAYMENT_SELECT, ISO_DATE_RE, toPaymentDto, dbErrorResponse, type PaymentRow } from "../../_shared";
@@ -24,7 +24,7 @@ interface PaymentBody {
 
 export async function POST(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
-    const auth = await assertCaseWorker();
+    const auth = await assertRole(["lawyer", "firm"]);
     if (!auth.ok) return auth.response;
     const { supabase } = auth;
     const { id } = await context.params;
