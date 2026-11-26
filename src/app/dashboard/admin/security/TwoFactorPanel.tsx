@@ -64,7 +64,7 @@ export default function TwoFactorPanel({ isDark, card }: { isDark: boolean; card
             <p className={`text-[12px] leading-6 ${muted}`}>الإلزام مفعّل: لا يدخل أي حساب إدارة إلى اللوحة دون تطبيق مصادقة.</p>
           ) : (
             <p className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[12px] font-bold leading-6 text-amber-300">
-              الإلزام متوقف: حساب الإدارة الذي لم يربط تطبيق مصادقة يدخل بكلمة المرور وحدها. بعد أن تفعّله لحسابك يُشغَّل الإلزام من إعداد الخادم ADMIN_MFA_ENFORCE=required.
+              الإلزام متوقف: حساب الإدارة الذي لم يربط تطبيق مصادقة يدخل بكلمة المرور وحدها. بعد أن تفعّله لحسابك يُشغَّل الإلزام من إعدادات الخادم بطلب إلى الفريق التقني.
             </p>
           )}
           {status.enrolled && (

@@ -13,7 +13,7 @@
 export const ADMIN_MFA_OFF_TITLE_AR = "إلزام التحقق بخطوتين لحسابات الإدارة متوقف";
 export const ADMIN_MFA_OFF_BODY_AR =
   "أي حساب إدارة لم يربط تطبيق مصادقة يدخل إلى اللوحة بكلمة المرور وحدها. " +
-  "يُشغَّل الإلزام من إعداد الخادم ADMIN_MFA_ENFORCE=required، بعد أن يفعّل كل مسؤول التحقق بخطوتين لحسابه.";
+  "ويُشغَّل الإلزام من إعدادات الخادم بطلب إلى الفريق التقني، بعد أن يفعّل كل مسؤول التحقق بخطوتين لحسابه.";
 export const ADMIN_MFA_PAGE_HREF = "/dashboard/admin/security?tab=two_factor";
 
 /**

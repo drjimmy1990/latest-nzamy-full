@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  SignOut, Bell, Scales, ShieldCheck, CaretDown, List, House,
+  SignOut, Bell, Gavel, ShieldCheck, CaretDown, List, House,
 } from "@phosphor-icons/react";
 import { useNotifications } from "@/hooks/useNotifications";
 import { logout } from "@/hooks/useUser";
@@ -96,7 +96,7 @@ export function AdminSidebar() {
     <header className="lg:hidden fixed top-0 right-0 left-0 z-[55] min-h-[56px] safe-top flex items-center justify-between px-4 bg-[#0d0d15] border-b border-white/[0.05]">
       <div className="flex items-center gap-2.5">
         <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-[#0B3D2E] to-[#1a6b50]">
-          <Scales size={16} weight="duotone" className="text-[#C8A762]" />
+          <Gavel size={16} weight="duotone" className="text-[#C8A762]" />
         </div>
         <p className="text-[13px] font-black text-white tracking-wide">نظـامي — الإدارة</p>
       </div>
@@ -135,11 +135,11 @@ export function AdminSidebar() {
       {/* Logo */}
       <div className="flex items-center gap-3 px-5 py-5 border-b border-white/[0.05]">
         <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-[#0B3D2E] to-[#1a6b50] shadow-lg">
-          <Scales size={18} weight="duotone" className="text-[#C8A762]" />
+          <Gavel size={18} weight="duotone" className="text-[#C8A762]" />
         </div>
         <div>
           <p className="text-[14px] font-black text-white tracking-wide">نظـامي</p>
-          <p className="text-[9px] text-zinc-500 font-semibold uppercase tracking-widest">Admin Panel</p>
+          <p className="text-[10px] text-zinc-500 font-semibold">لوحة الإدارة</p>
         </div>
         {/* Notif bell — wired to the same `notifications` table every other
             dashboard's bell reads (owner item ٧٣). No badge at all while the

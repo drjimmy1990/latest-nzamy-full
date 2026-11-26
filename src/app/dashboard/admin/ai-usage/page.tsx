@@ -417,7 +417,7 @@ export default function AdminAIUsagePage() {
       <section className="mb-6 rounded-2xl border border-zinc-800 bg-zinc-950/60 p-4">
         <h2 className="mb-1 text-[14px] font-black text-white">اختبار الاتصال مع n8n</h2>
         <p className="mb-3 text-[12px] text-zinc-500">
-          فعّل أداة echo-fast أو echo-job أعلاه ثم شغّلها من هنا. الحساب الإداري لا يُخصم منه، فاختبار الخصم يكون بحساب تجريبي.
+          فعّل أداتي الاختبار أعلاه (السريعة والمؤجَّلة) ثم شغّل إحداهما من هنا. الحساب الإداري لا يُخصم منه، فاختبار الخصم يكون بحساب تجريبي.
         </p>
         <div className="flex flex-wrap items-center gap-3">
           <input value={testText} onChange={(e) => setTestText(e.target.value)} maxLength={500}
@@ -429,7 +429,7 @@ export default function AdminAIUsagePage() {
           {(["echo-fast", "echo-job"] as const).map((tool) => (
             <button key={tool} disabled={run.busy} onClick={() => run.start(tool, { text: testText, use_model: useModel })}
               className="flex items-center gap-2 rounded-xl border border-[#C8A762]/40 px-3 py-2 text-[12px] font-bold text-[#C8A762] disabled:opacity-50">
-              <Play size={14} /> {tool}
+              <Play size={14} /> {tool === "echo-fast" ? "اختبار سريع" : "اختبار مؤجَّل"}
             </button>
           ))}
         </div>
