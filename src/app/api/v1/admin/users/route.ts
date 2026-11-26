@@ -5,34 +5,20 @@ import { DB_USER_TYPES, isDbUserType, type DbUserType } from "@/lib/auth/userTyp
 import { requireStaff } from "@/lib/access-control";
 import { readAdminBalances } from "@/lib/payments/pointsAdmin";
 import { readPendingAppealIds, readSuspendedIds } from "@/lib/accountSuspension/suspensionServer";
+import { adminUserSearchClause } from "@/lib/admin/userSearch";
 
 /**
- * The PostgREST `or=` clause for a free-text search over the three name/email
- * columns, or `null` when there is nothing to search for.
- *
- * The term is stripped of the four characters that terminate or nest a
- * PostgREST filter token — `,` `(` `)` and `\` — before it is interpolated.
- * Without that, a comma typed into the search box splits one `ilike` into two
- * malformed filters and the whole request comes back 400. Stripping rather than
- * escaping is deliberate: none of the four can appear in an email address, and
- * a display name containing one still matches on the rest of the term, because
- * both ends are wrapped in `%`.
- *
- * Built as a function because the clause is needed twice — once for the page of
- * users and once per type for the filter-bar counts — and the two must not be
- * able to disagree about what "search" means.
+ * The search box's `or=` clause (name, English name, e-mail, and — owner
+ * answer ٢٣٥ §4 — the mobile in any spelling): src/lib/admin/userSearch.ts.
  */
-function searchClause(search: string | null): string | null {
-  const term = (search ?? "").replace(/[,()\\]/g, "").trim();
-  if (!term) return null;
-  return `display_name.ilike.%${term}%,display_name_en.ilike.%${term}%,email.ilike.%${term}%`;
-}
+const searchClause = adminUserSearchClause;
 
 /**
  * GET /api/v1/admin/users — List all users with subscription info
  *
  * Query params:
- *   - search         (filter on display_name / display_name_en / email)
+ *   - search         (display_name / display_name_en / email / phone — a
+ *                     Saudi mobile in any spelling, src/lib/admin/userSearch.ts)
  *   - role           (`profiles.user_type`; must be one of the nine
  *                     `DB_USER_TYPES`, otherwise 400 — see the check below)
  *   - tier           (subscription tier — read the note at the filter first)

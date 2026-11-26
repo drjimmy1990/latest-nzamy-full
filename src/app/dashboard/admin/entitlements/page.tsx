@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { latinAmountInput, latinDigitsOnly } from "@/lib/forms/latinDigits";
 import {
   Crown, MagnifyingGlass, CreditCard, Wallet, Coins,
@@ -27,6 +27,8 @@ interface AdminUserRow {
   id: string;
   display_name: string | null;
   email: string | null;
+  /** profiles.phone (E.164) — owner answer ٢٣٥ §4: shown beside the name and e-mail. */
+  phone: string | null;
   user_type: string | null;
   subscription: { tier: string; status: string; current_period_end: string | null } | null;
   /** null when the balance read failed — shown as «—». */
@@ -37,6 +39,8 @@ const TIERS = ["free", "shield", "ai", "pro", "max", "corp", "enterprise"] as co
 
 export default function AdminEntitlementsPage() {
   const [search, setSearch] = useState("");
+  /** The term of the last search run (refreshSelected re-reads the member by it). */
+  const lastSearch = useRef("");
   const [results, setResults] = useState<AdminUserRow[]>([]);
   const [selected, setSelected] = useState<AdminUserRow | null>(null);
   const [loading, setLoading] = useState(false);
@@ -57,6 +61,7 @@ export default function AdminEntitlementsPage() {
     if (!search.trim()) return;
     setLoading(true);
     try {
+      lastSearch.current = search;
       const res = await fetch(`/api/v1/admin/users?search=${encodeURIComponent(search)}&limit=10`);
       const json = (await res.json()) as { data?: AdminUserRow[] };
       setResults(json.data ?? []);
@@ -67,8 +72,15 @@ export default function AdminEntitlementsPage() {
     }
   }
 
-  async function refreshSelected(id: string, email: string | null) {
-    const res = await fetch(`/api/v1/admin/users?search=${encodeURIComponent(email ?? "")}&limit=10`);
+  /**
+   * Re-reads the chosen member after a grant. By the last search term (it
+   * found him once), not by his e-mail: a member found by his mobile, or one
+   * with no e-mail, was never re-found by an e-mail search.
+   */
+  async function refreshSelected(id: string) {
+    const term = lastSearch.current.trim();
+    if (!term) return;
+    const res = await fetch(`/api/v1/admin/users?search=${encodeURIComponent(term)}&limit=100`);
     const json = (await res.json()) as { data?: AdminUserRow[] };
     const found = (json.data ?? []).find((u) => u.id === id);
     if (found) setSelected(found);
@@ -128,7 +140,7 @@ export default function AdminEntitlementsPage() {
         return;
       }
       setToast({ ok: true, msg: "تم تنفيذ المنحة بنجاح" });
-      await refreshSelected(selected.id, selected.email);
+      await refreshSelected(selected.id);
     } catch {
       setToast({ ok: false, msg: "تعذّر الاتصال بالخادم" });
     } finally {
@@ -168,7 +180,7 @@ export default function AdminEntitlementsPage() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && runSearch()}
-              placeholder="ابحث بالاسم أو البريد الإلكتروني"
+              placeholder="ابحث بالاسم أو البريد الإلكتروني أو رقم الجوال"
               className="flex-1 rounded-xl bg-white/[0.04] border border-white/[0.08] px-4 py-2.5 text-[13px] text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#C8A762]/40"
             />
             <button
@@ -195,6 +207,7 @@ export default function AdminEntitlementsPage() {
                 <div className="min-w-0 flex-1">
                   <p className="text-[13px] font-bold text-white truncate">{u.display_name ?? "—"}</p>
                   <p className="text-[11px] text-zinc-500 truncate">{u.email ?? u.id}</p>
+                  <p className="text-[11px] text-zinc-500 truncate">الجوال: <span dir="ltr" className="font-mono">{u.phone || "—"}</span></p>
                 </div>
                 <span className="text-[10px] font-bold text-[#C8A762] uppercase">
                   {u.subscription?.tier ?? "free"}
@@ -218,7 +231,8 @@ export default function AdminEntitlementsPage() {
             <>
               <div className="mb-5 rounded-xl bg-white/[0.03] border border-white/[0.06] p-4">
                 <p className="text-[14px] font-black text-white">{selected.display_name ?? "—"}</p>
-                <p className="text-[11px] text-zinc-500">{selected.email}</p>
+                <p className="text-[11px] text-zinc-500">{selected.email || "—"}</p>
+                <p className="text-[11px] text-zinc-500">الجوال: <span dir="ltr" className="font-mono">{selected.phone || "—"}</span></p>
                 <div className="mt-3 flex gap-4 text-[12px]">
                   <span className="text-zinc-400">الباقة: <b className="text-[#C8A762]">{selected.subscription?.tier ?? "free"}</b></span>
                   <span className="text-zinc-400">النقاط: <b className="text-emerald-300">{selected.credit_balance ?? "—"}</b></span>
