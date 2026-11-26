@@ -23,3 +23,15 @@ test("no escrow, no rating, no invented case", () => {
   assert.doesNotMatch(raw, /rating|reviews|تقييم|4\.8|127/);
   assert.doesNotMatch(raw, /MOCK_|NZ-2026|أحمد الغامدي|TIMELINE/);
 });
+
+// D-30 (owner package 25-Nov): /cases/new was a visitor intake whose «إرسال»
+// reached no server, showed a browser-made NZ-2026-… number and promised 24h.
+const rawNew = readFileSync(new URL("./new/page.tsx", import.meta.url), "utf8");
+const codeNew = rawNew.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'\\])\/\/.*$/gm, "$1");
+
+test("/cases/new is a server-side not-found too: no form, no made-up number, no promise", () => {
+  assert.doesNotMatch(codeNew, /["']use client["']/);
+  assert.match(codeNew, /import \{ notFound \} from "next\/navigation";/);
+  assert.match(codeNew, /notFound\(\)/);
+  assert.doesNotMatch(codeNew, /NZ-2026|setSubmitted|Step1|SmartSchedulingPicker|٢٤ ساعة|24/);
+});
