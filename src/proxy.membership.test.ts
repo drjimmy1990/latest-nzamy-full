@@ -211,7 +211,10 @@ test("no owner lookup was added — owners pass by type and need none", () => {
   // proxy.ts's own comment, so `doesNotMatch(/business_profiles/)` would fail
   // on the prose that explains why the query is unnecessary.
   const tables = [...proxySource.matchAll(/\.from\(([^)]*)\)/g)].map((m) => m[1]);
+  // l18 LIVE-01: the first "profiles" is the signed-in sign-up-page guard
+  // (signedInSignupPageRedirect: the visitor's own user_type, to send him home).
   assert.deepEqual(tables, [
+    '"profiles"',
     '"profiles"',
     'membershipKind === "firm" ? "firm_members" : "business_members"',
   ]);

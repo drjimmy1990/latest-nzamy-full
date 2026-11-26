@@ -29,7 +29,7 @@ import { useTheme } from "@/components/ThemeProvider";
 
 import { ProviderType, Step } from "./types";
 import { trackEventOnce } from "@/lib/analytics/track";
-import { StepIndicator, Step1, Step2, Step3, Step4, Step5, needsLicenceProofFor, signupNameOk } from "./components/Steps";
+import { StepIndicator, Step1, Step2, Step3, Step4, Step5, needsLicenceProofFor, signupNameOk, signupPlanName } from "./components/Steps";
 import { licenceFormatIssue } from "@/lib/lawyerSignup/licenceFormat";
 import { LawyerVerificationPanel } from "@/components/lawyerSignup/LawyerVerificationPanel";
 import { isThrowawayEmail } from "@/lib/lawyerSignup/throwawayEmail";
@@ -61,6 +61,17 @@ import { recordTermsAcceptance } from "@/lib/legal/termsAcceptanceClient";
 // Batch l15: a new account confirms its mobile by WhatsApp before anything else.
 import { phoneOtpRequiredNow } from "@/lib/phoneOtp/phoneOtpClient";
 import { PhoneOtpPanel } from "@/components/auth/PhoneOtpPanel";
+// LIVE-03 / LIVE-04 (batch l18): the role's own plans, and the chosen one kept.
+import {
+  cycleFromParam,
+  FREE_SIGNUP_PLAN,
+  planCycleFor,
+  providerPaidPlanIds,
+  providerPlanFromParams,
+} from "@/lib/pricing/signupPlan";
+import { savePendingPlanChoice, sessionStorageOrNull } from "@/lib/pricing/pendingPlan";
+import type { Cycle } from "@/lib/pricing/priceBook";
+import SignupPlanNextStep from "@/components/pricing/SignupPlanNextStep";
 
 // `?type=` from a /pricing CTA (e.g. /register/provider?type=consultant)
 // preselects that card. Step 1 stays on screen, so the choice can still be
@@ -68,11 +79,29 @@ import { PhoneOtpPanel } from "@/components/auth/PhoneOtpPanel";
 // `?type=service`) selects nothing. useSearchParams lives in this
 // null-rendering child, inside its own <Suspense>, so `next build` can still
 // prerender the rest of the page.
-function ProviderTypeFromQuery({ onType }: { onType: (t: ProviderTypeId) => void }) {
-  const type = parseProviderTypeParam(useSearchParams().get("type"));
+//
+// LIVE-04 (batch l18): `?plan=` (and `?billing=`) from a /pricing card too —
+// /register/provider?plan=lawyer-pro used to lose the plan. A plan the book
+// sells to one of the cards preselects that card (when `?type=` names none)
+// and the plan on step 4, in the cycle the visitor was looking at.
+function ProviderTypeFromQuery({
+  onType,
+  onPlan,
+}: {
+  onType: (t: ProviderTypeId) => void;
+  onPlan: (planId: string, cycle: Cycle | null) => void;
+}) {
+  const params = useSearchParams();
+  const typeParam = params.get("type");
+  const type = parseProviderTypeParam(typeParam);
+  const fromPlan = providerPlanFromParams(params.get("plan"), type);
+  const planType = type ?? fromPlan?.role ?? null;
+  const planId = fromPlan?.planId ?? null;
+  const cycle = cycleFromParam(params.get("billing"));
   useEffect(() => {
-    if (type) onType(type);
-  }, [type, onType]);
+    if (planType) onType(planType);
+    if (planId) onPlan(planId, cycle);
+  }, [planType, planId, cycle, onType, onPlan]);
   return null;
 }
 
@@ -84,7 +113,10 @@ export default function RegisterProviderPage() {
 
   const [step, setStep] = useState<Step>(1);
   const [providerType, setProviderType] = useState<ProviderType>(null);
-  const [selectedPlan, setSelectedPlan] = useState("ai"); // default AI plan
+  // LIVE-03 (batch l18): the free card is the default — nothing paid is
+  // preselected; a plan from /pricing (?plan=) preselects itself.
+  const [selectedPlan, setSelectedPlan] = useState<string>(FREE_SIGNUP_PLAN);
+  const [planCycle, setPlanCycle] = useState<Cycle>("yearly");
   const [selectedSpecs, setSelectedSpecs] = useState<string[]>([]); // lifted state
   const [formData, setFormData] = useState<Record<string, string>>({});
   // Owner decisions ٢٠–٢١: the licence photo (kept in memory until the
@@ -110,12 +142,21 @@ export default function RegisterProviderPage() {
   const [googleError, setGoogleError] = useState<string | null>(null);
   const [googleLoading, setGoogleLoading] = useState(false);
   const handleChange = (k: string, v: string) => setFormData(d => ({ ...d, [k]: v }));
+  // LIVE-04: the plan (and cycle) a /pricing link named.
+  const choosePlanFromQuery = useCallback((planId: string, cycle: Cycle | null) => {
+    setSelectedPlan(planId);
+    if (cycle) setPlanCycle(cycle);
+  }, []);
+  // The billing the chosen plan is bought in (null for the free card).
+  const selectedBilling = selectedPlan === FREE_SIGNUP_PLAN ? null : planCycleFor(selectedPlan, planCycle);
 
   // A consultant registers in Saudi Arabia only (owner answer ٢١٩). Someone
   // who chose another country on step 2 and came back for the consultant card
   // must not keep that country, or a city typed for it, in the form.
   const selectProviderType = useCallback((t: ProviderType) => {
     setProviderType(t);
+    // A plan of another role is never carried over to this one.
+    setSelectedPlan((p) => (t && p !== FREE_SIGNUP_PLAN && !providerPaidPlanIds(t).includes(p) ? FREE_SIGNUP_PLAN : p));
     if (t === "consultant") {
       setFormData(d => (d.country && d.country !== CONSULTANT_COUNTRY ? { ...d, country: CONSULTANT_COUNTRY, city: "" } : d));
     }
@@ -318,7 +359,7 @@ export default function RegisterProviderPage() {
   return (
     <div dir={dir} className="min-h-screen bg-surface font-body dark:bg-dark-bg transition-colors duration-300">
       <Suspense fallback={null}>
-        <ProviderTypeFromQuery onType={selectProviderType} />
+        <ProviderTypeFromQuery onType={selectProviderType} onPlan={choosePlanFromQuery} />
       </Suspense>
       <div className="flex min-h-screen">
 
@@ -439,7 +480,7 @@ export default function RegisterProviderPage() {
                 {step === 1 && <Step1 key="s1" isAr={isAr} selected={providerType} onSelect={selectProviderType} />}
                 {step === 2 && <Step2 key="s2" isAr={isAr} providerType={providerType} data={formData} onChange={handleChange} selectedSpecs={selectedSpecs} setSelectedSpecs={setSelectedSpecs} licenceFile={licenceFile} onLicenceFile={setLicenceFile} />}
                 {step === 3 && <Step3 key="s3" isAr={isAr} data={formData} onChange={handleChange} providerType={providerType} />}
-                {step === 4 && <Step4 key="s4" isAr={isAr} selectedPlan={selectedPlan} onSelect={setSelectedPlan} />}
+                {step === 4 && <Step4 key="s4" isAr={isAr} providerType={providerType} selectedPlan={selectedPlan} onSelect={setSelectedPlan} cycle={planCycle} onCycle={setPlanCycle} />}
                 {step === 5 && <Step5 key="s5" isAr={isAr} providerType={providerType} selectedPlan={selectedPlan} verificationOwnsStatus={needsLicenceProofFor(providerType) && signupHasSession} />}
               </AnimatePresence>
 
@@ -467,6 +508,18 @@ export default function RegisterProviderPage() {
                       </a>
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* LIVE-04 (batch l18): the plan chosen on step 4 (or on /pricing)
+                  is not lost — once the account exists and its mobile is
+                  confirmed, a button takes it to payment (or to the plans
+                  page while online payment is off). Mounted only then, so the
+                  payment-status read is never refused for an unconfirmed
+                  mobile. */}
+              {step === 5 && signupHasSession && !phoneStepPending && selectedBilling && (
+                <div className="mt-6">
+                  <SignupPlanNextStep planId={selectedPlan} planName={signupPlanName(providerType, selectedPlan, isAr)} billing={selectedBilling} isAr={isAr} />
                 </div>
               )}
 
@@ -517,7 +570,10 @@ export default function RegisterProviderPage() {
                         const subRole = signupMeta.sub_role;
                         const country = signupCountry(providerType, formData.country);
                         const displayName = formData.firmName || `${formData.firstName || ""} ${formData.lastName || ""}`.trim() || "شريك نظامي";
-                        const tier = selectedPlan === "pro" ? "pro" as const : selectedPlan === "lite" ? "free" as const : "ai" as const;
+                        // LIVE-03: nothing is bought at sign-up — every account
+                        // starts free (the server decides the tier from what is
+                        // paid; the chosen plan is only remembered below).
+                        const tier = "free" as const;
 
                         // ── Supabase Mode ──
                         if (BACKEND_MODE === "supabase") {
@@ -555,7 +611,12 @@ export default function RegisterProviderPage() {
                                   credit_balance: 0,
                                   credits_max: 0,
                                   display_mode: "full",
-                                  onboarding_completed: false,
+                                  // LIVE-01 (batch l18): the form asked everything the
+                                  // onboarding wizard would (type, sub-role, name, mobile,
+                                  // city), so a provider (notary / agent / arbitrator) is
+                                  // not sent through it again; lawyer and firm were exempt
+                                  // already (onboardingGate.ts).
+                                  onboarding_completed: true,
                                   provider_type: providerType,
                                   provider_specialties: selectedSpecs,
                                   verification_docs: formData.verification_docs
@@ -569,7 +630,11 @@ export default function RegisterProviderPage() {
                                     ? { registry_full_name: formData.registryFullName.trim().slice(0, 160) }
                                     : {}),
                                   experience_years: formData.experience,
+                                  // LIVE-04: the price-book id chosen on step 4 ("free"
+                                  // for the free card) and its cycle — a reminder only;
+                                  // nothing reads it to grant anything.
                                   selected_plan: selectedPlan,
+                                  ...(selectedBilling ? { selected_billing: selectedBilling } : {}),
                                   // R7: the version the box above accepted.
                                   // Without a session (email confirmation on)
                                   // the server records it as 'signup' on the
@@ -611,6 +676,9 @@ export default function RegisterProviderPage() {
                             // changes.
                             if (signUpData.session && (await phoneOtpRequiredNow())) {
                               if (!needsLicenceProofFor(providerType)) {
+                                // LIVE-04: the chosen plan waits for the code
+                                // (/verify-phone sends it on to payment).
+                                if (selectedBilling) savePendingPlanChoice(sessionStorageOrNull(), selectedPlan, selectedBilling);
                                 window.location.assign("/verify-phone");
                                 return;
                               }

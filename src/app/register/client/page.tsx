@@ -49,7 +49,7 @@ import { CURRENT_TERMS_VERSION } from "@/lib/legal/termsVersion";
 import { recordTermsAcceptance } from "@/lib/legal/termsAcceptanceClient";
 import { getPlanList, type AudienceTab } from "@/constants/pricingData";
 import { resolveRequestedPlan } from "@/lib/pricing/planRequest";
-import { savePendingPlan, sessionStorageOrNull } from "@/lib/pricing/pendingPlan";
+import { pendingBillingOrNull, savePendingPlanChoice, sessionStorageOrNull } from "@/lib/pricing/pendingPlan";
 // Batch l15: a new account confirms its mobile by WhatsApp before anything else.
 import { phoneOtpRequiredNow } from "@/lib/phoneOtp/phoneOtpClient";
 import { trackEventOnce } from "@/lib/analytics/track";
@@ -82,6 +82,8 @@ export default function RegisterClientPage() {
   // request. It is resolved against the plan list of the account type being
   // registered, and offered on the last step (Step4).
   const [planParam, setPlanParam] = useState<string | null>(null);
+  // LIVE-04 (batch l18): the cycle /pricing showed (?billing=), kept with the plan.
+  const [billingParam, setBillingParam] = useState<string | null>(null);
   // Whether signUp returned a live session. With email confirmation on it
   // does not, and an entitlement request would be refused (401) — Step4 then
   // says how to finish instead of offering a button that cannot work.
@@ -94,6 +96,7 @@ export default function RegisterClientPage() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     setPlanParam(params.get("plan"));
+    setBillingParam(pendingBillingOrNull(params.get("billing")));
     const type = params.get("type") as ClientType;
     // "micro" was missing from this list while being a live option in Step1
     // (data.ts) and a live branch in the signup metadata below — so
@@ -275,6 +278,7 @@ export default function RegisterClientPage() {
                     clientType={clientType}
                     requestedPlan={BACKEND_MODE === "supabase" ? requestedPlan : null /* demo mode has no backend */}
                     canRequestNow={signupHasSession}
+                    billing={billingParam}
                   />
                 )}
               </AnimatePresence>
@@ -464,7 +468,8 @@ export default function RegisterClientPage() {
                             // Without a session (e-mail confirmation still on)
                             // nothing changes: «تحقّق من بريدك» as before.
                             if (signUpData.session && (await phoneOtpRequiredNow())) {
-                              savePendingPlan(sessionStorageOrNull(), planParam);
+                              // LIVE-04: /verify-phone sends the plan on to payment.
+                              savePendingPlanChoice(sessionStorageOrNull(), requestedPlan?.id ?? planParam, billingParam);
                               window.location.assign("/verify-phone");
                               return;
                             }
@@ -539,7 +544,7 @@ export default function RegisterClientPage() {
                         // fail silently): it waits in this tab's sessionStorage
                         // for the onboarding wizard. Best-effort — sign-in goes
                         // ahead whether or not it was saved.
-                        savePendingPlan(sessionStorageOrNull(), planParam);
+                        savePendingPlanChoice(sessionStorageOrNull(), planParam, billingParam);
                         const supabase = createClient();
                         await supabase.auth.signInWithOAuth({
                           provider: "google",

@@ -457,9 +457,9 @@ test("٢١٦: the price list does not say points are deducted on every use (enfo
   assert.doesNotMatch(pricingCards, /automatic deduction[^\n"]*electronic payment/i);
   assert.match(pricingCards, /قائمة أسعار أدوات المحامي بالنقاط: تكلفة كل تشغيل للأداة/);
   // The lawyer card at provider registration made the same claim (fix round 1).
+  // l18 LIVE-03: its paid cards are /pricing's own (pricing.lawyers.ts, checked
+  // above); only the free card is written in data.ts.
   assert.doesNotMatch(providerRegistration, /خصم النقاط|تُخصم|[Pp]oints deducted|deducted per/);
-  assert.ok(providerRegistration.includes('"أسعار الأدوات بالنقاط حسب قائمة الأسعار"'), "provider registration (ar)");
-  assert.ok(providerRegistration.includes('"Tool prices in points per the price list"'), "provider registration (en)");
 });
 
 test("library subscription buttons point to live routes", () => {
@@ -524,13 +524,12 @@ test("retired shield and group plans are removed", () => {
 test("provider registration no longer sells the retired monthly AI plans", () => {
   assert.doesNotMatch(providerRegistration, /AI قانوني غير محدود|Unlimited legal AI/);
   assert.doesNotMatch(providerRegistration, /price: "١٩٩"|price: "٤٩٩"|price: "199"|price: "499"/);
-  // Owner answer ١٧٥: the firm ERP is 990/month for 3 seats, not 17,988/year;
-  // since the 25-Oct rule 1 professionals see the yearly price, read from the book.
   assert.doesNotMatch(providerRegistration, /١٧٬٩٨٨|17,988/);
-  assert.match(providerRegistration, /price: bookPriceText\("firm-basic", "yearly", "ar"\)/);
-  assert.match(providerRegistration, /price: bookPriceText\("lawyer-pro", "yearly", "ar"\)/);
-  assert.doesNotMatch(providerRegistration, /price: "[٠-٩0-9]/, "no literal price on a plan the book sells");
-  assert.match(providerRegistration, /ERP مجاني للمحامي الفرد/);
+  // l18 LIVE-03: no price is written in data.ts at all — step 4 prices every
+  // paid card from the book (src/lib/pricing/signupPlan.ts + cardPrice), and
+  // the free card no longer promises the ERP (owner س٢١٢: office management is paid).
+  assert.doesNotMatch(providerRegistration, /price: "[٠-٩0-9]|bookPriceText/, "no price on the free card text");
+  assert.doesNotMatch(providerRegistration, /ERP مجاني للمحامي الفرد/);
   assert.doesNotMatch(providerRegistration, /محفظة/);
 });
 
@@ -562,9 +561,10 @@ test("٢١٧: every firm plan sends extra seats to sales, with a link", () => {
   // The office plan bundles no points, so it does not include the lawyer plan.
   assert.doesNotMatch(pro, /ما في باقة المحامي المحترف|Everything in Professional Lawyer/);
 
-  // Registration: a plan card is a <button>, so the line is text there.
-  assert.ok(providerRegistration.includes(`"${SALES_LINE_AR}"`), "provider registration (ar)");
-  assert.ok(providerRegistration.includes(`"${SALES_LINE_EN}"`), "provider registration (en)");
+  // Registration (l18 LIVE-03): the firm cards are /pricing's own firm cards,
+  // whose features carry no sales line (it is the salesLine link above);
+  // data.ts holds no firm card any more.
+  assert.doesNotMatch(providerRegistration, /مقاعد إضافية|Extra seats/);
 });
 
 test("٢١٧: no stale firm price or seat price is left on the firm surfaces", () => {

@@ -11,6 +11,7 @@ import type { Plan, AudienceTab, Billing } from "@/constants/pricingData";
 import { lawyerServicesTable, LAWYER_ARCHIVE_NOTE } from "@/constants/pricing/pricing.lawyers";
 import { aiToolPointsLabel, aiToolPriceUnit } from "@/lib/ai/toolPointsDisplay";
 import { useUser } from "@/hooks/useUser";
+import { withSignupBilling } from "@/lib/pricing/signupPlan";
 import { usePaymentsStatus } from "@/hooks/usePaymentsStatus";
 import { buyButtonAction, checkoutHref, SALE_PAUSED_LINE_AR, SALE_PAUSED_REQUEST_NOTE_AR, saleGatewayPaused } from "@/lib/payments/checkoutView";
 import { buyClickGate } from "@/lib/pricing/buyClickGate";
@@ -370,7 +371,8 @@ function SpotlightCard({
           </motion.button>
         ) : (
         <motion.a
-          href={cta.ctaHref}
+          // LIVE-04 (l18): a guest's sign-up link carries the cycle on screen.
+          href={withSignupBilling(cta.ctaHref, billing)}
           onClick={(e) => {
             // Logged-in users: subscribe CTAs go to /checkout (gateway on) or
             // become an entitlement request — see handleSubscribe.

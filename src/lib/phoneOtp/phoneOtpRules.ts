@@ -88,10 +88,55 @@ export function isPhoneGatedApiPath(pathname: string): boolean {
 }
 
 /**
+ * LIVE-01 (batch l18): the sign-up and sign-in pages that run their own phone
+ * step — /register/client goes to /verify-phone itself, /register/provider
+ * keeps the lawyer's code inline on its last step — or that a signed-in
+ * account has no business returning to. Exact paths (a trailing slash
+ * allowed): /register/provider/verify, the lawyer's licence page for a
+ * signed-in account, is NOT one of them.
+ *   - the global 403 handler (PhoneGateRedirect) and the idle guard stay quiet
+ *     on them, so a sign-up in progress is never pulled away;
+ *   - /verify-phone never sends anyone back to them (safePhoneNext);
+ *   - src/proxy.ts sends a signed-in visitor of one of them home.
+ */
+const SIGNUP_FLOW_PATHS: ReadonlySet<string> = new Set([
+  "/register",
+  "/register/client",
+  "/register/provider",
+  "/login",
+  "/forgot-password",
+  "/reset-password",
+]);
+
+export function isSignupFlowPath(pathname: string): boolean {
+  const p = pathname.length > 1 && pathname.endsWith("/") ? pathname.slice(0, -1) : pathname;
+  return SIGNUP_FLOW_PATHS.has(p.toLowerCase());
+}
+
+/**
+ * The sign-up flow pages a signed-in visitor is sent home from by
+ * src/proxy.ts: every one but /forgot-password and /reset-password (a reset
+ * link signs the user in precisely to set the new password there).
+ */
+export function isSignedInHomePath(pathname: string): boolean {
+  if (!isSignupFlowPath(pathname)) return false;
+  const p = (pathname.length > 1 && pathname.endsWith("/") ? pathname.slice(0, -1) : pathname).toLowerCase();
+  return p !== "/forgot-password" && p !== "/reset-password";
+}
+
+/** The sign-up flow pages above plus the wizard and /auth/*: never a place to return to after the code. */
+function isNoReturnPath(pathname: string): boolean {
+  const p = pathname.toLowerCase();
+  return isSignupFlowPath(p) || under(p, "/onboarding") || under(p, "/auth");
+}
+
+/**
  * Where /verify-phone may send the user after success: any path of THIS site
- * (path + query, no fragment) — the page the proxy held, a login `?from=`, an
- * invitation link. Never another origin: a leading `//`, a backslash, a scheme,
- * whitespace or a control character is refused, and so is the verify page itself.
+ * (path + query, no fragment) — the page the proxy held, an invitation link.
+ * Never another origin: a leading `//`, a backslash, a scheme, whitespace or a
+ * control character is refused, and so is the verify page itself. LIVE-01:
+ * never a sign-up / sign-in page, the wizard or /auth/* either (a fresh
+ * /register is step 1 again) — null, so the account's home is used.
  */
 export function safePhoneNext(raw: unknown): string | null {
   if (typeof raw !== "string") return null;
@@ -108,6 +153,7 @@ export function safePhoneNext(raw: unknown): string | null {
   // browser reads as another host: refused after normalising, not only before.
   if (url.pathname.startsWith("//") || url.pathname.includes("\\")) return null;
   if (under(url.pathname, VERIFY_PHONE_PATH)) return null;
+  if (isNoReturnPath(url.pathname)) return null;
   return `${url.pathname}${url.search}`;
 }
 
@@ -137,6 +183,38 @@ export function verifyPhoneUrlFrom(pathname: string, search: string): string | n
   if (under(pathname, VERIFY_PHONE_PATH)) return null;
   const next = safePhoneNext(`${pathname}${search}`);
   return next ? `${VERIFY_PHONE_PATH}?next=${encodeURIComponent(next)}` : VERIFY_PHONE_PATH;
+}
+
+/** The slice of a GoTrue user (getUser()) that isFormSignup reads. */
+export type FormSignupUser = {
+  identities?: ReadonlyArray<{ provider?: unknown }> | null;
+  app_metadata?: { providers?: unknown } | null;
+  user_metadata?: { user_type?: unknown } | null;
+};
+
+/**
+ * LIVE-01 (batch l18): did this account sign up through one of the forms
+ * (/register/client, /register/provider)? Those forms already asked for the
+ * account type, the name, the mobile and the city, so the onboarding wizard
+ * has nothing left to ask. A Google sign-up has not chosen its role yet and
+ * keeps the wizard. Form = an `email` identity, no `google` identity, and
+ * the sign-up metadata carries a user_type. The identities come from GoTrue
+ * (server-written); app_metadata.providers is read only when they are absent.
+ */
+export function isFormSignup(user: FormSignupUser | null | undefined): boolean {
+  if (!user) return false;
+  const fromIdentities = Array.isArray(user.identities)
+    ? user.identities.map((i) => (typeof i?.provider === "string" ? i.provider : ""))
+    : null;
+  const providers =
+    fromIdentities && fromIdentities.length > 0
+      ? fromIdentities
+      : Array.isArray(user.app_metadata?.providers)
+        ? (user.app_metadata!.providers as unknown[]).filter((p): p is string => typeof p === "string")
+        : [];
+  if (!providers.includes("email") || providers.includes("google")) return false;
+  const type = user.user_metadata?.user_type;
+  return typeof type === "string" && type.trim() !== "";
 }
 
 /** «…٤٥٦٧» style hint for the screen: the last four digits only. */

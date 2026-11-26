@@ -8996,3 +8996,23 @@ select 'l17 pwreset: a mobile confirmed in place of another in the last 7 days o
        coalesce(position('recent_phone_change' in pg_catalog.pg_get_functiondef(to_regprocedure('public.pw_reset_target(text)'))) > 0
                 and position('phone_otp_challenges' in pg_catalog.pg_get_functiondef(to_regprocedure('public.pw_reset_target(text)'))) > 0, false) as ok;
 -- <<< verify:l17_pwreset
+-- >>> verify:l18_signup — supabase/tests/rls/l18_signup.test.sql
+-- Batch l18 (LIVE-01): a form sign-up is not sent through the onboarding wizard again. 20261208_10
+-- runs AFTER the deploy. Before it runs the checks below answer ok = false («run 20261208_10»).
+select 'l18 signup: a form sign-up''s profile starts onboarding_completed — BEFORE INSERT trigger on profiles, SECURITY DEFINER with an empty search_path, no session may call it (run 20261208_10)' as check,
+       coalesce((select p.prosecdef
+                        and p.proconfig @> array['search_path=""']
+                        and not has_function_privilege('anon', p.oid, 'EXECUTE')
+                        and not has_function_privilege('authenticated', p.oid, 'EXECUTE')
+                        and exists (select 1 from pg_catalog.pg_trigger t
+                                     where t.tgrelid = to_regclass('public.profiles')
+                                       and t.tgname = 'trg_profiles_form_signup_onboarded'
+                                       and t.tgfoid = p.oid
+                                       and t.tgenabled <> 'D'
+                                       and (t.tgtype & 7) = 7)
+                   from pg_catalog.pg_proc p
+                  where p.oid = to_regprocedure('public.profiles_form_signup_onboarded()')), false) as ok;
+select 'l18 signup: only an e-mail sign-up from the forms is marked (GoTrue''s provider = email and a user_type) — a Google sign-up keeps the wizard (run 20261208_10)' as check,
+       coalesce(position('''provider'' = ''email''' in pg_catalog.pg_get_functiondef(to_regprocedure('public.profiles_form_signup_onboarded()'))) > 0
+                and position('user_type' in pg_catalog.pg_get_functiondef(to_regprocedure('public.profiles_form_signup_onboarded()'))) > 0, false) as ok;
+-- <<< verify:l18_signup
