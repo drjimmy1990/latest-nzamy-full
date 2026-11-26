@@ -9079,3 +9079,40 @@ select 'l18 billing: billing_company holds CR 7049168854 (run 20261208_31 once; 
        coalesce((select s.value ->> 'cr_number' = '7049168854'
                    from public.platform_settings s where s.key = 'billing_company'), false) as ok;
 -- <<< verify:l18_pay
+-- >>> verify:l18_answers — supabase/tests/rls/l18_confirmed_phone_unique.test.sql, l18_convert_keeps_verification.test.sql, l18_contract_fees_firm_roles.test.sql
+-- Batch l18-answers (owner answers ٢٢٣ / ٢٢٩ / ٢٣٥, 27 Nov). 20261208_50 / _52 / _53 run BEFORE the deploy (_52 must).
+-- Before a file runs, its checks answer ok = false («run …»). 20261208_51 is a read-only report, not checked here.
+select 'l18 answers: a second confirmation of the same mobile is refused — confirmed_phone_taken / confirmed_phone_guard are SECURITY DEFINER, empty search_path, no session EXECUTE, and trg_phone_verified_unique is enabled on profiles (run 20261208_50)' as check,
+       coalesce((select count(*) = 2
+                        and bool_and(p.prosecdef
+                                     and p.proconfig @> array['search_path=""']
+                                     and not has_function_privilege('anon', p.oid, 'EXECUTE')
+                                     and not has_function_privilege('authenticated', p.oid, 'EXECUTE'))
+                   from pg_catalog.pg_proc p
+                  where p.oid in (to_regprocedure('public.confirmed_phone_taken(uuid,text)'),
+                                  to_regprocedure('public.confirmed_phone_guard()'))), false)
+       and exists (select 1 from pg_catalog.pg_trigger t
+                    where t.tgrelid = to_regclass('public.profiles') and t.tgname = 'trg_phone_verified_unique'
+                      and not t.tgisinternal and t.tgenabled <> 'D'
+                      and t.tgfoid = to_regprocedure('public.confirmed_phone_guard()')) as ok;
+select 'l18 answers: the unique index on confirmed mobiles exists (f until the shared numbers are cleaned up with 20261208_51 and 20261208_50 is re-run)' as check,
+       coalesce(to_regclass('public.profiles_confirmed_phone_unique') is not null, false) as ok;
+select 'l18 answers: the account-type converter keeps the licence verification (no reset to pending) and still refuses open commitments (run 20261208_52)' as check,
+       coalesce(position('set verification_status = ''pending'''
+                         in pg_catalog.pg_get_functiondef(to_regprocedure('public.admin_change_account_type(uuid,text,text,uuid)'))) = 0
+                and position('v_verification_kept'
+                             in pg_catalog.pg_get_functiondef(to_regprocedure('public.admin_change_account_type(uuid,text,text,uuid)'))) > 0
+                and position('open_commitments'
+                             in pg_catalog.pg_get_functiondef(to_regprocedure('public.admin_change_account_type(uuid,text,text,uuid)'))) > 0, false) as ok;
+select 'l18 answers: a firm contract''s fee schedule is for the firm owner, managing partner and finance manager only — restrictive policy on contract_payments (run 20261208_53)' as check,
+       coalesce((select p.prosecdef and p.proconfig @> array['search_path=""']
+                        and not has_function_privilege('anon', p.oid, 'EXECUTE')
+                        and position('finance_manager' in pg_catalog.pg_get_functiondef(p.oid)) > 0
+                   from pg_catalog.pg_proc p where p.oid = to_regprocedure('public.contract_fees_visible(text)')), false)
+       and exists (select 1 from pg_catalog.pg_policy p
+                    where p.polrelid = to_regclass('public.contract_payments')
+                      and p.polname = 'firm fee schedule: owner, managing partner, finance'
+                      and not p.polpermissive and p.polcmd = '*'
+                      and pg_catalog.pg_get_expr(p.polqual, p.polrelid) like '%contract_fees_visible(contract_id)%'
+                      and pg_catalog.pg_get_expr(p.polwithcheck, p.polrelid) like '%contract_fees_visible(contract_id)%') as ok;
+-- <<< verify:l18_answers
