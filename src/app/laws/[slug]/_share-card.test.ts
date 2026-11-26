@@ -62,4 +62,7 @@ test("B-12: the share button sits in the article's header; the image only for te
   assert.match(share, /document\.fonts\?\.load\(/);
   assert.match(share, /ctx\.direction = "rtl";/);
   assert.match(share, /"\/brand\/nezamy-wordmark\.png"/);
+  // l16 review: the object URL is released on unmount and on a rebuild, not only on close
+  assert.match(share, /useEffect\(\(\) => \(\) => \{\r?\n\s*if \(cardUrlRef\.current\) URL\.revokeObjectURL\(cardUrlRef\.current\);/);
+  assert.match(share, /if \(prev\) URL\.revokeObjectURL\(prev\.url\);/);
 });

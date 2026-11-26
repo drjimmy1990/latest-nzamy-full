@@ -21,7 +21,7 @@
  * fonts, and a browser allows the share sheet only from a fresh click.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Check, DownloadSimple, LinkSimple, ShareNetwork, X } from "@phosphor-icons/react";
 import { stripMarkdownMarks } from "@/lib/text/stripMarkdownMarks";
@@ -191,6 +191,16 @@ export function ArticleShareButton({
 
   const link = () => (typeof window === "undefined" ? "" : articleShareUrl(window.location.origin, window.location.pathname, articleId));
 
+  // l16 review: the image's object URL is released on close, on a rebuild and
+  // when the card unmounts with the menu still open (the page navigates away).
+  const cardUrlRef = useRef<string | null>(null);
+  useEffect(() => {
+    cardUrlRef.current = card?.url ?? null;
+  }, [card]);
+  useEffect(() => () => {
+    if (cardUrlRef.current) URL.revokeObjectURL(cardUrlRef.current);
+  }, []);
+
   const close = useCallback(() => {
     setOpen(false);
     setError(null);
@@ -226,7 +236,11 @@ export function ArticleShareButton({
       const blob = await drawShareCard({ lawName, articleLabel, text: shareCardText(text, stripMarkdownMarks) });
       const file = new File([blob], shareCardFileName(lawName, articleLabel), { type: "image/png" });
       const canShareFile = typeof navigator !== "undefined" && typeof navigator.canShare === "function" && navigator.canShare({ files: [file] });
-      setCard({ url: URL.createObjectURL(blob), file, canShareFile });
+      const url = URL.createObjectURL(blob);
+      setCard((prev) => {
+        if (prev) URL.revokeObjectURL(prev.url);
+        return { url, file, canShareFile };
+      });
     } catch {
       setError("تعذّر تجهيز الصورة في هذا المتصفح.");
     } finally {

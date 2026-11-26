@@ -95,6 +95,10 @@ export default function RegisterProviderPage() {
   // A-10 / E-15 (batch l16): the WhatsApp step of a lawyer runs inline on the
   // last step, so the photo above survives it (a page change lost it before).
   const [phoneStepPending, setPhoneStepPending] = useState(false);
+  // l16 review: stable callbacks — PhoneOtpPanel's effect keys on onDone, and
+  // the licence panel hands a phone_unverified refusal back to this step.
+  const onPhoneDone = useCallback(() => setPhoneStepPending(false), []);
+  const onPhoneUnverified = useCallback(() => setPhoneStepPending(true), []);
   const [authError, setAuthError] = useState<string | null>(null);
   const [authLoading, setAuthLoading] = useState(false);
   // OWNER-SEC-01: GoTrue's captcha check covers /signup too, so signUp sends
@@ -448,9 +452,9 @@ export default function RegisterProviderPage() {
                     // The licence panel mounts only once the mobile is
                     // confirmed: before that the proxy refuses its API
                     // (phone_unverified) and it would leave the page.
-                    <PhoneOtpPanel showSignOut={false} onDone={() => setPhoneStepPending(false)} />
+                    <PhoneOtpPanel showSignOut={false} onDone={onPhoneDone} />
                   ) : signupHasSession ? (
-                    <LawyerVerificationPanel isAr={isAr} initialFile={licenceFile} fullName={formData.registryFullName?.trim() || null} />
+                    <LawyerVerificationPanel isAr={isAr} initialFile={licenceFile} fullName={formData.registryFullName?.trim() || null} onPhoneUnverified={onPhoneUnverified} />
                   ) : (
                     <div className="rounded-2xl border border-slate-200 bg-white p-5 text-start text-sm text-ink dark:border-white/10 dark:bg-dark-card dark:text-gray-300">
                       <p>
