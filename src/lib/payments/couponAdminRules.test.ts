@@ -32,7 +32,8 @@ import {
   ROLES_AR,
   UNKNOWN_ITEM_AR,
   MAX_PCT_AR,
-  MIN_ORDER_REQUIRED_AR,
+  MIN_ORDER_INVALID_AR,
+  superAdminCap,
   VALUE_REQUIRED_AR,
   VALUE_ABOVE_CAP_AR,
 } from "./couponAdminRules.ts";
@@ -44,11 +45,41 @@ const PAGE = readFileSync(join(ROOT, "src", "app", "dashboard", "admin", "subscr
 
 const ON = { withNewColumns: true };
 
-test("create: a discount coupon without a minimum (missing, 0, negative, text) is refused", () => {
-  for (const minOrderAmount of [undefined, null, "", 0, -5, "abc"]) {
-    assert.deepEqual(adminDiscountFields("fixed", { value: 50, minOrderAmount }, ON), { ok: false, error: MIN_ORDER_REQUIRED_AR }, String(minOrderAmount));
-    assert.deepEqual(adminDiscountFields("percentage", { value: 10, minOrderAmount }, ON), { ok: false, error: MIN_ORDER_REQUIRED_AR });
+test("l18 (ق٢٦-١١): the minimum is optional — empty / 0 = none; a negative or unreadable one is refused", () => {
+  for (const minOrderAmount of [undefined, null, "", 0]) {
+    const r = adminDiscountFields("fixed", { value: 50, minOrderAmount }, ON);
+    assert.ok(r.ok && r.fields.min_order_amount === 0, String(minOrderAmount));
   }
+  for (const minOrderAmount of [-5, "abc"]) {
+    assert.deepEqual(adminDiscountFields("fixed", { value: 50, minOrderAmount }, ON), { ok: false, error: MIN_ORDER_INVALID_AR }, String(minOrderAmount));
+    assert.deepEqual(adminDiscountFields("percentage", { value: 10, minOrderAmount }, ON), { ok: false, error: MIN_ORDER_INVALID_AR });
+  }
+});
+
+test("l18 (ق٢٦-١١): the 25 % cap binds the staff only — the super admin's fixed code is never clipped, a percentage is capped at itself", () => {
+  const SUPER = { withNewColumns: true, writerRole: "super_admin" };
+  // a fixed 5,000 off (on a 3,000 plan) — cap 100, whatever the form sent
+  const fixed = adminDiscountFields("fixed", { value: 5000, maxDiscountPct: 25 }, SUPER);
+  assert.ok(fixed.ok && fixed.fields.max_discount_pct === 100 && fixed.fields.min_order_amount === 0);
+  // a 50 % code without touching the cap field
+  const pct = adminDiscountFields("percentage", { value: 50 }, SUPER);
+  assert.ok(pct.ok && pct.fields.max_discount_pct === 50);
+  // a small percentage keeps the default 25 (still a marketing code)
+  const small = adminDiscountFields("percentage", { value: 10 }, SUPER);
+  assert.ok(small.ok && small.fields.max_discount_pct === 25);
+  // the staff keep the cap: 26 % without a higher cap is refused, a fixed code keeps 25
+  assert.deepEqual(adminDiscountFields("percentage", { value: 26 }, { withNewColumns: true, writerRole: "admin" }), { ok: false, error: VALUE_ABOVE_CAP_AR });
+  const staffFixed = adminDiscountFields("fixed", { value: 5000 }, { withNewColumns: true, writerRole: "admin" });
+  assert.ok(staffFixed.ok && staffFixed.fields.max_discount_pct === 25);
+  assert.equal(superAdminCap("fixed", 1), 100);
+  assert.equal(superAdminCap("percentage", 100), 100);
+  assert.equal(superAdminCap("percentage", 0), null);
+  assert.equal(superAdminCap("points_grant", 5), null);
+  // PATCH: the super admin changing the value moves the cap with it; other edits leave it
+  const stored = { discount_type: "fixed", min_order_amount: 0, active: true, discount_value: 100, max_discount_pct: 25 };
+  assert.deepEqual(adminDiscountPatch(stored, { value: 5000 }, undefined, "super_admin"), { ok: true, fields: { max_discount_pct: 100 } });
+  assert.deepEqual(adminDiscountPatch(stored, { expiresAt: "2027-01-01" }, undefined, "super_admin"), { ok: true, fields: {} });
+  assert.deepEqual(adminDiscountPatch(stored, { value: 5000 }, undefined, "admin"), { ok: true, fields: {} });
 });
 
 test("create: the cap — max_discount_pct in (0, 100] (l14; default 25), a percentage value ≤ the code's cap, a value > 0", () => {
@@ -82,22 +113,21 @@ test("create: before 20261026_20 the new columns are not sent, the rules still h
     ok: true,
     fields: { discount_value: 50, min_order_amount: 200 },
   });
-  assert.deepEqual(adminDiscountFields("fixed", { value: 50 }, { withNewColumns: false }), { ok: false, error: MIN_ORDER_REQUIRED_AR });
+  // l18: no minimum is no longer a refusal
+  assert.deepEqual(adminDiscountFields("fixed", { value: 50 }, { withNewColumns: false }), { ok: true, fields: { discount_value: 50, min_order_amount: 0 } });
   assert.deepEqual(adminDiscountFields("points_grant", {}, ON), { ok: true, fields: {} });
   assert.deepEqual(adminDiscountFields("plan_upgrade", {}, ON), { ok: true, fields: {} });
 });
 
-test("patch: no minimum of 0, no percentage above 25, and a discount coupon with minimum 0 cannot be switched on (LAUNCH2026)", () => {
+test("patch (l18): the minimum is optional — a zero-minimum code may be switched on, a minimum may be cleared; no percentage above the cap", () => {
   const launch = { discount_type: "percentage", min_order_amount: "0.00", active: false };
-  assert.deepEqual(adminDiscountPatch(launch, { status: "active" }, true), { ok: false, error: MIN_ORDER_REQUIRED_AR });
-  // with a minimum in the same save it may go on
+  assert.deepEqual(adminDiscountPatch(launch, { status: "active" }, true), { ok: true, fields: {} });
   assert.deepEqual(adminDiscountPatch(launch, { minOrderAmount: 200 }, true), { ok: true, fields: { min_order_amount: 200 } });
-  // switching it off is always allowed
   assert.deepEqual(adminDiscountPatch({ ...launch, active: true }, {}, false), { ok: true, fields: {} });
-  // an active zero-minimum coupon cannot be saved still active
-  assert.deepEqual(adminDiscountPatch({ ...launch, active: true }, { expiresAt: "2027-01-01" }, undefined), { ok: false, error: MIN_ORDER_REQUIRED_AR });
+  assert.deepEqual(adminDiscountPatch({ ...launch, active: true }, { expiresAt: "2027-01-01" }, undefined), { ok: true, fields: {} });
   const nz = { discount_type: "fixed", min_order_amount: "200.00", active: true };
-  assert.deepEqual(adminDiscountPatch(nz, { minOrderAmount: 0 }, undefined), { ok: false, error: MIN_ORDER_REQUIRED_AR });
+  assert.deepEqual(adminDiscountPatch(nz, { minOrderAmount: 0 }, undefined), { ok: true, fields: { min_order_amount: 0 } });
+  assert.deepEqual(adminDiscountPatch(nz, { minOrderAmount: -1 }, undefined), { ok: false, error: MIN_ORDER_INVALID_AR });
   assert.deepEqual(adminDiscountPatch(nz, { minOrderAmount: 250 }, undefined), { ok: true, fields: { min_order_amount: 250 } });
   // l14: a percentage never above the code's cap (the stored one, else the default 25)
   assert.deepEqual(adminDiscountPatch({ discount_type: "percentage", min_order_amount: 100, active: true }, { value: 40 }, undefined), { ok: false, error: VALUE_ABOVE_CAP_AR });
@@ -108,13 +138,14 @@ test("patch: no minimum of 0, no percentage above 25, and a discount coupon with
 });
 
 test("the routes apply the rules (400 with the reason) and the page sends a minimum", () => {
-  assert.match(CREATE, /adminDiscountFields\(dbDiscountType, body, \{\s*withNewColumns: await couponsAvailable\(adminClient\),?\s*\}\)/);
+  assert.match(CREATE, /adminDiscountFields\(dbDiscountType, body, \{\s*withNewColumns: await couponsAvailable\(adminClient\),\s*writerRole: gate\.role,?\s*\}\)/);
   assert.match(CREATE, /if \(!discount\.ok\) \{\s*return NextResponse\.json\(\{ error: discount\.error \}, \{ status: 400 \}\);/);
   assert.match(CREATE, /\.\.\.discount\.fields,/);
-  assert.match(PATCH, /adminDiscountPatch\(existing as Record<string, unknown>, body, nextActive\)/);
+  assert.match(PATCH, /adminDiscountPatch\(existing as Record<string, unknown>, body, nextActive, gate\.role\)/);
   assert.match(PATCH, /Object\.assign\(updateData, discount\.fields\)/);
   assert.match(PAGE, /minOrderAmount: Number\(row\.min_order_amount \?\? 0\)/);
-  assert.match(PAGE, /<NumberBox value=\{draft\.minOrderAmount\} min=\{1\} required onValue=\{\(n\) => setDraft\(\{ \.\.\.draft, minOrderAmount: n \}\)\}/);
+  // l18: the minimum is optional on the page too
+  assert.match(PAGE, /<NumberBox value=\{draft\.minOrderAmount\} min=\{0\} onValue=\{\(n\) => setDraft\(\{ \.\.\.draft, minOrderAmount: n \}\)\}/);
   assert.match(PAGE, /onValue\(event\.target\.value === \"\" \|\| !Number\.isFinite\(n\) \? 0 : n\)/);
 });
 

@@ -8996,3 +8996,30 @@ select 'l17 pwreset: a mobile confirmed in place of another in the last 7 days o
        coalesce(position('recent_phone_change' in pg_catalog.pg_get_functiondef(to_regprocedure('public.pw_reset_target(text)'))) > 0
                 and position('phone_otp_challenges' in pg_catalog.pg_get_functiondef(to_regprocedure('public.pw_reset_target(text)'))) > 0, false) as ok;
 -- <<< verify:l17_pwreset
+-- >>> verify:l18_pay — supabase/tests/rls/l18_pay_free_activation.test.sql
+-- Batch l18-pay (owner ق٢٦-١١, س٢٢٤ settled): a discount code that covers the whole price is activated at
+-- 0 SAR with no card (coupon_redemptions), and a free-plan code may grant the library or the bundle.
+-- 20261208_30 runs BEFORE the deploy; 20261208_31 (billing_company identity) any time. Before a file runs,
+-- its checks answer ok = false («run …»).
+select 'l18 pay: coupon_redeem_full_open / coupon_redeem_grant_library are SECURITY DEFINER with an empty search_path, service_role only (run 20261208_30)' as check,
+       coalesce((select count(*) = 2
+                        and bool_and(p.prosecdef
+                                     and p.proconfig @> array['search_path=""']
+                                     and not has_function_privilege('anon', p.oid, 'EXECUTE')
+                                     and not has_function_privilege('authenticated', p.oid, 'EXECUTE')
+                                     and has_function_privilege('service_role', p.oid, 'EXECUTE'))
+                   from pg_catalog.pg_proc p
+                  where p.oid in (to_regprocedure('public.coupon_redeem_full_open(uuid,uuid,text,text,text,integer,timestamp with time zone)'),
+                                  to_regprocedure('public.coupon_redeem_grant_library(uuid,text,integer,integer,timestamp with time zone)'))), false) as ok;
+select 'l18 pay: a 0 SAR activation locks the coupon row and refuses a code that does not cover the price (run 20261208_30)' as check,
+       coalesce(position('for update' in lower(pg_catalog.pg_get_functiondef(to_regprocedure('public.coupon_redeem_full_open(uuid,uuid,text,text,text,integer,timestamp with time zone)')))) > 0
+                and position('not_full' in pg_catalog.pg_get_functiondef(to_regprocedure('public.coupon_redeem_full_open(uuid,uuid,text,text,text,integer,timestamp with time zone)'))) > 0, false) as ok;
+select 'l18 pay: a redemption''s library pass is granted once (coupon_redemptions.library_grant_id, not readable by a session) (run 20261208_30)' as check,
+       coalesce(exists (select 1 from pg_catalog.pg_attribute
+                         where attrelid = to_regclass('public.coupon_redemptions') and attname = 'library_grant_id' and not attisdropped)
+                and not has_column_privilege('authenticated', 'public.coupon_redemptions', 'library_grant_id', 'SELECT'), false) as ok;
+select 'l18 billing: billing_company holds the official legal name, Makkah address and CR 7049168854 (run 20261208_31; vat_number is never changed by it)' as check,
+       coalesce((select s.value ->> 'cr_number' = '7049168854'
+                        and s.value ->> 'legal_name_ar' = 'شركة نيزامي للمحاماة والاستشارات القانونية'
+                   from public.platform_settings s where s.key = 'billing_company'), false) as ok;
+-- <<< verify:l18_pay

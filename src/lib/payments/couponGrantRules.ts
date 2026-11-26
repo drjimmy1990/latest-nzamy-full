@@ -15,8 +15,10 @@
  *       20261206_30).
  *
  * A free-plan code grants one PLAN of the price book on sale, in one of the
- * billings it is sold in (grantablePlans). The ERP + library bundle is left
- * out of this slice: its library pass is keyed on a paid order.
+ * billings it is sold in (grantablePlans). Batch l18 (owner ق٢٦-١١): also a
+ * LIBRARY pass (lib-q1 / lib-q2 / lib-annual) and the office + library
+ * BUNDLE (lawyer-bundle) — their library pass is granted on the redemption
+ * itself (coupon_redeem_grant_library, 20261208_30), never on a paid order.
  *
  * Pure: relative imports only, so `node --test` loads it.
  */
@@ -45,10 +47,10 @@ export interface GrantablePlan {
   buyers: readonly string[] | "any";
 }
 
-/** The plans a free-plan code may grant: on sale, kind plan, without a library part. */
+/** The items a free-plan code may grant: on sale, a plan with its tier (the bundle included) or a library pass (l18). */
 export function grantablePlans(catalog: Readonly<Record<string, PayableItem>> = PAYABLE_ITEMS): GrantablePlan[] {
   return Object.values(catalog)
-    .filter((it) => it.kind === "plan" && it.onSale && !!it.tier && !it.libraryByBilling)
+    .filter((it) => it.onSale && ((it.kind === "plan" && !!it.tier) || (it.kind === "library" && !!it.libraryPlanRef && !!it.libraryDays)))
     .map((it) => ({ id: it.id, labelAr: it.labelAr, billings: Object.keys(it.prices) as Billing[], buyers: it.buyers }))
     .filter((p) => p.billings.length > 0);
 }
@@ -130,5 +132,5 @@ export function newCouponDates(now: Date): { startsAt: string; expiresAt: string
   return { startsAt: start, expiresAt: end };
 }
 
-/** A new code's minimum order before VAT (SAR): the server refuses 0 on a discount code. */
-export const NEW_COUPON_MIN_ORDER_SAR = 100;
+/** A new code's minimum order before VAT (SAR). l18 (ق٢٦-١١): optional — a new code starts with none (0). */
+export const NEW_COUPON_MIN_ORDER_SAR = 0;
