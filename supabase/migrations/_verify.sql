@@ -8996,3 +8996,16 @@ select 'l17 pwreset: a mobile confirmed in place of another in the last 7 days o
        coalesce(position('recent_phone_change' in pg_catalog.pg_get_functiondef(to_regprocedure('public.pw_reset_target(text)'))) > 0
                 and position('phone_otp_challenges' in pg_catalog.pg_get_functiondef(to_regprocedure('public.pw_reset_target(text)'))) > 0, false) as ok;
 -- <<< verify:l17_pwreset
+-- >>> verify:l18_access — owner ق٢٦-٢ / ق٢٦-٣ (run 20261208_40)
+select 'l18 access: the library switch opens lawyer + consultant + firm by default, unless an admin saved another choice (run 20261208_40)' as check,
+       coalesce((select ps.updated_by is not null
+                        or ((ps.value -> 'lawyer') = 'true'::jsonb
+                            and (ps.value -> 'consultant') = 'true'::jsonb
+                            and (ps.value -> 'firm') = 'true'::jsonb)
+                   from public.platform_settings ps
+                  where ps.key = 'library_access_by_account_type'), false) as ok;
+select 'l18 access: the free questions setting names the law firm (10 by default; an admin value is kept) (run 20261208_40)' as check,
+       coalesce((select ps.value ? 'firm'
+                   from public.platform_settings ps
+                  where ps.key = 'free_questions_by_account_type'), false) as ok;
+-- <<< verify:l18_access

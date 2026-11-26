@@ -50,7 +50,13 @@ export const DEFAULT_MIN_TOPUP_SAR: Readonly<Record<string, number>> = Object.fr
   provider: 500,
   individual: 100,
 });
-export const DEFAULT_FREE_QUESTIONS: Readonly<Record<string, number>> = Object.freeze({ lawyer: 10, individual: 5 });
+/**
+ * Owner ق٢٦-٣ (package 2026-11-26): 10 library-assistant questions for the
+ * lawyer (a consultant is a `lawyer` account) and the law firm, 5 for the
+ * individual (floating assistant). 20261208_40 adds the firm's 10 to the
+ * stored setting where an admin has not named the firm.
+ */
+export const DEFAULT_FREE_QUESTIONS: Readonly<Record<string, number>> = Object.freeze({ lawyer: 10, firm: 10, individual: 5 });
 
 const MAX_POINTS = 1_000_000;
 const MAX_DAYS = 3650;

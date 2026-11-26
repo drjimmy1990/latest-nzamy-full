@@ -5,8 +5,8 @@
  * per-account exception (public.library_access_user_overrides).
  *
  *   lawyer      open by default   (a lawyer member of a firm is a lawyer: open)
- *   consultant  closed            (a lawyer whose practice_kind is consultant)
- *   firm        closed            (the firm account itself)
+ *   consultant  open by default   (a lawyer whose practice_kind is consultant)
+ *   firm        open by default   (the firm account itself)
  *   individual  closed
  *   business    closed            (corporate, micro, government, ngo)
  *   provider    closed            (not in the owner's list; closed like the rest)
@@ -15,7 +15,15 @@
  * The authority is the SQL function public.library_access_for(uuid)
  * (20261128_20); this file is its twin for the window before that SQL runs and
  * the pure rule the tests pin. A missing or malformed switch reads as the
- * default above: closed for everyone but the lawyer (fail closed).
+ * default above.
+ *
+ * Owner ق٢٦-٢ (package 2026-11-26): the default is OPEN for the three legal
+ * professions — lawyer, consultant and the law firm — and closed for the rest
+ * (individual, business, provider). It supersedes the 28 Nov seed, which
+ * opened the lawyer only. 20261208_40 brings the stored switch in line, but
+ * only where no admin has saved it (an admin's choice is kept). Open still
+ * means the preview + the free questions; the full text needs a library plan
+ * and the points floor as before.
  *
  * Pure: no imports, so node --test loads it.
  */
@@ -28,8 +36,8 @@ export type LibraryAccessMap = Record<LibraryAccountKey, boolean>;
 
 export const LIBRARY_ACCESS_DEFAULTS: Readonly<LibraryAccessMap> = Object.freeze({
   lawyer: true,
-  consultant: false,
-  firm: false,
+  consultant: true,
+  firm: true,
   individual: false,
   business: false,
   provider: false,
@@ -45,8 +53,12 @@ export const LIBRARY_ACCOUNT_LABELS_AR: Readonly<Record<LibraryAccountKey, strin
   provider: "مقدّم خدمة",
 });
 
-/** The owner's exact wording (item 9.3). */
-export const LIBRARY_ACCOUNT_LOCKED_AR = "المكتبة القانونية متاحة حالياً للمحامين فقط، وستُفتح لحسابات أخرى قريباً";
+/**
+ * The closed account's message (owner item 9.3's sentence, reworded for
+ * ق٢٦-٢: the library is open to lawyers, legal consultants and law firms by
+ * default, so «للمحامين فقط» was no longer true).
+ */
+export const LIBRARY_ACCOUNT_LOCKED_AR = "المكتبة القانونية متاحة حالياً للمحامين والمستشارين القانونيين ومكاتب المحاماة، وستُفتح لحسابات أخرى قريباً";
 export const LIBRARY_ACCOUNT_LOCKED_CODE = "library_account_locked";
 
 const BUSINESS_TYPES: ReadonlySet<string> = new Set(["corporate", "micro", "government", "ngo"]);
