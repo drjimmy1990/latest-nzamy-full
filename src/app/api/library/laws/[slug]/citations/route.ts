@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { createClient, createServiceClient } from '@/lib/supabase/server';
 import { libraryGate } from '@/lib/library-gate';
-import { hasFullLibraryAccess } from '@/lib/access-control';
+import { checkLibraryAccess, hasFullLibraryAccess, libraryAccessMemo } from '@/lib/access-control';
+import { effectiveFreeLimit } from '@/lib/library/previewLimit';
 import { decreeRefVariants, parseDecreeRef, pickDecree } from '@/lib/library/decreeRef';
 import { lawStatusForDetail } from '@/app/laws/law-status';
 import { stripArticleAuditNotes } from '@/lib/library/lawPreambleBlocks';
@@ -32,6 +33,7 @@ import {
   withHrefs,
 } from './_shape';
 import { maskDecreeTitlesForViewer } from './_decree-titles';
+import { articleBoxLocked, lockedArticleRefs, withoutLockedArticles } from './_locked-articles';
 import {
   ARTICLE_CACHE_ENTRIES,
   BULK_CACHE_ENTRIES,
@@ -64,7 +66,7 @@ import {
  *                          (batch l11, N02-13): the one exception to the rule
  *                          below — library subscribers only, never cached
  *
- * Every answer but the decree titles (Q101, viewerIsSubscriber below) is the
+ * Every answer but the decree titles (Q101, viewerLinksAccess below) is the
  * same for every viewer: titles (capped like a locked
  * title), numbers, statuses and links — never article text (20260929_01). So
  * the entitlement question does not arise, and nothing here spends the
@@ -92,16 +94,55 @@ function json(body: unknown, status = 200) {
 }
 
 /**
- * Owner Q101 (batch l12): the links answers name decrees, whose titles carry
- * the number and date a non-subscriber may not read — so those answers are
- * shaped per viewer (maskDecreeTitlesForViewer) and never cached.
+ * Owner ٢٣٦ (batch l18): who is reading the links, once per request — the
+ * decree mask (Q101) and the locked-article strip both need it.
+ *   isSubscriber  full library access — owner Q101 (batch l12): the links
+ *                 answers name decrees, whose titles carry the number and date
+ *                 a non-subscriber may not read, so they are masked per viewer
+ *                 (maskDecreeTitlesForViewer) after the cache;
+ *   openIds       null = every article of this law is open to the viewer
+ *                 (a subscriber, a whitelisted / unlimited law); otherwise the
+ *                 ids inside the free preview window — the law route's own
+ *                 rule (order_index, id; effectiveFreeLimit). Any failed read
+ *                 → an empty set: every article's links stay hidden (fails
+ *                 closed, like the text itself).
  */
-async function viewerIsSubscriber(): Promise<boolean> {
+async function viewerLinksAccess(db: ServiceClient, slug: string): Promise<{ isSubscriber: boolean; openIds: Set<string> | null }> {
+  let userId: string | null = null;
   try {
     const { data: { user } } = await (await createClient()).auth.getUser();
-    return await hasFullLibraryAccess(user?.id ?? null);
+    userId = user?.id ?? null;
   } catch {
-    return false;
+    userId = null;
+  }
+  const memo = libraryAccessMemo(userId);
+  let isSubscriber = false;
+  try {
+    isSubscriber = await hasFullLibraryAccess(userId, memo);
+  } catch {
+    isSubscriber = false;
+  }
+  if (isSubscriber) return { isSubscriber, openIds: null };
+  try {
+    const probe = await checkLibraryAccess(userId, slug, 0, 'laws', { memo });
+    if (probe.isWhitelisted === true || probe.freeLimit === -1) return { isSubscriber, openIds: null };
+    const lib = db.schema('library');
+    const total = await lib.from('articles').select('id', { count: 'exact', head: true }).eq('law_slug', slug);
+    if (total.error || typeof total.count !== 'number') return { isSubscriber, openIds: new Set() };
+    const freeLimit = effectiveFreeLimit(probe, total.count);
+    if (freeLimit === -1) return { isSubscriber, openIds: null };
+    if (freeLimit <= 0) return { isSubscriber, openIds: new Set() };
+    const { data, error } = await lib
+      .from('articles')
+      .select('id')
+      .eq('law_slug', slug)
+      .order('order_index', { ascending: true })
+      .order('id', { ascending: true })
+      .limit(freeLimit);
+    if (error) return { isSubscriber, openIds: new Set() };
+    return { isSubscriber, openIds: new Set(((data ?? []) as Array<{ id: unknown }>).map((r) => String(r.id))) };
+  } catch {
+    return { isSubscriber, openIds: new Set() };
   }
 }
 
@@ -187,7 +228,10 @@ export async function GET(
         if (shapedLaw.found && lawTitle) bulkCache.set(key, shapedLaw);
       }
       const graphMs = performance.now() - graphStart;
-      const body = { available: true, ...maskDecreeTitlesForViewer(shapedLaw, await viewerIsSubscriber()) };
+      // Owner ٢٣٦: per viewer, after the shared cache — a locked article's
+      // links (groups, counts, titles) leave the answer.
+      const viewer = await viewerLinksAccess(serverOnly, slug);
+      const body = { available: true, ...maskDecreeTitlesForViewer(withoutLockedArticles(shapedLaw, viewer.openIds), viewer.isSubscriber) };
       return tierJson(body, serverTiming([['gate', gateMs], ['graph', graphMs], ['total', performance.now() - started]], hit ? 'hit' : 'miss'));
     }
 
@@ -195,11 +239,16 @@ export async function GET(
     if (url.searchParams.has('article')) {
       const id = validArticleId(url.searchParams.get('article'));
       if (!id) return json({ error: 'bad article' }, 400);
+      // Owner ٢٣٦: a locked article's box answers nothing — no item, no total.
+      const viewer = await viewerLinksAccess(serverOnly, slug);
+      if (articleBoxLocked(id, viewer.openIds)) {
+        return tierJson({ available: true, ...lockedArticleRefs() });
+      }
       const key = linksCacheKey('article', slug, id, types);
       const kept = articleCache.get(key);
       if (kept) {
         return tierJson(
-          { available: true, ...maskDecreeTitlesForViewer(kept, await viewerIsSubscriber()) },
+          { available: true, ...maskDecreeTitlesForViewer(kept, viewer.isSubscriber) },
           serverTiming([['gate', gateMs], ['total', performance.now() - started]], 'hit'),
         );
       }
@@ -262,7 +311,7 @@ export async function GET(
       if (lawTitle) articleCache.set(key, out);
       const graphMs = performance.now() - graphStart;
       return tierJson(
-        { available: true, ...maskDecreeTitlesForViewer(out, await viewerIsSubscriber()) },
+        { available: true, ...maskDecreeTitlesForViewer(out, viewer.isSubscriber) },
         serverTiming([['gate', gateMs], ['graph', graphMs], ['total', performance.now() - started]], 'miss'),
       );
     }

@@ -23,7 +23,8 @@ test("the old bar and the related-documents card are gone from the law reader", 
 });
 
 test("the box sits in the side column for the article in view; the provider wraps both columns", () => {
-  assert.match(PAGE, /\{viewMode !== "regulation" && <RefBox articleId=\{activeArticle\?\.id \?\? null\} \/>\}/);
+  // Owner ٢٣٦ (batch l18): no box for a locked article in view.
+  assert.match(PAGE, /\{viewMode !== "regulation" && \(\s*<RefBox articleId=\{activeArticle && \(activeArticle\.free \|\| viewerHasFullAccess === true\) \? activeArticle\.id : null\} \/>\s*\)\}/);
   assert.match(PAGE, /<RefBoxProvider value=\{refBoxContext\}>/);
   assert.match(PAGE, /inlineTrigger: isReadingMode,/);
   // l14: while an article's links are open in the side column (pinned), the box shows that one in full.
@@ -33,7 +34,8 @@ test("the box sits in the side column for the article in view; the provider wrap
 test("L1 (batch l12): the links under every article again, from ONE request for the law, the side box from the same cache", () => {
   // Batch l16 (owner package 25-Nov §2.6, B-13): the chip only in reading mode (the header
   // buttons are hidden there); elsewhere the component stays as the fallback request, chip-less.
-  assert.match(ARTICLE, /\{viewMode !== "regulation" && refBox && <ArticleRefsInline articleId=\{article\.id\} chip=\{isReadingMode\} \/>\}/);
+  // Owner ٢٣٦ (batch l18): never on a locked article.
+  assert.match(ARTICLE, /\{viewMode !== "regulation" && refBox && !isLocked && <ArticleRefsInline articleId=\{article\.id\} chip=\{isReadingMode\} \/>\}/);
   assert.match(BOX, /if \(!chip\) return <div ref=\{box\} aria-hidden="true" className="print:hidden" \/>;/);
   assert.doesNotMatch(ARTICLE + BOX, /RefSheetButton/, "the folded phone-only button is gone");
   // The page starts the law's links request beside its own, never after it.
@@ -146,7 +148,7 @@ test("l14 (owner file 07 §6–§7, approved 23 Nov §15): the panel, the header
   assert.match(BOX, /export function ArticleRefsButton\(/);
   assert.match(BOX, /useArticleRefs\(ctx\?\.lawSlug \?\? "", ctx \? articleId : null, \{ enabled: false \}\)/);
   assert.match(BOX, /الإحالات \(\{arDigits\(total\)\}\)/);
-  assert.match(ARTICLE, /\{viewMode !== "regulation" && refBox && <ArticleRefsButton articleId=\{article\.id\} \/>\}/);
+  assert.match(ARTICLE, /\{viewMode !== "regulation" && refBox && !isLocked && <ArticleRefsButton articleId=\{article\.id\} \/>\}/);
   assert.doesNotMatch(ARTICLE, /SendToDrafterNotesButton/, "«أرسل إلى الصائغ» left the article header");
   // …and stays reachable in the draft drawer (lawyer and firm).
   const drawer = readFileSync(new URL("../../../components/laws/DraftDrawer.tsx", import.meta.url), "utf8");
