@@ -219,7 +219,7 @@ export interface StartRunDeps {
   promptGuard?: PromptGuardState;
   /**
    * Owner س٢١٤ (batch l16): is this account's licence verified? Asked only
-   * for a non-admin run of a professional tool (aiToolsConfig.toolNeedsLicence),
+   * for a non-admin run of a drafting tool (aiToolsConfig.toolNeedsLicence),
    * right after the role checks and before the mode, the input and any charge.
    * The route passes verifiedProviderRead + verifiedProviderDecision (the
    * contracts / invoices rule). A refusal is 403 provider_not_verified with the
@@ -614,7 +614,7 @@ export async function startRunWith(
     const message = CONSULTANT_PLEADING_TOOL_IDS.includes(spec.id) ? CONSULTANT_BLOCKED_MESSAGE : CONSULTANT_RESERVED_MESSAGE;
     return { status: 403, body: { error: message, code: "consultant_blocked" } };
   }
-  // Owner س٢١٤ (batch l16): a professional tool waits for the verified licence.
+  // Owner س٢١٤ (batch l16): a drafting tool (licenceRequired) waits for the verified licence.
   if (!isAdmin && toolNeedsLicence(spec) && deps.verifiedProvider) {
     let decision: VerifiedProviderDecision;
     try {

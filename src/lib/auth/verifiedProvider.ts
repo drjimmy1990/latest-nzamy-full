@@ -50,13 +50,13 @@ export function verifiedProviderDecision(facts: VerifiedProviderFacts | null): V
 /** Where a lawyer finishes his licence verification (photo + code). */
 export const LICENCE_VERIFY_HREF = "/register/provider/verify";
 
-/** The professional tools' refusal before the licence is verified. */
+/** The drafting tools' refusal before the licence is verified (tools.ts licenceRequired). */
 export const LICENCE_REQUIRED_TOOLS_AR =
-  "وثّق رخصتك أولاً: أدوات الصياغة والتحليل المهنية تعمل بعد أن يعتمد فريق المنصة توثيق ترخيصك.";
+  "وثّق رخصتك أولاً: أدوات الصياغة المهنية (الصائغ القانوني والعقود والرأي القانوني والمراسلات) تعمل بعد أن يعتمد فريق المنصة توثيق ترخيصك.";
 
 /** A firm account is verified by the team (no self-service step): the same rule, without a link. */
 export const LICENCE_REQUIRED_FIRM_AR =
-  "أدوات الصياغة والتحليل المهنية تعمل بعد أن يعتمد فريق المنصة توثيق مكتبك.";
+  "أدوات الصياغة المهنية (الصائغ القانوني والعقود والرأي القانوني والمراسلات) تعمل بعد أن يعتمد فريق المنصة توثيق مكتبك.";
 
 /**
  * The 403 body of a professional AI tool for an unverified account:

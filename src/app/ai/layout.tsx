@@ -91,7 +91,7 @@ function AIShell({ children: page }: { children: React.ReactNode }) {
   // keeps the page (the edge sends him to /login first; the page has its own
   // sign-in handling).
   const lawyerOnlyRefused = shell !== "loading" && user.isLoggedIn && isLawyerOnlyAiHref(pathname) && !canSeeLawyerTools(user.userType);
-  // Owner س٢١٤ (batch l16): a lawyer's or firm's professional tool page waits
+  // Owner س٢١٤ (batch l16): a lawyer's or firm's drafting-tool page waits
   // for the verified licence — «وثّق رخصتك» with its link, not the page's
   // «قريباً» (display only; the run route refuses either way).
   const licence = useLicenceGate(pathname, user.userType, shell !== "loading" && user.isLoggedIn && !lawyerOnlyRefused);

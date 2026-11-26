@@ -13,7 +13,7 @@ import {
 } from "@/lib/auth/verifiedProvider";
 
 /**
- * Owner س٢١٤ (25 Nov 2026, batch l16): a lawyer's or a firm's professional AI
+ * Owner س٢١٤ (25 Nov 2026, batch l16): a lawyer's or a firm's drafting AI
  * tools run only once the licence is verified (the run path refuses them with
  * 403 provider_not_verified, runCore.ts). Without this notice a tool page
  * reading tool-status would show «قريباً» — untrue: the tool is live, the

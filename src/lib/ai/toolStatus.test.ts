@@ -110,7 +110,8 @@ test("س٢١٤: an unverified lawyer is told why (reason licence + link); a firm
   const refuse = async () => ({ ok: false as const, status: 403 as const, error: "x", code: "provider_not_verified" });
   const pass = async () => ({ ok: true as const });
   const seen: string[] = [];
-  const run = async (userType: string, licence: typeof refuse | typeof pass, spec = OPEN) => {
+  const DRAFTING = AI_TOOLS["legal-drafter"]; // licenceRequired
+  const run = async (userType: string, licence: typeof refuse | typeof pass, spec = DRAFTING) => {
     const { rls, admin } = clients({ userType, mode: "live", tool: spec.id });
     return toolStatusWith(rls.client as never, admin.client as never, "u-1", spec, {
       licence: async (id, type) => (seen.push(`${id}:${type}`), licence()),
@@ -122,6 +123,8 @@ test("س٢١٤: an unverified lawyer is told why (reason licence + link); a firm
   seen.length = 0;
   assert.deepEqual(await run("admin", refuse), { usable: true });
   assert.equal(seen.length, 0, "an admin is never asked");
+  // An analysis tool (the case brief) is never gated.
+  assert.deepEqual(await run("lawyer", refuse, OPEN), { usable: true });
   // A tool open to individuals too (the library assistant) is never gated.
   const lib = AI_TOOLS["library-assistant"];
   const { rls, admin } = clients({ userType: "lawyer", mode: "live", tool: lib.id });
@@ -131,13 +134,14 @@ test("س٢١٤: an unverified lawyer is told why (reason licence + link); a firm
 });
 
 test("س٢١٤: a failed licence read (503) or a throw answers plain not-usable", async () => {
-  const { rls, admin } = clients({ userType: "lawyer", mode: "live" });
+  const DRAFTING = AI_TOOLS["legal-drafter"];
+  const { rls, admin } = clients({ userType: "lawyer", mode: "live", tool: DRAFTING.id });
   assert.deepEqual(
-    await toolStatusWith(rls.client as never, admin.client as never, "u-1", OPEN, { licence: async () => ({ ok: false, status: 503, error: "x" }) }),
+    await toolStatusWith(rls.client as never, admin.client as never, "u-1", DRAFTING, { licence: async () => ({ ok: false, status: 503, error: "x" }) }),
     { usable: false },
   );
   assert.deepEqual(
-    await toolStatusWith(rls.client as never, admin.client as never, "u-1", OPEN, { licence: async () => { throw new Error("down"); } }),
+    await toolStatusWith(rls.client as never, admin.client as never, "u-1", DRAFTING, { licence: async () => { throw new Error("down"); } }),
     { usable: false },
   );
 });

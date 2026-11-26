@@ -247,7 +247,7 @@ export async function POST(request: NextRequest) {
         defer: (task) => after(task),
         // Owner ١٣ / ٢٢: the anti-extraction block and per-minute counters (per process).
         promptGuard: assistantGuardState,
-        // Owner س٢١٤ (batch l16): a professional tool runs only for a verified
+        // Owner س٢١٤ (batch l16): a drafting tool runs only for a verified
         // licence — the contracts / invoices rule (verifiedProvider.ts), read
         // with the service client for the id requireApiUser verified.
         verifiedProvider: async (userId, type) => verifiedProviderDecision(await readVerifiedProviderFacts(admin, userId, type)),
