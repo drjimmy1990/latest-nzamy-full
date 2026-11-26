@@ -76,9 +76,12 @@ test("the edge: each page has a lawyer/firm rule and is PROTECTED, so the rule i
 test("the /ai layout draws the notice, not the tool, for a signed-in account outside lawyer/firm/admin", () => {
   const layout = src("app/ai/layout.tsx");
   assert.match(layout, /const lawyerOnlyRefused = shell !== "loading" && user\.isLoggedIn && isLawyerOnlyAiHref\(pathname\) && !canSeeLawyerTools\(user\.userType\);/);
-  assert.match(layout, /const tool = lawyerOnlyRefused \? <LawyerOnlyToolNotice userType=\{user\.userType\} \/> : page;/);
-  // N2 (batch l12): the admin's one-line notice rides above the page (it renders nothing for anyone else).
-  assert.match(layout, /const children = <><AdminToolsNotice \/>\{tool\}<\/>;/);
+  // Owner س٢١٤ (l16): the lawyer-only notice first; then, for a lawyer or firm, the licence notice.
+  assert.match(layout, /const tool = lawyerOnlyRefused \? \(\s*<LawyerOnlyToolNotice userType=\{user\.userType\} \/>\s*\) : licence\.state === "required" \? \(\s*<LicenceRequiredNotice /);
+  assert.match(layout, /\) : \(\s*page\s*\);/);
+  // N2 (batch l12): the admin's one-line notice rides above the page (it renders nothing for anyone else);
+  // l16: the licence banner a refused run raises rides there too.
+  assert.match(layout, /const children = <><AdminToolsNotice \/><LicenceRequiredBanner userType=\{user\.userType\} \/>\{tool\}<\/>;/);
   const notice = src("components/ai/LawyerOnlyToolNotice.tsx");
   assert.match(notice, /هذه الأداة للمحامين ومكاتب المحاماة المرخّصة/);
   assert.ok(notice.includes('href="/dashboard/client/consultation/new"'), "an individual or a company is offered the consultation request");
