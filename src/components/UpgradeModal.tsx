@@ -5,20 +5,30 @@ import { ArrowFatUp, CheckCircle, X } from "@phosphor-icons/react";
 import Link from "next/link";
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
+import { OFFICE_PLAN_LINK_AR, OFFICE_PLAN_PRICING_HREF, officePlanPhraseAr } from "@/lib/auth/officePlan";
 
 interface UpgradeModalProps {
   open: boolean;
   onClose: () => void;
   featureBlocked?: string;
+  /**
+   * Owner ق٢٦-١: a locked office row's own page. Reads were never gated, so
+   * the dialog offers it as a second link («فتح الصفحة»).
+   */
+  continueHref?: string;
+  /** Whose office plan opens the feature (a locked office row); absent = a plan tier lock. */
+  officeAudience?: "lawyer" | "firm";
 }
 
 /**
- * Access-request dialog used while automated subscriptions and payments are
- * disabled. It deliberately contains no plan identifiers, prices, coverage,
- * discounts, or entitlement promises: those require an approved server-side
- * catalogue and a real payment/activation workflow.
+ * The upgrade dialog behind every lock (the sidebar's 🔒 rows,
+ * SubscriptionGuard, PaywallGate). Owner ق٢٦-١ (package 2026-11-26): its
+ * button used to send the user to the contact form with a «feature access»
+ * query the form never read — a dead end. It now opens /pricing, where a signed-in
+ * account sees only its own family's plans (audienceForUserType.ts) and buys
+ * one online. It names no price and promises nothing a plan card does not.
  */
-export default function UpgradeModal({ open, onClose, featureBlocked }: UpgradeModalProps) {
+export default function UpgradeModal({ open, onClose, featureBlocked, continueHref, officeAudience }: UpgradeModalProps) {
   const { isDark } = useTheme();
   const user = useUser();
   const creditsUsed = Math.max(0, (user.creditsMax ?? 0) - (user.credits ?? 0));
@@ -65,10 +75,12 @@ export default function UpgradeModal({ open, onClose, featureBlocked }: UpgradeM
                   <ArrowFatUp size={20} weight="fill" className="text-[#C8A762]" />
                 </div>
                 <div>
-                  <h2 className={`text-[16px] font-bold ${isDark ? "text-white" : "text-slate-800"}`}>طلب مراجعة الوصول</h2>
-                  <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
-                    {featureBlocked ? `الميزة المطلوبة: ${featureBlocked}` : "راجع توفر الميزة قبل أي التزام"}
-                  </p>
+                  <h2 className={`text-[16px] font-bold ${isDark ? "text-white" : "text-slate-800"}`}>ميزة ضمن باقة مدفوعة</h2>
+                  {featureBlocked && (
+                    <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
+                      الميزة المطلوبة: {featureBlocked}
+                    </p>
+                  )}
                 </div>
               </div>
             </div>
@@ -96,18 +108,32 @@ export default function UpgradeModal({ open, onClose, featureBlocked }: UpgradeM
                 <div className="flex items-start gap-2.5">
                   <CheckCircle size={16} weight="fill" className="mt-0.5 shrink-0 text-emerald-500" />
                   <p className={`text-[12px] leading-6 ${isDark ? "text-zinc-300" : "text-slate-700"}`}>
-                    لا يوجد تفعيل مدفوع أو اشتراك آلي من هذه النافذة. أرسل طلبك، وسيُراجع توفر الميزة ونطاقها وتكلفتها قبل أي التزام.
+                    {officeAudience
+                      ? `هذه الميزة من أدوات إدارة المكتب، وهي متاحة في ${officePlanPhraseAr(officeAudience)}. اطّلع على الباقات المتاحة لحسابك واشترك من صفحتها.`
+                      : "هذه الميزة متاحة في باقة أعلى من باقتك الحالية. اطّلع على الباقات المتاحة لحسابك واختر ما يناسبك."}
                   </p>
                 </div>
               </div>
 
               <Link
-                href="/contact?type=feature-access"
+                href={OFFICE_PLAN_PRICING_HREF}
                 onClick={onClose}
                 className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-[#0B3D2E] text-white text-[13px] font-black hover:bg-[#0a3328] transition-colors shadow-lg"
               >
-                إرسال طلب مراجعة
+                {OFFICE_PLAN_LINK_AR}
               </Link>
+
+              {continueHref && (
+                <Link
+                  href={continueHref}
+                  onClick={onClose}
+                  className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border text-[12px] font-bold transition-colors ${
+                    isDark ? "border-white/10 text-zinc-300 hover:bg-white/[0.04]" : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                  }`}
+                >
+                  فتح الصفحة
+                </Link>
+              )}
             </div>
           </motion.div>
         </>
