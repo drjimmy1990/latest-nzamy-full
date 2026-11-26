@@ -23,8 +23,8 @@ export type LoginInput =
 export const LOGIN_ID_LABEL_AR = "البريد الإلكتروني أو رقم الجوال";
 export const LOGIN_ID_LABEL_EN = "Email or mobile number";
 export const LOGIN_ID_PLACEHOLDER = "example@email.com · 05xxxxxxxx";
-export const LOGIN_ID_HINT_AR = "يُقبل رقم الجوال السعودي المؤكَّد في حسابك فقط.";
-export const LOGIN_ID_HINT_EN = "Only the Saudi mobile confirmed on your account is accepted.";
+export const LOGIN_ID_HINT_AR = "إن استعملت رقم الجوال، فيُقبل الرقم السعودي المؤكَّد في حسابك فقط.";
+export const LOGIN_ID_HINT_EN = "If you use your mobile, only the Saudi number confirmed on your account is accepted.";
 
 const MESSAGES = {
   empty: {
