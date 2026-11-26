@@ -3,8 +3,7 @@ import { dbErrorJson } from "@/lib/api/dbError";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
 import { requireStaff } from "@/lib/access-control";
-import { aalFromAccessToken, hasVerifiedFactor } from "@/lib/auth/staffMfa";
-import { currentAccessToken } from "@/lib/auth/staffMfaServer";
+import { readLiveGatewayActor } from "@/lib/payments/liveGatewayActorServer";
 import { logAdminAction } from "@/lib/auth/adminAudit";
 import {
   founderCampaignSettingIssue,
@@ -291,30 +290,6 @@ const SETTINGS_VALUE_VALIDATORS: Record<string, SettingValidator> = {
   [SIGNUP_PHONE_OTP_KEY]: signupPhoneOtpIssue,
 };
 
-/**
- * l16 (A-22): the actor of a "live" write — super admin, a verified factor
- * on the GoTrue user, and this request's session at aal2. Anything that
- * cannot be read counts as false, so live stays refused.
- */
-async function readLiveActor(
-  role: string,
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  user: Parameters<typeof hasVerifiedFactor>[0],
-): Promise<LiveGatewayActor> {
-  const actor: LiveGatewayActor = { superAdmin: role === "super_admin", verifiedFactor: false, aal2: false };
-  if (!user) return actor;
-  try {
-    return {
-      superAdmin: actor.superAdmin,
-      verifiedFactor: hasVerifiedFactor(user),
-      aal2: aalFromAccessToken(await currentAccessToken(supabase)) === "aal2",
-    };
-  } catch (err) {
-    console.error("[admin/settings] reading the live actor failed; live stays refused", err instanceof Error ? err.message : "unknown");
-    return actor;
-  }
-}
-
 /** A read error or a missing row counts as incomplete, so live stays refused. */
 async function readBillingCompanyComplete(): Promise<boolean> {
   try {
@@ -494,12 +469,8 @@ export async function PATCH(request: NextRequest) {
   if (validate) {
     const invalid = await validate(toStore, {
       billingCompanyComplete: readBillingCompanyComplete,
-      // the session read stays inside the handler (accountFreezeWrites.test.ts)
-      liveActor: async () => {
-        const supabase = await createClient();
-        const { data: { user } } = await supabase.auth.getUser();
-        return readLiveActor(gate.role, supabase, user);
-      },
+      // l16 (A-22): role + verified factor + aal2 (liveGatewayActorServer.ts)
+      liveActor: () => readLiveGatewayActor(gate.role),
     });
     if (invalid) {
       return NextResponse.json({ error: invalid }, { status: 400 });

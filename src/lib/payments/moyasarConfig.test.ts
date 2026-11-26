@@ -321,8 +321,9 @@ test("l16 A-22 source contract: the settings route passes the live actor (role +
   const { join } = await import("node:path");
   const settings = readFileSync(join(import.meta.dirname, "../../app/api/v1/admin/settings/route.ts"), "utf8");
   assert.match(settings, /liveActor: wantsLive \? await ctx\.liveActor\(\) : undefined/);
-  assert.match(settings, /return readLiveActor\(gate\.role, supabase, user\);/);
-  assert.match(settings, /superAdmin: role === "super_admin"/);
-  assert.match(settings, /verifiedFactor: hasVerifiedFactor\(user\)/);
-  assert.match(settings, /aal2: aalFromAccessToken\(await currentAccessToken\(supabase\)\) === "aal2"/);
+  assert.match(settings, /liveActor: \(\) => readLiveGatewayActor\(gate\.role\)/);
+  const actor = readFileSync(join(import.meta.dirname, "liveGatewayActorServer.ts"), "utf8");
+  assert.match(actor, /superAdmin: role === "super_admin"/);
+  assert.match(actor, /verifiedFactor: hasVerifiedFactor\(user\)/);
+  assert.match(actor, /aal2: aalFromAccessToken\(await currentAccessToken\(supabase\)\) === "aal2"/);
 });
