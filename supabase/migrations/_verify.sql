@@ -8630,3 +8630,50 @@ select 'l15 phone otp: the switch row exists, and while on it carries the first 
        and coalesce((select count(*) = 1 from pg_catalog.pg_trigger
                        where tgrelid = 'public.platform_settings'::regclass and tgname = 'trg_signup_phone_otp_setting' and not tgisinternal), false) as ok;
 -- <<< verify:l15_phone_otp
+-- >>> verify:l16_priority
+-- 2026-12-06 — l16 owner س٢٣: the Nezamy priority window (nzamy_priority_minutes, default 30,
+-- counted in nzamy_working_hours) before a client's free request joins the lawyers' market;
+-- the client's «افتحه للجميع فوراً». Run 20261206_40 any time vs the l16 deploy (after 20261202_70).
+-- Docker: supabase/tests/rls/l16_priority.test.sql
+select 'l16 priority: settings rows (minutes 0/15/30/60, working hours) + marketplace_release_at column (run 20261206_40)' as check,
+       coalesce((select (value #>> '{}') in ('0', '15', '30', '60') from public.platform_settings where key = 'nzamy_priority_minutes'), false)
+       and coalesce((select pg_catalog.jsonb_typeof(value) = 'object' from public.platform_settings where key = 'nzamy_working_hours'), false)
+       and exists (select 1 from pg_catalog.pg_attribute
+                    where attrelid = 'public.service_requests'::regclass and attname = 'marketplace_release_at' and not attisdropped) as ok;
+select 'l16 priority: the guard stamps and keeps the release moment; the lawyers'' list and listable hold the window; the admin view shows it (run 20261206_40)' as check,
+       case when to_regprocedure('public.guard_service_request_marketplace_publish()') is null
+              or to_regprocedure('public.marketplace_open_requests(integer, integer)') is null
+              or to_regprocedure('public.marketplace_request_listable(text)') is null
+              or to_regprocedure('public.marketplace_request_in_market(text, boolean)') is null
+              or to_regprocedure('public.marketplace_open_requests_admin(integer, integer)') is null then false
+       else pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.guard_service_request_marketplace_publish()')),
+                              'new.marketplace_release_at := old.marketplace_release_at') > 0
+            and pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.guard_service_request_marketplace_publish()')),
+                                  'nzamy_market_release_at') > 0
+            and pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.marketplace_open_requests(integer, integer)')),
+                                  'marketplace_release_at') > 0
+            and pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.marketplace_request_listable(text)')),
+                                  'marketplace_request_in_market(p_id, false)') > 0
+            and coalesce(pg_catalog.pg_get_function_result(to_regprocedure('public.marketplace_open_requests_admin(integer, integer)')) like '%release_at%', false)
+       end as ok;
+select 'l16 priority: the release moment reads both settings and counts working minutes only (the arithmetic is checked by the file''s own verify) (run 20261206_40)' as check,
+       coalesce((select p.prosecdef
+                        and pg_catalog.strpos(p.prosrc, 'nzamy_priority_minutes') > 0
+                        and pg_catalog.strpos(p.prosrc, 'nzamy_working_hours') > 0
+                        and pg_catalog.strpos(p.prosrc, 'nzamy_add_working_minutes') > 0
+                   from pg_catalog.pg_proc p where p.oid = to_regprocedure('public.nzamy_market_release_at(timestamptz, boolean)')), false)
+       and coalesce((select not p.prosecdef and pg_catalog.strpos(p.prosrc, 'extract(dow from v_day)') > 0
+                   from pg_catalog.pg_proc p where p.oid = to_regprocedure('public.nzamy_add_working_minutes(timestamptz, integer, jsonb)')), false) as ok;
+select 'l16 priority: open-now and the stamp to authenticated; the predicates and the admin view service_role only (run 20261206_40)' as check,
+       case when to_regprocedure('public.service_request_market_open_now(text)') is null
+              or to_regprocedure('public.nzamy_market_release_at(timestamptz, boolean)') is null
+              or to_regprocedure('public.marketplace_request_in_market(text, boolean)') is null then false
+       else has_function_privilege('authenticated', 'public.service_request_market_open_now(text)', 'EXECUTE')
+            and not has_function_privilege('anon', 'public.service_request_market_open_now(text)', 'EXECUTE')
+            and has_function_privilege('authenticated', 'public.nzamy_market_release_at(timestamptz, boolean)', 'EXECUTE')
+            and not has_function_privilege('anon', 'public.nzamy_market_release_at(timestamptz, boolean)', 'EXECUTE')
+            and not has_function_privilege('authenticated', 'public.marketplace_request_in_market(text, boolean)', 'EXECUTE')
+            and not has_function_privilege('authenticated', 'public.marketplace_request_listable(text)', 'EXECUTE')
+            and not has_function_privilege('authenticated', 'public.marketplace_open_requests_admin(integer, integer)', 'EXECUTE')
+       end as ok;
+-- <<< verify:l16_priority

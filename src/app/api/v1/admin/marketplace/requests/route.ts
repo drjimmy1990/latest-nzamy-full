@@ -30,6 +30,8 @@ export async function GET() {
         title: typeof r.title === "string" ? r.title : "",
         published: r.published === true,
         pendingAsks: typeof r.pending_asks === "number" ? r.pending_asks : 0,
+        // l16 س٢٣ (20261206_40): still in the Nezamy priority window until then; absent before that file runs.
+        releaseAt: typeof r.release_at === "string" ? r.release_at : null,
       })),
     });
   } catch (err) {
