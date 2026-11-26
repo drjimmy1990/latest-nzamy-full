@@ -53,7 +53,11 @@
 --             listable rule and is not touched).
 --        service_request_market_open_now(text)                 the requester's
 --             «افتحه للجميع فوراً» on his own pending, unassigned 'ai_workspace'
---             request (authenticated): opened | already_open | not_open | not_found.
+--             request that the market's own rule takes (authenticated):
+--             opened | already_open | not_open | not_found.
+--        service_request_market_hold(text)                     the requester's read
+--             (authenticated): {held, release_at} — held only when the market's
+--             own rule takes the request and the window has not passed.
 --
 --   NOT BUILT (said in the batch report): public holidays; the owner's «أو عدم
 --   بدء التنفيذ» (re-broadcast a request the team took but did not start);
@@ -65,10 +69,11 @@
 --   Expect: NOTICE  l16_priority verify: OK …   and a final row with `t`.
 --   Idempotent: safe to run twice.
 --
--- RUN ORDER: any time vs the l16 deploy.
+-- RUN ORDER: AFTER the l16 deploy (recommended; either order is safe).
 --   * SQL first, old code: new client requests are held 30 working minutes
---     from the lawyers (the admin's market page lists them as before, without
---     the time); the client has no «افتحه للجميع فوراً» yet.
+--     from the lawyers, but the old admin page lists them under «الطلبات
+--     المعروضة على المحامين الآن» without the time, and the client has no
+--     «افتحه للجميع فوراً» yet — hence after the deploy.
 --   * Code first, no SQL: the admin's priority fields say this file has not
 --     run, the client's choice is stored in metadata and ignored, the open-now
 --     button answers that it is not available yet; nothing is held.
@@ -78,6 +83,7 @@
 --   drops the admin view's release_at column — re-run this file after them.
 --
 -- ROLLBACK (one transaction):
+--   drop function if exists public.service_request_market_hold(text);
 --   drop function if exists public.service_request_market_open_now(text);
 --   re-run 20261202_70 sections 2, 4a, 4b, 4h and 4i (guard, listable, open list,
 --     admin view — drop function public.marketplace_open_requests_admin(integer, integer) first);
@@ -497,8 +503,10 @@ begin
   if not found then
     return pg_catalog.jsonb_build_object('result', 'not_found');
   end if;
+  -- the market's own rule (switch, paid, hidden, demo / test, client type …), held rows included
   if v_row.receiver <> 'ai_workspace' or v_row.assigned_to is not null
-     or v_row.status not in ('pending', 'pending_assignment') then
+     or v_row.status not in ('pending', 'pending_assignment')
+     or not public.marketplace_request_in_market(p_id, true) then
     return pg_catalog.jsonb_build_object('result', 'not_open');
   end if;
   if v_row.marketplace_release_at is null or v_row.marketplace_release_at <= pg_catalog.now() then
@@ -513,7 +521,27 @@ end
 $fn$;
 
 comment on function public.service_request_market_open_now(text) is
-  '20261206_40 (l16 س٢٣): the requester opens his own pending, unassigned ai_workspace request to every verified lawyer now (ends the Nezamy priority window). opened | already_open | not_open | not_found.';
+  '20261206_40 (l16 س٢٣): the requester opens his own pending, unassigned ai_workspace request to every verified lawyer now (ends the Nezamy priority window). not_open unless the market''s own rule (marketplace_request_in_market) takes the request. opened | already_open | not_open | not_found.';
+
+-- 3h'. the requester's read: is my request held, until when?
+create or replace function public.service_request_market_hold(p_id text)
+returns jsonb
+language sql
+stable
+security definer
+set search_path = ''
+as $fn$
+  select pg_catalog.jsonb_build_object(
+           'held', coalesce(sr.marketplace_release_at > pg_catalog.now(), false)
+                   and public.marketplace_request_in_market(sr.id, true),
+           'release_at', sr.marketplace_release_at)
+    from public.service_requests sr
+   where sr.id = p_id
+     and sr.requester_user_id = auth.uid();
+$fn$;
+
+comment on function public.service_request_market_hold(text) is
+  '20261206_40 (l16 س٢٣): for the requester only — {held, release_at}: held when the request is in the market by its own rule (marketplace_request_in_market) and its priority window has not passed. NULL for anyone else.';
 
 -- 3i. privileges
 do $gr$
@@ -528,7 +556,8 @@ begin
     'public.marketplace_request_listable(text)',
     'public.marketplace_open_requests(integer, integer)',
     'public.marketplace_open_requests_admin(integer, integer)',
-    'public.service_request_market_open_now(text)'
+    'public.service_request_market_open_now(text)',
+    'public.service_request_market_hold(text)'
   ] loop
     execute pg_catalog.format('revoke all on function %s from public', f);
     foreach r in array array['anon', 'authenticated', 'service_role'] loop
@@ -544,6 +573,7 @@ begin
     -- the lawyers' list (as 20261202_70), the client's open-now, and the stamp trg_02 calls as the session
     execute 'grant execute on function public.marketplace_open_requests(integer, integer) to authenticated';
     execute 'grant execute on function public.service_request_market_open_now(text) to authenticated';
+    execute 'grant execute on function public.service_request_market_hold(text) to authenticated';
     execute 'grant execute on function public.nzamy_market_release_at(timestamptz, boolean) to authenticated';
   end if;
 end
@@ -586,6 +616,7 @@ begin
   end if;
   if exists (select 1 from pg_catalog.pg_roles where rolname = 'anon') and (
        has_function_privilege('anon', 'public.service_request_market_open_now(text)', 'EXECUTE')
+       or has_function_privilege('anon', 'public.service_request_market_hold(text)', 'EXECUTE')
        or has_function_privilege('anon', 'public.nzamy_market_release_at(timestamptz, boolean)', 'EXECUTE')
        or has_function_privilege('anon', 'public.marketplace_open_requests(integer, integer)', 'EXECUTE')) then
     missing := missing || ' anon can execute a market function;';
@@ -593,6 +624,7 @@ begin
   if exists (select 1 from pg_catalog.pg_roles where rolname = 'authenticated') and (
        not has_function_privilege('authenticated', 'public.service_request_market_open_now(text)', 'EXECUTE')
        or not has_function_privilege('authenticated', 'public.nzamy_market_release_at(timestamptz, boolean)', 'EXECUTE')
+       or not has_function_privilege('authenticated', 'public.service_request_market_hold(text)', 'EXECUTE')
        or has_function_privilege('authenticated', 'public.marketplace_request_in_market(text, boolean)', 'EXECUTE')
        or has_function_privilege('authenticated', 'public.marketplace_request_listable(text)', 'EXECUTE')
        or has_function_privilege('authenticated', 'public.marketplace_open_requests_admin(integer, integer)', 'EXECUTE')) then

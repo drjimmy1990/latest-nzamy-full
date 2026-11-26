@@ -93,5 +93,6 @@ test("the routes: admin settings are staff-gated and audited; open-now is the re
   assert.match(admin, /logAdminAction\(/);
   const open = read("src/app/api/v1/service-requests/[id]/open-market/route.ts");
   assert.match(open, /supabase\.rpc\("service_request_market_open_now"/);
+  assert.match(open, /supabase\.rpc\("service_request_market_hold"/, "held is the database's verdict (the market's own rule)");
   assert.doesNotMatch(open, /createServiceClient/, "the client's own session, never the service role");
 });

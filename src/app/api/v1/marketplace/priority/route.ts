@@ -7,13 +7,15 @@ import {
   parsePriorityMinutes,
   parseWorkingHours,
 } from "@/lib/marketplace/marketPriority";
+import { MARKET_SETTING_KEY, parseMarketSettings } from "@/lib/marketplace/marketSettings";
 
 /**
  * GET /api/v1/marketplace/priority — what the client's request form discloses
  * about «نافذة أولوية نظامي» (owner س٢٣, batch l16): { minutes, workingHours,
  * installed }. Signed-in callers only; only these two settings are read (with
  * the service client, keyed — nothing else of platform_settings).
- * Before 20261206_40 runs: installed false and minutes 0, so the form
+ * Before 20261206_40 runs, or while the market is closed (no request goes
+ * to the lawyers at all): installed false and minutes 0, so the form
  * discloses nothing that is not applied.
  */
 export const dynamic = "force-dynamic";
@@ -26,7 +28,7 @@ export async function GET() {
     const auth = await requireApiUser(supabase, { error: "سجّل الدخول أولاً" });
     if (auth instanceof NextResponse) return auth;
     const admin = await createServiceClient();
-    const { data, error } = await admin.from("platform_settings").select("key, value").in("key", [PRIORITY_MINUTES_KEY, WORKING_HOURS_KEY]);
+    const { data, error } = await admin.from("platform_settings").select("key, value").in("key", [PRIORITY_MINUTES_KEY, WORKING_HOURS_KEY, MARKET_SETTING_KEY]);
     if (error) {
       console.error("[marketplace/priority GET] read failed:", error.code);
       return NextResponse.json({ minutes: 0, workingHours: parseWorkingHours(null), installed: false }, { headers: NO_STORE });
@@ -34,7 +36,8 @@ export async function GET() {
     const rows = (data ?? []) as Array<{ key?: string; value?: unknown }>;
     const minutes = rows.find((r) => r.key === PRIORITY_MINUTES_KEY);
     const hours = rows.find((r) => r.key === WORKING_HOURS_KEY);
-    const installed = Boolean(minutes && hours);
+    const market = rows.find((r) => r.key === MARKET_SETTING_KEY);
+    const installed = Boolean(minutes && hours) && parseMarketSettings(market?.value, Boolean(market)).open;
     return NextResponse.json(
       {
         minutes: installed ? parsePriorityMinutes(minutes?.value) : 0,

@@ -8664,12 +8664,14 @@ select 'l16 priority: the release moment reads both settings and counts working 
                    from pg_catalog.pg_proc p where p.oid = to_regprocedure('public.nzamy_market_release_at(timestamptz, boolean)')), false)
        and coalesce((select not p.prosecdef and pg_catalog.strpos(p.prosrc, 'extract(dow from v_day)') > 0
                    from pg_catalog.pg_proc p where p.oid = to_regprocedure('public.nzamy_add_working_minutes(timestamptz, integer, jsonb)')), false) as ok;
-select 'l16 priority: open-now and the stamp to authenticated; the predicates and the admin view service_role only (run 20261206_40)' as check,
+select 'l16 priority: open-now, the hold read and the stamp to authenticated; the predicates and the admin view service_role only (run 20261206_40)' as check,
        case when to_regprocedure('public.service_request_market_open_now(text)') is null
               or to_regprocedure('public.nzamy_market_release_at(timestamptz, boolean)') is null
               or to_regprocedure('public.marketplace_request_in_market(text, boolean)') is null then false
        else has_function_privilege('authenticated', 'public.service_request_market_open_now(text)', 'EXECUTE')
             and not has_function_privilege('anon', 'public.service_request_market_open_now(text)', 'EXECUTE')
+            and coalesce(has_function_privilege('authenticated', 'public.service_request_market_hold(text)', 'EXECUTE')
+                         and not has_function_privilege('anon', 'public.service_request_market_hold(text)', 'EXECUTE'), false)
             and has_function_privilege('authenticated', 'public.nzamy_market_release_at(timestamptz, boolean)', 'EXECUTE')
             and not has_function_privilege('anon', 'public.nzamy_market_release_at(timestamptz, boolean)', 'EXECUTE')
             and not has_function_privilege('authenticated', 'public.marketplace_request_in_market(text, boolean)', 'EXECUTE')

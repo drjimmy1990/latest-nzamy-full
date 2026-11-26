@@ -268,6 +268,45 @@ begin
 end $$;
 reset role;
 
+-- T8b the client is never told «held» / «opened» for a request the market does not take:
+--     paid, hidden, or while the market is closed (the market's own rule decides)
+set role app_user;
+select set_config('test.uid', '11111111-0000-0000-0000-00000000000a', false);
+insert into public.service_requests (id, requester_user_id, type, title, receiver, status, payment)
+values ('SR-PAIDH', '11111111-0000-0000-0000-00000000000a', 'consultation', 'مدفوع', 'ai_workspace', 'pending_assignment', '{"status":"pending","amount":200}'),
+       ('SR-HIDH', '11111111-0000-0000-0000-00000000000a', 'consultation', 'مخفي', 'ai_workspace', 'pending_assignment', '{"status":"not_required"}'),
+       ('SR-OKH', '11111111-0000-0000-0000-00000000000a', 'consultation', 'محجوز ٢', 'ai_workspace', 'pending_assignment', '{"status":"not_required"}');
+reset role;
+set role service_role;
+update public.service_requests set marketplace_hidden_at = now() where id = 'SR-HIDH';
+reset role;
+set role app_user;
+do $$
+begin
+  if (public.service_request_market_hold('SR-OKH') ->> 'held') <> 'true' then raise exception 'T8b FAIL: a held market request reads not held'; end if;
+  if (public.service_request_market_hold('SR-PAIDH') ->> 'held') <> 'false' then raise exception 'T8b FAIL: a paid request reads held'; end if;
+  if (public.service_request_market_hold('SR-HIDH') ->> 'held') <> 'false' then raise exception 'T8b FAIL: a hidden request reads held'; end if;
+  if public.service_request_market_open_now('SR-PAIDH') ->> 'result' <> 'not_open' then raise exception 'T8b FAIL: open-now on a paid request'; end if;
+  if public.service_request_market_open_now('SR-HIDH') ->> 'result' <> 'not_open' then raise exception 'T8b FAIL: open-now on a hidden request'; end if;
+end $$;
+select set_config('test.uid', '22222222-0000-0000-0000-00000000000b', false);
+do $$
+begin
+  if public.service_request_market_hold('SR-OKH') is not null then raise exception 'T8b FAIL: another account read the hold'; end if;
+end $$;
+reset role;
+update public.platform_settings set value = value || '{"open": false}'::jsonb where key = 'marketplace_market';
+set role app_user;
+select set_config('test.uid', '11111111-0000-0000-0000-00000000000a', false);
+do $$
+begin
+  if (public.service_request_market_hold('SR-OKH') ->> 'held') <> 'false' then raise exception 'T8b FAIL: held while the market is closed'; end if;
+  if public.service_request_market_open_now('SR-OKH') ->> 'result' <> 'not_open' then raise exception 'T8b FAIL: open-now while the market is closed'; end if;
+  raise notice 'T8b PASS: paid / hidden / closed market: never held, never opened; the hold is the requester''s only';
+end $$;
+reset role;
+update public.platform_settings set value = value || '{"open": true}'::jsonb where key = 'marketplace_market';
+
 -- T9 privileges
 do $$
 begin
@@ -284,6 +323,8 @@ begin
     raise exception 'T9 FAIL: authenticated can execute a server function';
   end if;
   if not has_function_privilege('authenticated', 'public.service_request_market_open_now(text)', 'EXECUTE')
+     or not has_function_privilege('authenticated', 'public.service_request_market_hold(text)', 'EXECUTE')
+     or has_function_privilege('anon', 'public.service_request_market_hold(text)', 'EXECUTE')
      or not has_function_privilege('authenticated', 'public.nzamy_market_release_at(timestamptz, boolean)', 'EXECUTE')
      or not has_function_privilege('authenticated', 'public.marketplace_open_requests(integer, integer)', 'EXECUTE')
      or not has_function_privilege('authenticated', 'public.marketplace_request_accept(text)', 'EXECUTE') then
