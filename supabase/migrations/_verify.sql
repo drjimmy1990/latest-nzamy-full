@@ -7171,7 +7171,10 @@ select 'S9: free solo lawyer capped at 5 active cases / 10 clients (run 20261126
        and (to_regclass('public.lawyer_clients') is null
             or exists (select 1 from pg_catalog.pg_trigger
                         where tgrelid = 'public.lawyer_clients'::regclass and tgname = 'trg_solo_lawyer_client_cap' and not tgisinternal))
-       and (select l.cases = 5 and l.clients = 10 from public.solo_lawyer_limits() l)
+       -- l16 (20261206_70, owner س٢١٢): after it the free allowance is the l16_roles block's to check (0/0 by default)
+       and (select case when to_regprocedure('public.office_features_locked(uuid)') is null
+                        then l.cases = 5 and l.clients = 10 else l.cases >= 0 and l.clients >= 0 end
+              from public.solo_lawyer_limits() l)
        and not has_function_privilege('authenticated', 'public.solo_lawyer_is_capped(uuid)', 'EXECUTE')
        as ok;
 select 'Firm seat cap: members + invitation links (basic 5 / enterprise 15 / max_seats override) (run 20261126_50)' as check,
@@ -8630,3 +8633,47 @@ select 'l15 phone otp: the switch row exists, and while on it carries the first 
        and coalesce((select count(*) = 1 from pg_catalog.pg_trigger
                        where tgrelid = 'public.platform_settings'::regclass and tgname = 'trg_signup_phone_otp_setting' and not tgisinternal), false) as ok;
 -- <<< verify:l15_phone_otp
+-- >>> verify:l16_roles
+-- Batch l16 «roles» (owner س٢١٢ «إدارة المكتب» paid, D-53 firm team managers): run 20261206_70 BEFORE the deploy, as supabase_admin.
+select 'l16 roles: office gate — office_features_locked / office_plan_entitled / solo_lawyer_is_capped server-only, my_office_features_locked for sessions (run 20261206_70)' as check,
+       coalesce((select count(*) = 3
+                        and bool_and(p.prosecdef
+                                     and p.proconfig @> array['search_path=""']
+                                     and not has_function_privilege('anon', p.oid, 'EXECUTE')
+                                     and not has_function_privilege('authenticated', p.oid, 'EXECUTE'))
+                   from pg_catalog.pg_proc p
+                  where p.oid in (to_regprocedure('public.office_features_locked(uuid)'),
+                                  to_regprocedure('public.office_plan_entitled(uuid)'),
+                                  to_regprocedure('public.solo_lawyer_is_capped(uuid)'))), false)
+       and coalesce(pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.solo_lawyer_is_capped(uuid)')), 'office_features_locked') > 0, false)
+       and coalesce(has_function_privilege('authenticated', 'public.my_office_features_locked()', 'EXECUTE')
+                    and not has_function_privilege('anon', 'public.my_office_features_locked()', 'EXECUTE'), false) as ok;
+select 'l16 roles: cases & clients — free allowance set (0/0 by default), only self-filed cases count (market intake free), both caps wired (run 20261206_70)' as check,
+       coalesce((select l.cases >= 0 and l.clients >= 0 from public.solo_lawyer_limits() l), false)
+       and coalesce(public.solo_lawyer_case_counts('{"assigned_to":"00000000-0000-0000-0000-000000000001","requester_user_id":"00000000-0000-0000-0000-000000000001","status":"assigned","receiver":"lawyer"}'::jsonb)
+                    and not public.solo_lawyer_case_counts('{"assigned_to":"00000000-0000-0000-0000-000000000001","requester_user_id":"00000000-0000-0000-0000-000000000002","status":"assigned","receiver":"lawyer"}'::jsonb), false)
+       and coalesce((select count(*) = 1 from pg_catalog.pg_trigger
+                       where tgrelid = 'public.service_requests'::regclass and tgname = 'trg_solo_lawyer_case_cap' and not tgisinternal
+                         and pg_catalog.pg_get_triggerdef(oid) like '%requester_user_id%'), false)
+       and (to_regclass('public.lawyer_clients') is null
+            or coalesce((select count(*) = 1 from pg_catalog.pg_trigger
+                           where tgrelid = 'public.lawyer_clients'::regclass and tgname = 'trg_solo_lawyer_client_cap' and not tgisinternal), false)) as ok;
+select 'l16 roles: 1 GB free storage — setting row, quota trigger on storage.objects, my_storage_quota for sessions only (run 20261206_70 as supabase_admin)' as check,
+       coalesce((select pg_catalog.jsonb_typeof(s.value -> 'gb') = 'number' from public.platform_settings s where s.key = 'free_storage_quota'), false)
+       and (to_regclass('storage.objects') is null
+            or (coalesce((select count(*) = 1 from pg_catalog.pg_trigger
+                            where tgrelid = 'storage.objects'::regclass and tgname = 'trg_storage_quota_guard' and not tgisinternal), false)
+                and coalesce(has_function_privilege('authenticated', 'public.my_storage_quota()', 'EXECUTE')
+                             and not has_function_privilege('anon', 'public.my_storage_quota()', 'EXECUTE')
+                             and not has_function_privilege('authenticated', 'public.storage_used_bytes(uuid)', 'EXECUTE'), false))) as ok;
+select 'l16 roles: firm team managers (managing_partner / hr_manager) — 2 policies + guard trigger on firm_members; review switch admits the managing partner (run 20261206_70)' as check,
+       coalesce((select count(*) = 2 from pg_catalog.pg_policy
+                  where polrelid = 'public.firm_members'::regclass
+                    and polname in ('firm_members: team manager can insert', 'firm_members: team manager can update')), false)
+       and coalesce((select count(*) = 1 from pg_catalog.pg_trigger
+                       where tgrelid = 'public.firm_members'::regclass and tgname = 'trg_firm_members_manager_guard' and not tgisinternal), false)
+       and coalesce(not has_function_privilege('anon', 'public.firm_team_manager(uuid)', 'EXECUTE')
+                    and not has_function_privilege('authenticated', 'public.firm_members_manager_guard()', 'EXECUTE'), false)
+       and (to_regprocedure('public.set_firm_public_reviews(boolean)') is null
+            or coalesce(pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.set_firm_public_reviews(boolean)')), 'managing_partner') > 0, false)) as ok;
+-- <<< verify:l16_roles
