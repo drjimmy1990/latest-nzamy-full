@@ -70,6 +70,16 @@ export const PRIVATE_DISALLOW = [
   "/ai/share-history",
   // Client case tracking links (N3.6): private, token-keyed, noindex.
   "/track/",
+  // Owner package 25-Nov (annex 09 GSC-05): pages that are no public content —
+  // /review/ and /cases/ answer 404 (D-05 / D-30), the government and NGO
+  // tools are for those accounts, and the two litigation studios are tools,
+  // not pages to list. (His exception to the noindex-must-be-readable rule.)
+  "/review/",
+  "/cases/",
+  "/ai/gov/",
+  "/ai/ngo/",
+  "/ai/debt-collection",
+  "/ai/memo-studio",
   "/_next/",
   // NOT /checkout, /login, /register, /settings (his draft lists /checkout):
   // they carry noindex (privatePages.ts), which a crawler must be allowed to
