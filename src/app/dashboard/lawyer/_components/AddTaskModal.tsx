@@ -7,6 +7,7 @@ import { CasePicker } from "@/components/ui/CasePicker";
 import DualDatePicker from "@/components/ui/DualDatePicker";
 import { VoiceInput } from "@/components/ui/VoiceInput";
 import { createLawyerTask, getTaskAssigneeOptions, type TaskAssigneeOption } from "@/lib/services/lawyerTasksService";
+import LimitRefusalLink from "@/components/limits/LimitRefusalLink";
 import { TASK_ASSIGNEE_LABEL_AR, assigneeOptionLabelAr } from "@/lib/services/item59Labels";
 
 interface Props {
@@ -119,7 +120,8 @@ export default function AddTaskModal({ onClose, isDark }: Props) {
             {error && (
               <div className="flex items-start gap-2 rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2.5 text-[12px] font-semibold text-red-500">
                 <Warning size={14} weight="fill" className="mt-0.5 flex-shrink-0" />
-                <span>{error}</span>
+                {/* س٢١٢: «المهام متاحة في باقة إدارة المكتب» carries its pricing link */}
+                <span>{error}{" "}<LimitRefusalLink message={error} /></span>
               </div>
             )}
 

@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { assertRole } from "@/lib/auth/assertRole";
+import { assertCaseWorker } from "@/lib/auth/assertCaseWorker";
 import { degreeFromDb } from "@/lib/services/caseStageVocabulary";
 import { parseCaseIdsParam, pickLatestStagePerCase } from "@/lib/caseStageBuckets";
 
@@ -45,7 +45,7 @@ interface BulkStageRow {
 
 export async function GET(request: NextRequest) {
   try {
-    const auth = await assertRole(["lawyer", "firm"]);
+    const auth = await assertCaseWorker();
     if (!auth.ok) return auth.response;
     const { supabase } = auth;
 

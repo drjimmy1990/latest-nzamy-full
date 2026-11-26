@@ -650,11 +650,13 @@ export async function startRunWith(
   // the charge and the model; the drafter is offered to whoever may run it.
   // Owner ٢٢: a contract likewise, with «محترف العقود» for whoever may run it.
   if (spec.draftingGuard) {
-    const kind = draftingRequestKind(String(checked.input[spec.draftingGuard.field] ?? ""));
+    const draftingText = String(checked.input[spec.draftingGuard.field] ?? "");
+    const kind = draftingRequestKind(draftingText);
     if (kind === "contract") {
       const pro = getAiTool("contracts-pro");
-      // Owner ٢٦: an individual / business gets the lawyer-drafting link instead.
-      return { status: 422, body: contractDraftingRefusal(pro !== null && toolRoleRefusal(pro, actor) === null, actor.userType) };
+      // Owner ٢٦ / س٢٦: an individual / business is offered the simplified
+      // drafter first (a high-risk contract: a lawyer); others the lawyer link.
+      return { status: 422, body: contractDraftingRefusal(pro !== null && toolRoleRefusal(pro, actor) === null, actor.userType, draftingText) };
     }
     if (kind === "pleading") {
       const drafter = getAiTool("legal-drafter");

@@ -1,4 +1,5 @@
 import { NextResponse, NextRequest } from "next/server";
+import { officePlanRefusal } from "@/lib/auth/assertOfficePlan";
 import { createServiceClient } from "@/lib/supabase/server";
 import { assertRole } from "@/lib/auth/assertRole";
 import { requireVerifiedProvider } from "@/lib/auth/verifiedProviderServer";
@@ -401,6 +402,9 @@ export async function POST(request: NextRequest) {
     // R9b (l11): an unverified account creates no invoice (403, Arabic).
     const unverified = await requireVerifiedProvider(user.id, auth.userType);
     if (unverified) return unverified;
+    // Owner س٢١٢: invoices are «إدارة المكتب» — refused on the free side.
+    const locked = await officePlanRefusal(auth.supabase, "invoices", auth.userType);
+    if (locked) return locked;
 
     const body = await request.json();
     const service = await createServiceClient();

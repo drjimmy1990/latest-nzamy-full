@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { officePlanRefusal } from "@/lib/auth/assertOfficePlan";
 import { assertRole } from "@/lib/auth/assertRole";
 import { isValidAttachmentId } from "../documents/_shared";
 import { generateShareToken, generatePasscode, sha256Hex } from "@/lib/services/shareSecrets";
@@ -33,6 +34,9 @@ export async function POST(request: NextRequest) {
     const gate = await assertRole();
     if (!gate.ok) return gate.response;
     const { supabase, user } = gate;
+    // Owner س٢١٢: shared documents are «إدارة المكتب» — refused on the free side.
+    const locked = await officePlanRefusal(supabase, "documents", gate.userType);
+    if (locked) return locked;
 
     let body: unknown;
     try {

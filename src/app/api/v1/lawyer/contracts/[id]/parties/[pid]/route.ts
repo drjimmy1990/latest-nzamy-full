@@ -1,6 +1,6 @@
 import { NextResponse, NextRequest } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { assertRole } from "@/lib/auth/assertRole";
+import { assertCaseWorker } from "@/lib/auth/assertCaseWorker";
 import { isPartyRole, isPartyKind, isEntityType } from "@/lib/services/contractVocabulary";
 import { normalizeCommercialRegister, isValidCommercialRegister } from "@/lib/services/clientIdentityRules";
 import { checkSaudiPhone, checkOptionalEmail, phoneAllowsUnified } from "@/lib/services/contactFieldRules";
@@ -35,7 +35,7 @@ async function resolveContract(supabase: SupabaseClient, id: string) {
 
 export async function PATCH(request: NextRequest, context: { params: Promise<{ id: string; pid: string }> }) {
   try {
-    const auth = await assertRole(["lawyer", "firm"]);
+    const auth = await assertCaseWorker();
     if (!auth.ok) return auth.response;
     const { supabase } = auth;
     const { id, pid } = await context.params;
@@ -161,7 +161,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
 
 export async function DELETE(_request: NextRequest, context: { params: Promise<{ id: string; pid: string }> }) {
   try {
-    const auth = await assertRole(["lawyer", "firm"]);
+    const auth = await assertCaseWorker();
     if (!auth.ok) return auth.response;
     const { supabase } = auth;
     const { id, pid } = await context.params;

@@ -15,6 +15,7 @@ import {
 import Link from "next/link";
 import { LawyerDashboardSkeleton } from "@/components/ui";
 import { OnboardingBanner } from "@/components/OnboardingBanner";
+import OfficePlanNotice from "@/components/limits/OfficePlanNotice";
 import PendingInvitationsBanner from "@/components/dashboard/PendingInvitationsBanner";
 
 // ─── Subscription tiers — REMOVED ─────────────────────────────────────────────
@@ -665,6 +666,9 @@ function LawyerDashboardContent() {
 
       {/* ── Onboarding Welcome (first-visit only) ── */}
       <OnboardingBanner role="lawyer" name={name} isDark={isDark} />
+
+      {/* ── س٢١٢: what the free account holds, and what «إدارة المكتب» adds ── */}
+      <OfficePlanNotice isDark={isDark} />
 
       {/* ── Header ── */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">

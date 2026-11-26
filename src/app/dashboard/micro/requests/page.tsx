@@ -40,11 +40,15 @@ import { COMING_SOON_BADGE_AR, isTerminalToolHref } from "@/constants/betaGatedR
 // Wave 1 task 6, fix round 1 (I4): «من ٢٠٠ / ٢٥٠ / ١٥٠ ر.س» are gone — no
 // catalogue row backs them and nothing charges them — and a row that opens a
 // beta-gated tool (registry: src/constants/betaGatedRoutes.ts) says «قريباً».
+// E-108 (batch l16): consult and notice used to open /ai/consult, a «قريباً»
+// page — a dead end. They now open the shared client intake (the services
+// catalogue's consultations, and the formal-notice order form), which
+// routeAccess.ts opens to the micro account as well.
 const SERVICE_TYPES = [
-  { id: "consult", label: "استشارة قانونية", desc: "رأي متخصص في مسألتك", icon: Headset, price: "", href: "/ai/consult" },
+  { id: "consult", label: "استشارة قانونية", desc: "رأي متخصص في مسألتك", icon: Headset, price: "", href: "/dashboard/client/services?cat=consultation" },
   // Owner ٤١٧ / ٤٤٣ (8 Nov 2026): «محترف العقود» (/ai/contracts) is a lawyer and firm tool — no row here.
   { id: "case", label: "تمثيل قانوني", desc: "محامٍ يمثلك رسمياً", icon: Gavel, price: "حسب القضية", href: "/dashboard/micro/find-lawyer" },
-  { id: "notice", label: "إشعار قانوني", desc: "إشعار رسمي لطرف ثالث", icon: Warning, price: "", href: "/ai/consult" },
+  { id: "notice", label: "إنذار قانوني", desc: "إنذار رسمي لطرف آخر", icon: Warning, price: "", href: "/dashboard/client/requests/new?type=legal-notice" },
 ].map((s) => ({ ...s, price: isTerminalToolHref(s.href) ? COMING_SOON_BADGE_AR : s.price }));
 
 // ─── Status / type vocabulary ──────────────────────────────────────────────────

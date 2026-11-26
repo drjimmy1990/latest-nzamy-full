@@ -30,7 +30,7 @@ test("the routes run on the caller's RLS client, never the service role, and kee
   for (const f of ["route.ts", "[boardId]/route.ts"]) {
     const src = readFileSync(join(dir, f), "utf8");
     assert.ok(!src.includes("createServiceClient"), f);
-    assert.ok(src.includes(`assertRole(["lawyer", "firm", "corporate"])`), f);
+    assert.ok(src.includes(`assertCaseWorker(["corporate"])`), f);
     assert.ok(src.includes(`.from("canvas_boards")`), f);
   }
   assert.ok(readFileSync(join(dir, "[boardId]/route.ts"), "utf8").includes(`.eq("updated_at", body.baseUpdatedAt)`), "compare-and-set");

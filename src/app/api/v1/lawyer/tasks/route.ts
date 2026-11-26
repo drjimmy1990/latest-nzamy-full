@@ -1,6 +1,7 @@
 import { NextResponse, NextRequest } from "next/server";
+import { officePlanRefusal } from "@/lib/auth/assertOfficePlan";
 import { dbErrorJson, DB_ERROR_AR } from "@/lib/api/dbError";
-import { assertRole } from "@/lib/auth/assertRole";
+import { assertCaseWorker } from "@/lib/auth/assertCaseWorker";
 import { recordActivity, RequestEvent } from "@/lib/events";
 import {
   readSubtasks,
@@ -103,7 +104,7 @@ const TASK_SELECT =
  */
 export async function GET(request: NextRequest) {
   try {
-    const auth = await assertRole(["lawyer", "firm"]);
+    const auth = await assertCaseWorker();
     if (!auth.ok) return auth.response;
     const { user, supabase } = auth;
 
@@ -198,9 +199,12 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
-    const auth = await assertRole(["lawyer", "firm"]);
+    const auth = await assertCaseWorker();
     if (!auth.ok) return auth.response;
     const { user, supabase } = auth;
+    // Owner س٢١٢: tasks are «إدارة المكتب» — refused on the free side.
+    const locked = await officePlanRefusal(supabase, "tasks", auth.userType);
+    if (locked) return locked;
 
     const body = await request.json();
     const { title, category, priority, dueDate, caseId, caseRef, notes, subtasks, assigneeUserId } = body as {
@@ -338,7 +342,7 @@ export async function POST(request: NextRequest) {
  */
 export async function PATCH(request: NextRequest) {
   try {
-    const auth = await assertRole(["lawyer", "firm"]);
+    const auth = await assertCaseWorker();
     if (!auth.ok) return auth.response;
     const { user, supabase } = auth;
 

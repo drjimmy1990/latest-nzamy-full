@@ -1,6 +1,6 @@
 import { NextResponse, NextRequest } from "next/server";
 import { DB_ERROR_AR } from "@/lib/api/dbError";
-import { assertRole } from "@/lib/auth/assertRole";
+import { assertCaseWorker } from "@/lib/auth/assertCaseWorker";
 import { BOARD_SELECT, boardWriteError, checkBoardName, toBoardDto, type BoardRow } from "./_boards";
 
 /**
@@ -21,7 +21,7 @@ import { BOARD_SELECT, boardWriteError, checkBoardName, toBoardDto, type BoardRo
 
 export async function GET(_request: NextRequest, context: { params: Promise<{ caseId: string }> }) {
   try {
-    const auth = await assertRole(["lawyer", "firm", "corporate"]);
+    const auth = await assertCaseWorker(["corporate"]);
     if (!auth.ok) return auth.response;
     const { user, supabase } = auth;
     const { caseId } = await context.params;
@@ -46,7 +46,7 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ ca
 
 export async function POST(request: NextRequest, context: { params: Promise<{ caseId: string }> }) {
   try {
-    const auth = await assertRole(["lawyer", "firm", "corporate"]);
+    const auth = await assertCaseWorker(["corporate"]);
     if (!auth.ok) return auth.response;
     const { user, supabase } = auth;
     const { caseId } = await context.params;

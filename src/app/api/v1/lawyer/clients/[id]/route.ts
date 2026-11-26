@@ -1,6 +1,6 @@
 import { NextResponse, NextRequest } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { assertRole } from "@/lib/auth/assertRole";
+import { assertCaseWorker } from "@/lib/auth/assertCaseWorker";
 import { createServiceClient } from "@/lib/supabase/server";
 import {
   isClientFlag, isValidNationalId, isValidCommercialRegister,
@@ -57,7 +57,7 @@ async function statsForCard(
  */
 export async function GET(_request: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
-    const auth = await assertRole(["lawyer", "firm"]);
+    const auth = await assertCaseWorker();
     if (!auth.ok) return auth.response;
     const { user, supabase } = auth;
     const uid = user.id;
@@ -167,7 +167,7 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ id
  */
 export async function PATCH(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
-    const auth = await assertRole(["lawyer", "firm"]);
+    const auth = await assertCaseWorker();
     if (!auth.ok) return auth.response;
     const { user, supabase } = auth;
     const uid = user.id;

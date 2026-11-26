@@ -1,5 +1,5 @@
 import { NextResponse, NextRequest } from "next/server";
-import { assertRole } from "@/lib/auth/assertRole";
+import { assertCaseWorker } from "@/lib/auth/assertCaseWorker";
 import { CONSULTATION_STATUSES, isConsultationStatus } from "@/lib/services/consultationVocabulary";
 import { CONSULTATION_SELECT, hydrateConsultations, toConsultationDto, type ConsultationRow } from "./_shared";
 
@@ -20,7 +20,7 @@ import { CONSULTATION_SELECT, hydrateConsultations, toConsultationDto, type Cons
  */
 export async function GET(request: NextRequest) {
   try {
-    const auth = await assertRole(["lawyer", "firm"]);
+    const auth = await assertCaseWorker();
     if (!auth.ok) return auth.response;
     const { supabase } = auth;
 
