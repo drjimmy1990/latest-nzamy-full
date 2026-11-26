@@ -8709,3 +8709,15 @@ select 'l16 س٢١٦ (OPS): two super admins exist, so a break-glass request can
        coalesce((select count(*) >= 2 from public.platform_staff ps join public.profiles p on p.id = ps.user_id
                   where ps.staff_role = 'super_admin' and p.user_type = 'admin'), false) as ok;
 -- <<< verify:l16_breakglass
+-- >>> verify:l16_d54 — supabase/tests/rls/activity_events_firm_insert.test.sql
+-- l16 D-54: a session writes an activity row naming a firm only as its owner or
+-- an active member. A re-run of 20260903_phase1_case_tables puts the old check back.
+select 'l16 D-54: the activity_events INSERT policy checks the firm, and it is the only INSERT-capable policy (run 20261206_13)' as check,
+       coalesce((select pg_catalog.strpos(pg_catalog.pg_get_expr(p.polwithcheck, p.polrelid), 'firm_id') > 0
+                        and pg_catalog.strpos(pg_catalog.pg_get_expr(p.polwithcheck, p.polrelid), 'can_access_case_row') > 0
+                   from pg_catalog.pg_policy p
+                  where p.polrelid = to_regclass('public.activity_events')
+                    and p.polname = 'activity insertable by actor' and p.polcmd = 'a'), false)
+       and coalesce((select count(*) = 1 from pg_catalog.pg_policy p
+                      where p.polrelid = to_regclass('public.activity_events') and p.polcmd in ('a', '*')), false) as ok;
+-- <<< verify:l16_d54
