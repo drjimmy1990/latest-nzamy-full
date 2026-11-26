@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { assertRole } from "@/lib/auth/assertRole";
-import { createServiceClient } from "@/lib/supabase/server";
+import { requireStaff } from "@/lib/access-control";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { parseStatusFilter, FEATURE_REQUEST_STATUSES } from "@/lib/services/feedbackInput";
 import { FEATURE_REQUEST_SELECT, toFeatureRequestDto, type FeatureRequestRow } from "@/app/api/v1/feature-requests/_shared";
 
@@ -10,13 +10,14 @@ import { FEATURE_REQUEST_SELECT, toFeatureRequestDto, type FeatureRequestRow } f
  * with `userName` hydrated from `profiles.display_name` via the service
  * client — the allowed use of that client here (a display-name lookup, not
  * a bypass of the actual read/write, which stays on the RLS-scoped client
- * `assertRole` returns).
+ * the route opens after its staff gate).
  */
 export async function GET(request: NextRequest) {
   try {
-    const auth = await assertRole(["admin"]);
+    // l16 (C35): the staff-role gate (every role may read), not admin-only.
+    const auth = await requireStaff("read");
     if (!auth.ok) return auth.response;
-    const { supabase } = auth;
+    const supabase = await createClient();
 
     const { searchParams } = new URL(request.url);
     const filter = parseStatusFilter(searchParams.get("status"), FEATURE_REQUEST_STATUSES);

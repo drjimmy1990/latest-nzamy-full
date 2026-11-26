@@ -5,6 +5,7 @@ import { AdminSidebar } from "@/components/admin/AdminSidebar";
 import { UserTypeGuard } from "@/components/dashboard/UserTypeGuard";
 import { ForceDarkTheme } from "@/components/ThemeProvider";
 import { AdminToaster } from "@/components/admin/AdminToaster";
+import AdminPageGuard from "./AdminPageGuard";
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   // [U6] Stamp last_dashboard so AI layout can infer correct sidebar
@@ -26,7 +27,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           {/* AdminSidebar now renders a fixed lg:hidden top bar (56px + notch).
               lg:pt-0 leaves the desktop console exactly as it was. */}
           <div className="print-main flex-1 overflow-y-auto pt-[calc(env(safe-area-inset-top)+56px)] lg:pt-0">
-            {children}
+            {/* l16 (C33): a page outside the role's tools does not open by its address */}
+            <AdminPageGuard>{children}</AdminPageGuard>
           </div>
           {/* l9 row 70: the console's notices, in place of window.alert() */}
           <AdminToaster />

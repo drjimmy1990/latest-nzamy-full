@@ -1,7 +1,7 @@
 import { COMMUNITY_AI_SETTING_KEY, communityAiConfigured, communityAiReviewOn } from "@/lib/community/aiReview";
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
-import { requireAdmin } from "@/lib/access-control";
+import { requireStaff } from "@/lib/access-control";
 import { COMMUNITY_REPORT_REASON_LABELS_AR, type CommunityReportReason } from "@/lib/services/communityReportsInput";
 import { toArabicDigits } from "@/lib/services/arabicCount";
 import {
@@ -62,10 +62,9 @@ const isMissingColumn = (code: unknown) => code === "42703" || code === "PGRST20
 
 export async function GET(request: NextRequest) {
   try {
-    const gate = await requireAdmin();
-    if (!gate.isAdmin) {
-      return NextResponse.json({ error: gate.error }, { status: gate.status ?? 403 });
-    }
+    // l16 (C35): the staff-role gate (least privilege, staffRoles.ts), not admin-only.
+    const gate = await requireStaff("read");
+    if (!gate.ok) return gate.response;
 
     const { searchParams } = new URL(request.url);
     const kind = searchParams.get("kind") === "answer" ? "answer" : "post";

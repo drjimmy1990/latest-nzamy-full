@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { dbErrorJson } from "@/lib/api/dbError";
-import { createClient, createServiceClient } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/server";
 import { DB_USER_TYPES, isDbUserType, type DbUserType } from "@/lib/auth/userTypes";
-import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
+import { requireStaff } from "@/lib/access-control";
 import { readAdminBalances } from "@/lib/payments/pointsAdmin";
-import { readSuspendedIds } from "@/lib/accountSuspension/suspensionServer";
+import { readPendingAppealIds, readSuspendedIds } from "@/lib/accountSuspension/suspensionServer";
 
 /**
  * The PostgREST `or=` clause for a free-text search over the three name/email
@@ -41,36 +41,12 @@ function searchClause(search: string | null): string | null {
  *   - page           (default 1)
  *   - limit          (default 20)
  *
- * Requires: authenticated admin user
+ * Requires: a staff role that may read (requireStaff("read"), C34).
  */
 export async function GET(request: NextRequest) {
-  // ── Auth check ─────────────────────────────────────────────────────────────
-  const supabase = await createClient();
-  const {
-    data: { user },
-    error: authError,
-  } = await supabase.auth.getUser();
-
-  if (isAuthUnavailable(user, authError)) return authUnavailableResponse();
-  if (!user) {
-    return NextResponse.json(
-      { error: "غير مصرح — يرجى تسجيل الدخول" },
-      { status: 401 },
-    );
-  }
-
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("user_type")
-    .eq("id", user.id)
-    .single();
-
-  if (!profile || profile.user_type !== "admin") {
-    return NextResponse.json(
-      { error: "غير مصرح — صلاحيات المسؤول مطلوبة" },
-      { status: 403 },
-    );
-  }
+  // ── Staff gate (C34): the same gate as every other admin read ──────────────
+  const gate = await requireStaff("read");
+  if (!gate.ok) return gate.response;
 
   // ── Parse query params ─────────────────────────────────────────────────────
   const { searchParams } = new URL(request.url);
@@ -224,6 +200,8 @@ export async function GET(request: NextRequest) {
     // TODO 3.5: which rows are banned now (20261124_60). Unknown (null: the
     // migration not run, a failed read) shows no suspension, never a guess.
     const suspendedIds = await readSuspendedIds(adminClient, (data ?? []).map(row => row.id as string));
+    // Owner س٢١٥: which rows have an appeal waiting (empty when unreadable).
+    const appealIds = await readPendingAppealIds(adminClient, (data ?? []).map(row => row.id as string));
     // ── Transform results ────────────────────────────────────────────────────
     const users = (data ?? []).map((row: Record<string, unknown>) => {
       // Pick the active subscription (first match) or null
@@ -253,6 +231,7 @@ export async function GET(request: NextRequest) {
           : null,
         credit_balance: byUser ? byUser.get(row.id as string) ?? 0 : null,
         suspended: suspendedIds ? suspendedIds.has(row.id as string) : null,
+        appeal_pending: appealIds.has(row.id as string),
       };
     });
 

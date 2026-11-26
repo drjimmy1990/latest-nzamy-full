@@ -1,18 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdmin, requireStaff } from "@/lib/access-control";
+import { requireStaff } from "@/lib/access-control";
 import { logAdminAction } from "@/lib/auth/adminAudit";
 import { createServiceClient } from "@/lib/supabase/server";
 import { monthlyEquivalent } from "@/lib/payments/planRowPrice";
 
 export async function GET(request: NextRequest) {
   // 1. Auth check
-  const adminCheck = await requireAdmin();
-  if (!adminCheck.isAdmin) {
-    return NextResponse.json(
-      { error: adminCheck.error || "غير مصرح" },
-      { status: adminCheck.status || 403 }
-    );
-  }
+  // l16 (C35): the staff-role gate (least privilege, staffRoles.ts), not admin-only.
+  const adminCheck = await requireStaff("read");
+  if (!adminCheck.ok) return adminCheck.response;
 
   const adminClient = await createServiceClient();
 

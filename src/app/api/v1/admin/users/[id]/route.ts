@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { dbErrorJson } from "@/lib/api/dbError";
-import { createClient, createServiceClient } from "@/lib/supabase/server";
-import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
+import { createServiceClient } from "@/lib/supabase/server";
 import { readAdminBalance } from "@/lib/payments/pointsAdmin";
 import { requireStaff } from "@/lib/access-control";
 import { logAdminAction } from "@/lib/auth/adminAudit";
@@ -26,7 +25,19 @@ import {
   liftSuspensionWith,
   freezeEntitlementsWith,
   thawEntitlementsWith,
+  recordSuspensionTermsWith,
+  readOpenSuspensionWith,
+  readAppealsWith,
+  closeAppealsWith,
 } from "@/lib/accountSuspension/suspensionServer";
+import { sendSuspensionMail } from "@/lib/accountSuspension/suspensionMail";
+import { isSuspendedUser, suspensionUntil } from "@/lib/auth/accountSuspension";
+import {
+  parseSuspensionTerms,
+  suspensionEmailAr,
+  suspensionLiftedEmailAr,
+  type SuspensionTerms,
+} from "@/lib/auth/suspensionTerms";
 import { revokeLibraryDevice } from "@/lib/library/deviceLimitServer";
 import { isTestAccountForViewAs } from "@/lib/admin/viewAsTestOnly";
 
@@ -35,8 +46,11 @@ import { isTestAccountForViewAs } from "@/lib/admin/viewAsTestOnly";
  *
  * Includes: profile, all subscriptions (history), lawyer_profile,
  *           and last 20 credit_transactions.
+ * l16 (C10/C12/E-01, owner س٢١٥): also the GoTrue facts the page needs —
+ *   last_sign_in_at and `suspension` (is it suspended now, until when, why,
+ *   which template; the open freeze) — and the account's latest appeals.
  *
- * Requires: authenticated admin user
+ * Requires: a staff role that may read (requireStaff("read"), C34).
  */
 export async function GET(
   request: NextRequest,
@@ -44,33 +58,9 @@ export async function GET(
 ) {
   const { id: userId } = await params;
 
-  // ── Auth check ─────────────────────────────────────────────────────────────
-  const supabase = await createClient();
-  const {
-    data: { user },
-    error: authError,
-  } = await supabase.auth.getUser();
-
-  if (isAuthUnavailable(user, authError)) return authUnavailableResponse();
-  if (!user) {
-    return NextResponse.json(
-      { error: "غير مصرح — يرجى تسجيل الدخول" },
-      { status: 401 },
-    );
-  }
-
-  const { data: adminProfile } = await supabase
-    .from("profiles")
-    .select("user_type")
-    .eq("id", user.id)
-    .single();
-
-  if (!adminProfile || adminProfile.user_type !== "admin") {
-    return NextResponse.json(
-      { error: "غير مصرح — صلاحيات المسؤول مطلوبة" },
-      { status: 403 },
-    );
-  }
+  // ── Staff gate (C34): the same gate as every other admin read ──────────────
+  const gate = await requireStaff("read");
+  if (!gate.ok) return gate.response;
 
   const adminClient = await createServiceClient();
 
@@ -126,6 +116,24 @@ export async function GET(
         (s: Record<string, unknown>) => s.status === "active",
       ) ?? null;
 
+    // ── GoTrue's facts (C10/C12): last sign-in and the suspension ──────────
+    // A failed read shows «—» and no suspension state («unknown»), never a guess.
+    let lastSignInAt: string | null = null;
+    let suspendedNow: boolean | null = null;
+    let until: string | null = null;
+    try {
+      const { data: authData, error: authReadError } = await adminClient.auth.admin.getUserById(userId);
+      if (!authReadError && authData?.user) {
+        lastSignInAt = authData.user.last_sign_in_at ?? null;
+        suspendedNow = isSuspendedUser(authData.user);
+        until = suspensionUntil(authData.user);
+      }
+    } catch (err) {
+      console.error("[admin/users/[id]] GET: reading the auth user failed:", err instanceof Error ? err.message : err);
+    }
+    const openSuspension = await readOpenSuspensionWith(adminClient, userId);
+    const appeals = await readAppealsWith(adminClient, userId);
+
     return NextResponse.json({
       data: {
         ...profile,
@@ -135,6 +143,17 @@ export async function GET(
         credit_transactions: creditTransactions ?? [],
         credit_balance: pointsBalance,
         view_as_allowed: viewAsAllowed,
+        last_sign_in_at: lastSignInAt,
+        suspension: {
+          /** null: GoTrue could not be read. */
+          suspended: suspendedNow,
+          ends_at: openSuspension?.endsAt ?? until,
+          reason: openSuspension?.reason ?? null,
+          template: openSuspension?.template ?? null,
+          frozen_at: openSuspension?.frozenAt ?? null,
+          kind: openSuspension?.reasonKind ?? null,
+        },
+        appeals,
       },
     });
   } catch (err) {
@@ -166,6 +185,14 @@ export async function GET(
  * status "active" lifts the ban and the freeze: what was frozen gets the
  * suspended days back.
  * Neither is allowed on the caller's own account or on an admin account.
+ *
+ * Owner س٢١٥ (l16): status "suspended" needs `suspension: { template:
+ * "72h" | "14d" | "7d" | "custom", reason, ends_at? (custom only) }` — no
+ * open-ended suspension. The ban lasts exactly until the end, the terms are
+ * written on the freeze row (20261206_20; /api/v1/cron/suspension-lift lifts
+ * it then), the account is e-mailed the reason, the end and the appeal page,
+ * and the audit row carries the terms. A lift closes the waiting appeals
+ * («lifted») and tells the account by e-mail.
  *
  * Demoting an admin to another type (Task 3.4) removes them from staff: it is
  * refused while they are the last super admin (400 «لا يمكن إزالة آخر مشرف
@@ -200,7 +227,15 @@ export async function PATCH(
   if (actions.length === 0) {
     return NextResponse.json({ error: "لا توجد حقول للتحديث" }, { status: 400 });
   }
-  const body = parsed as { status?: unknown; user_type?: unknown; metadata?: unknown; verified?: unknown };
+  const body = parsed as { status?: unknown; user_type?: unknown; metadata?: unknown; verified?: unknown; suspension?: unknown };
+
+  // Owner س٢١٥: a suspension always has a reason and an end.
+  let terms: SuspensionTerms | null = null;
+  if (body.status === "suspended") {
+    const read = parseSuspensionTerms(body.suspension, Date.now());
+    if (!read.ok) return NextResponse.json({ error: read.error }, { status: 400 });
+    terms = read.terms;
+  }
 
   if (body.user_type !== undefined) {
     if (body.user_type === "admin") {
@@ -337,7 +372,10 @@ export async function PATCH(
     // that could not be recorded (migration missing, a failed write) does not
     // undo the ban — the account is suspended — and the audit row and the
     // answer say what happened to the freeze.
-    if (body.status === "suspended") {
+    if (body.status === "suspended" && terms) {
+      after.ends_at = terms.endsAt;
+      after.template = terms.template;
+      after.reason = terms.reason;
       const suspensionFailed = async (detail: Record<string, unknown>) => {
         await logAdminAction({
           actorId,
@@ -353,7 +391,12 @@ export async function PATCH(
 
       // 1. The ban + the gates' copy (one GoTrue call), then the open sessions.
       //    Before the freeze: the access is what must stop now.
-      const ban = await suspendAccountWith(adminClient, { userId, actorId, nowIso: new Date().toISOString() });
+      const ban = await suspendAccountWith(adminClient, {
+        userId,
+        actorId,
+        nowIso: new Date().toISOString(),
+        endsAt: terms.endsAt,
+      });
       if (!ban.ok) {
         console.error("[admin/users/[id]] suspension: the GoTrue ban failed:", ban.error);
         return suspensionFailed({ banned: false, ban_error: ban.error, freeze: "not_attempted" });
@@ -371,6 +414,28 @@ export async function PATCH(
       }
       after.freeze = freeze.state;
       if (freeze.state === "frozen") after.frozen_counts = freeze.counts;
+
+      // 3. Owner س٢١٥: the terms on the freeze row, where the automatic lift
+      //    finds them. Without them the ban still ends on time by itself.
+      const recorded = await recordSuspensionTermsWith(adminClient, {
+        userId,
+        endsAt: terms.endsAt,
+        template: terms.template,
+        reason: terms.reason,
+      });
+      if (recorded.state === "failed") {
+        console.error("[admin/users/[id]] suspension: recording its end and reason failed:", recorded.error);
+      }
+      after.terms = recorded.state;
+
+      // 4. The account is told why, until when, and where to appeal.
+      after.email = await sendSuspensionMail(adminClient, {
+        userId,
+        mail: suspensionEmailAr({ reason: terms.reason, endsAt: terms.endsAt }),
+        tag: "account_suspended",
+        idempotencyKey: `account-suspended-${userId}-${terms.endsAt}`,
+        withAppealLink: true,
+      });
     }
 
     // ── Lifting a suspension (TODO 3.5 + owner ٢٥) ─────────────────────────
@@ -410,6 +475,25 @@ export async function PATCH(
           after.devices_reset = reset.ok ? reset.count : "failed";
         }
       }
+
+      // Owner س٢١٥: the waiting appeals are answered by the lift.
+      const closed = await closeAppealsWith(adminClient, {
+        userId,
+        status: "lifted",
+        actorId,
+        nowIso: new Date().toISOString(),
+      });
+      after.appeals_closed = closed ?? "failed";
+      after.email = await sendSuspensionMail(adminClient, {
+        userId,
+        mail: suspensionLiftedEmailAr({
+          automatic: false,
+          extended: thaw.state === "lifted" && Object.values(thaw.extended ?? {}).some((n) => n > 0),
+        }),
+        tag: "account_unsuspended",
+        idempotencyKey: `account-unsuspended-${userId}-${new Date().toISOString().slice(0, 16)}`,
+        withAppealLink: false,
+      });
     }
 
     await logAdminAction({

@@ -26,7 +26,7 @@ import { COMMISSION_MAX_PCT, COMMISSION_MIN_PCT, validCommissionPct } from "@/li
  * Both rows are created by 20261202_70 — before it runs the route says so (409).
  */
 export async function GET() {
-  const gate = await requireStaff("orders.manage");
+  const gate = await requireStaff("read");
   if (!gate.ok) return gate.response;
   const admin = await createServiceClient();
   const read = await readMarketSettings(admin);

@@ -28,6 +28,7 @@ import { staffMaySee } from "@/lib/auth/adminNavAccess";
 import { apiErrorText } from "@/lib/services/apiErrorText";
 import { ADMIN_PURGE_CONFIRM_AR } from "@/lib/auth/accountFreeze";
 import { adminToast } from "@/components/admin/adminToast";
+import SuspendAccountDialog from "./SuspendAccountDialog";
 
 // ─── Types & Data ─────────────────────────────────────────────────────────────
 
@@ -94,6 +95,8 @@ interface PlatformUser {
    * null when that could not be known (20261124_60 not run, a failed read).
    */
   suspended?: boolean | null;
+  /** Owner س٢١٥: an appeal against the suspension is waiting. */
+  appeal_pending?: boolean;
 }
 
 interface UsersApiResponse {
@@ -331,23 +334,9 @@ function UserRow({
     }
   };
 
-  const handleSuspend = async () => {
-    if (!confirm("هل أنت متأكد من إيقاف هذا الحساب؟ سيُمنع من الدخول فوراً وتُنهى جلساته المفتوحة، وتُجمَّد اشتراكاته ومنحه ونقاطه دون إلغاء، وتُمدَّد بقدر مدة الإيقاف عند رفعه.")) return;
-    setActionLoading(true);
-    try {
-      const res = await fetch(`/api/v1/admin/users/${user.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: "suspended" }),
-      });
-      if (!res.ok) throw new Error(apiErrorText(res.status, await res.json().catch(() => null), "فشل إيقاف المستخدم"));
-      onUpdate();
-    } catch (err) {
-      adminToast(err instanceof Error ? err.message : "حدث خطأ");
-    } finally {
-      setActionLoading(false);
-    }
-  };
+  // Owner س٢١٥: the suspension form (template or custom end + reason).
+  const [suspendOpen, setSuspendOpen] = useState(false);
+  const handleSuspend = () => setSuspendOpen(true);
 
   // TODO 3.5: «رفع الإيقاف» lifts the GoTrue ban (PATCH status "active").
   const handleUnsuspend = async () => {
@@ -411,6 +400,14 @@ function UserRow({
   return (
     <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
       className={`${card} p-4 flex items-center gap-4 hover:border-royal/20 transition-all relative`}>
+      {suspendOpen && (
+        <SuspendAccountDialog
+          userId={user.id}
+          userLabel={user.display_name || user.email}
+          onClose={() => setSuspendOpen(false)}
+          onDone={() => { setSuspendOpen(false); onUpdate(); }}
+        />
+      )}
 
       {/* Owner item ٦٦ — bulk-verify selector. Only a pending row can be
           selected: the bulk button below fires the same PATCH the per-row
@@ -449,6 +446,12 @@ function UserRow({
             {status.label}
           </span>
           <span title={plan.title} className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${plan.bg} ${plan.color}`}>{plan.label}</span>
+          {user.appeal_pending === true && (
+            <span title="قدّم صاحب الحساب اعتراضاً على الإيقاف — راجعه في صفحة الحساب"
+              className="text-[9px] font-bold px-1.5 py-0.5 rounded-full border border-amber-500/30 bg-amber-500/10 text-amber-400">
+              اعتراض بانتظار المراجعة
+            </span>
+          )}
         </div>
         <p className={`text-[11px] truncate ${isDark ? "text-zinc-500" : "text-slate-400"}`}>{user.email}</p>
         <div className={`flex items-center gap-3 mt-1 text-[10px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>

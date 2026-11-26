@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { dbErrorJson } from "@/lib/api/dbError";
 import { createServiceClient } from "@/lib/supabase/server";
-import { requireAdmin } from "@/lib/access-control";
+import { requireStaff } from "@/lib/access-control";
 
 /**
  * Task 7 (owner س١١) — the only evidence the app ever has that an outbound
@@ -58,10 +58,9 @@ const ORDERS_PAGE = 200;
  * whatever the reader happens to be looking at.
  */
 export async function GET(request: NextRequest) {
-  const gate = await requireAdmin();
-  if (!gate.isAdmin) {
-    return NextResponse.json({ error: gate.error }, { status: gate.status ?? 403 });
-  }
+  // l16 (C35): the staff-role gate (least privilege, staffRoles.ts), not admin-only.
+  const gate = await requireStaff("read");
+  if (!gate.ok) return gate.response;
 
   const { searchParams } = new URL(request.url);
   const status = searchParams.get("status");

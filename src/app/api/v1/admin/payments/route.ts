@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
-import { requireAdmin } from "@/lib/access-control";
+import { requireStaff } from "@/lib/access-control";
 
 /**
  * Unified admin ledger entry — normalized across the three money-movement
@@ -55,10 +55,9 @@ const LEDGER_LIMIT = 100;
  * to put the rows that did load.
  */
 export async function GET() {
-  const gate = await requireAdmin();
-  if (!gate.isAdmin) {
-    return NextResponse.json({ error: gate.error }, { status: gate.status ?? 403 });
-  }
+  // l16 (C35): the staff-role gate (least privilege, staffRoles.ts), not admin-only.
+  const gate = await requireStaff("payments.read");
+  if (!gate.ok) return gate.response;
 
   try {
     const supabase = await createServiceClient();
