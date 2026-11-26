@@ -8630,3 +8630,19 @@ select 'l15 phone otp: the switch row exists, and while on it carries the first 
        and coalesce((select count(*) = 1 from pg_catalog.pg_trigger
                        where tgrelid = 'public.platform_settings'::regclass and tgname = 'trg_signup_phone_otp_setting' and not tgisinternal), false) as ok;
 -- <<< verify:l15_phone_otp
+-- >>> verify:l16_d01 — supabase/tests/rls/requester_cancel_lock_definer.test.sql
+-- l16 D-01: a session status change on service_requests must not hit 42501 —
+-- the cancel-lock trigger runs as its owner; the helpers stay closed (20261016_07).
+-- A re-run of 20260917 turns the trigger function back to INVOKER: this fails then.
+select 'l16 D-01: the requester cancel lock is SECURITY DEFINER with an empty search_path, its trigger enabled, helpers still closed to sessions (run 20261206_10)' as check,
+       coalesce((select p.prosecdef and p.proconfig @> array['search_path=""']
+                   from pg_catalog.pg_proc p
+                  where p.oid = to_regprocedure('public.enforce_requester_cancel_lock()')), false)
+       and exists (select 1 from pg_catalog.pg_trigger
+                    where tgrelid = 'public.service_requests'::regclass
+                      and tgname = 'trg_enforce_requester_cancel_lock' and tgenabled <> 'D'
+                      and tgfoid = to_regprocedure('public.enforce_requester_cancel_lock()'))
+       and not coalesce(has_function_privilege('authenticated', 'public.service_request_requester_cancellable(text, text, jsonb)', 'EXECUTE'), true)
+       and not coalesce(has_function_privilege('authenticated', 'public.service_request_delivered_at(jsonb)', 'EXECUTE'), true)
+       and not coalesce(has_function_privilege('authenticated', 'public.enforce_requester_cancel_lock()', 'EXECUTE'), true) as ok;
+-- <<< verify:l16_d01
