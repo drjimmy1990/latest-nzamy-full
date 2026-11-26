@@ -96,6 +96,21 @@ export function toolRoleRefusal(spec: ToolAudience, actor: ToolCaller): "role" |
   return null;
 }
 
+/**
+ * Owner س٢١٤ (25 Nov 2026, batch l16): «ضروري توثيق الرخصة قبل تشغيل أدوات
+ * الصياغة المهنية» — the founder plan's rule (its seat activates only on
+ * approval, 20261127_10) applied to every professional DRAFTING tool: the
+ * ones marked `licenceRequired` in tools.ts (the drafter, the contracts tools,
+ * the legal opinion, the communicator, the Najiz optimizer). The analysis
+ * tools stay open before approval, and so does every tool an individual may
+ * run (a lawyer keeps his free questions). Widen or narrow the line in
+ * tools.ts only. Who passes is src/lib/auth/verifiedProvider.ts (admin,
+ * verified lawyer, verified firm, active member of a verified firm).
+ */
+export function toolNeedsLicence(spec: Pick<AiToolSpec, "licenceRequired">): boolean {
+  return spec.licenceRequired === true;
+}
+
 /** The whole answer, in the run path's order: who the caller is first, then the mode. */
 export function toolAccessFor(
   spec: ToolAudience,

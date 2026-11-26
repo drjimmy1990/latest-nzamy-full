@@ -30,6 +30,7 @@ import { RevisionPanel } from "./_components/RevisionPanel";
 import { OPEN_ORDER_STATUSES } from "./_components/openOrderStatuses";
 import { orderReference } from "@/lib/services/orderReference";
 import ZipDownloadButton from "@/components/attachments/ZipDownloadButton";
+import MarketPriorityStatus from "@/components/marketplace/MarketPriorityStatus";
 
 type LoadState = "loading" | "error" | "not_found" | "loaded";
 
@@ -287,6 +288,9 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
           countdown and the counter it shows are display only — the server
           re-derives both from the persisted row on every request. */}
       <RevisionPanel order={order} isDark={isDark} supportHref={supportHref} onChanged={load} />
+
+      {/* Owner س٢٣ (batch l16): still with the Nezamy team? until when, and «افتحه للجميع فوراً» (renders nothing otherwise). */}
+      <MarketPriorityStatus requestId={order.id} />
 
       {/* Task 6, Step 3 — what the client actually sent: intake answers
           rendered generically (differs per service) plus their own

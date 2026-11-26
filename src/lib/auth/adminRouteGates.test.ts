@@ -302,6 +302,8 @@ const GATES: Array<{ file: string; method: string; action: StaffAction | "per-fi
   { file: "marketplace/acceptances/[id]/route.ts", method: "PATCH", action: "orders.manage", logs: 1 },
   { file: "marketplace/requests/[id]/route.ts", method: "PATCH", action: "orders.manage", logs: 2 },
   { file: "marketplace/settings/route.ts", method: "PATCH", action: "settings.write", logs: 1 },
+  // l16 س٢٣: the Nezamy priority window (minutes + working hours).
+  { file: "marketplace/priority/route.ts", method: "PATCH", action: "settings.write", logs: 1 },
   { file: "community/reports/[id]/route.ts", method: "PATCH", action: "community.moderate", logs: 1 },
   { file: "broadcasts/route.ts", method: "POST", action: "broadcasts.send", logs: 1 },
   { file: "broadcasts/[id]/route.ts", method: "PATCH", action: "broadcasts.send", logs: 1 },

@@ -1617,3 +1617,98 @@ test("GraphRAG: embedQuery runs in parallel with lib-queries and rescues colloqu
   const kinds = reported.flatMap((x) => x.events.map((e) => e.kind));
   assert.ok(kinds.includes("law") && kinds.includes("note"), "decree maps to law and feqh maps to note within DB CHECK constraint");
 });
+
+// ── owner س٢١٤ (batch l16): the verified licence before a drafting tool ────────
+
+// A drafting tool (licenceRequired). The licence is asked before the mode and the input.
+const DRAFT = (over: Record<string, unknown> = {}) => body({ tool: "communicate", ...over });
+
+test("س٢١٤: an unverified lawyer is refused a drafting tool (403 + link), uncharged and before the mode is read", async () => {
+  for (const userType of ["lawyer", "firm"]) {
+    const { client, log } = db();
+    const seen: unknown[] = [];
+    const asked: string[] = [];
+    const r = await startRunWith(
+      client as never,
+      {
+        ...deps(okReply(), seen),
+        verifiedProvider: async (id, type) => (asked.push(`${id}:${type}`), { ok: false, status: 403, error: "x", code: "provider_not_verified" }),
+      },
+      { ...LAWYER, userType },
+      DRAFT(),
+    );
+    assert.equal(r.status, 403, userType);
+    assert.equal(r.body.code, "provider_not_verified");
+    assert.match(String(r.body.error), /توثيق/);
+    assert.equal(r.body.verifyHref, userType === "lawyer" ? "/register/provider/verify" : null);
+    assert.deepEqual(asked, [`u-1:${userType}`]);
+    assert.deepEqual(rpcs(log), [], "no money function ran");
+    assert.equal(log.filter((q) => q.table === "platform_settings").length, 0, "refused before the mode is read");
+    assert.equal(seen.length, 0, "n8n was not called");
+  }
+});
+
+test("س٢١٤: a verified lawyer goes on to the next check; a failed or thrown read refuses with 503; an admin is never asked", async () => {
+  {
+    // verified → past the licence: the tool is off in this setting, so the next answer is 423
+    const { client } = db();
+    const r = await startRunWith(client as never, { ...deps(okReply()), verifiedProvider: async () => ({ ok: true }) }, LAWYER, DRAFT());
+    assert.equal(r.status, 423);
+  }
+  for (const verifiedProvider of [
+    async () => ({ ok: false as const, status: 503 as const, error: "تعذّر التحقق" }),
+    async () => {
+      throw new Error("down");
+    },
+  ]) {
+    const { client, log } = db();
+    const r = await startRunWith(client as never, { ...deps(okReply()), verifiedProvider }, LAWYER, DRAFT());
+    assert.equal(r.status, 503);
+    assert.deepEqual(rpcs(log), []);
+  }
+  {
+    const { client } = db();
+    let asked = 0;
+    const r = await startRunWith(
+      client as never,
+      { ...deps(okReply()), verifiedProvider: async () => (asked++, { ok: false, status: 403, error: "x" }) },
+      { ...LAWYER, userType: "admin" },
+      DRAFT(),
+    );
+    assert.notEqual(r.status, 403);
+    assert.equal(asked, 0);
+  }
+  {
+    // a tool without the mark (echo, like the analysis tools) is never asked
+    const { client } = db();
+    let asked = 0;
+    const r = await startRunWith(client as never, { ...deps(okReply()), verifiedProvider: async () => (asked++, { ok: false, status: 403, error: "x" }) }, LAWYER, body());
+    assert.equal(r.status, 200);
+    assert.equal(asked, 0);
+  }
+});
+
+test("س٢١٤: which tools wait for the licence — the drafting tools only; never an analysis tool or one a client may run too", async () => {
+  const { toolNeedsLicence } = await import("./aiToolsConfig.ts");
+  const gated = Object.values(AI_TOOLS).filter((t) => toolNeedsLicence(t)).map((t) => t.id).sort();
+  assert.deepEqual(gated, [
+    "communicate",
+    "contract-drafter",
+    "contract-negotiator",
+    "contract-review",
+    "contracts-pro",
+    "legal-drafter",
+    "legal-opinion-consult",
+    "legal-opinion-letter",
+    "najiz-optimizer",
+  ]);
+  for (const t of Object.values(AI_TOOLS)) {
+    if (t.roles.includes("individual")) assert.equal(toolNeedsLicence(t), false, t.id);
+    if (toolNeedsLicence(t)) assert.ok(t.roles.every((r) => r === "lawyer" || r === "firm"), `${t.id}: lawyers and firms only`);
+  }
+});
+
+test("س٢١٤: the run route wires the licence check (the contracts / invoices rule, service client)", () => {
+  const route = readFileSync(join(process.cwd(), "src/app/api/v1/ai/runs/route.ts"), "utf8");
+  assert.match(route, /verifiedProvider: async \(userId, type\) => verifiedProviderDecision\(await readVerifiedProviderFacts\(admin, userId, type\)\)/);
+});

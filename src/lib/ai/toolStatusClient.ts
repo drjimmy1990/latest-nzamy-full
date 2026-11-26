@@ -30,16 +30,42 @@ export async function readToolUsable(
   fetchImpl: (url: string, init?: RequestInit) => Promise<Response> = (url, init) => fetch(url, init),
   wait: (ms: number) => Promise<void> = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
 ): Promise<boolean> {
+  return (await readToolStatus(tool, fetchImpl, wait)).usable;
+}
+
+/**
+ * The whole answer: `licence` is set only when the server said the one thing
+ * missing is the account's verified licence (owner س٢١٤, batch l16) — with
+ * the lawyer's verification link, or null for a firm. Same doubt rule: any
+ * other reply reads as not usable, with no licence reason.
+ */
+export interface ToolStatusAnswer {
+  usable: boolean;
+  licence: { verifyHref: string | null } | null;
+}
+
+export async function readToolStatus(
+  tool: string,
+  fetchImpl: (url: string, init?: RequestInit) => Promise<Response> = (url, init) => fetch(url, init),
+  wait: (ms: number) => Promise<void> = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+): Promise<ToolStatusAnswer> {
+  const no: ToolStatusAnswer = { usable: false, licence: null };
   try {
     let res = await fetchImpl(toolStatusUrl(tool), { cache: "no-store" });
     if (res.status === 429) {
       await wait(waitAfter429(res));
       res = await fetchImpl(toolStatusUrl(tool), { cache: "no-store" });
     }
-    if (res.status !== 200) return false;
-    const body = (await res.json()) as { usable?: unknown } | null;
-    return body?.usable === true;
+    if (res.status !== 200) return no;
+    const body = (await res.json()) as { usable?: unknown; reason?: unknown; verifyHref?: unknown } | null;
+    if (body?.usable === true) return { usable: true, licence: null };
+    if (body?.reason === "licence") {
+      // Only a same-site path is ever followed from here.
+      const href = typeof body.verifyHref === "string" && /^\/(?!\/)[a-z0-9/_-]*$/i.test(body.verifyHref) ? body.verifyHref : null;
+      return { usable: false, licence: { verifyHref: href } };
+    }
+    return no;
   } catch {
-    return false;
+    return no;
   }
 }
