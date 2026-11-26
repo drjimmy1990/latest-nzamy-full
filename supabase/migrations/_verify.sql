@@ -8673,3 +8673,39 @@ select 'l16 س٢٠٣: «طلب رفع الحجز» — append-only table closed 
        and coalesce(has_function_privilege('authenticated', to_regprocedure('public.request_attachment_hold_lift(bigint, text)'), 'EXECUTE'), false)
        and not coalesce(has_function_privilege('anon', to_regprocedure('public.request_attachment_hold_lift(bigint, text)'), 'EXECUTE'), true) as ok;
 -- <<< verify:l16_hold
+-- >>> verify:l16_breakglass — supabase/tests/rls/restricted_case_break_glass.test.sql
+-- l16 س٢١٦: a platform admin reads no restricted firm case without a live
+-- break-glass grant (written reason + a second super admin + ≤240 min + firm
+-- notified + audit). A re-run of 20261125_40 / 20261129_10 puts is_admin() back
+-- into case_visible: this fails until 20261206_12 is re-run.
+select 'l16 س٢١٦: case_visible has no is_admin() arm, has the break-glass grant arm and keeps the scoped-member branch (run 20261206_12)' as check,
+       coalesce(pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.case_visible(text)')), 'is_admin()') = 0, false)
+       and coalesce(pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.case_visible(text)')), 'restricted_case_grant_active(sr.id)') > 0, false)
+       and coalesce(pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.case_visible(text)')), 'firm_case_scoped_member') > 0, false) as ok;
+select 'l16 س٢١٦: the break-glass grant table is closed to sessions, guarded (no delete, no rewrite), and its RPCs are SECURITY DEFINER for signed-in users only (run 20261206_12)' as check,
+       to_regclass('public.restricted_case_access_grants') is not null
+       and coalesce((select c.relrowsecurity from pg_catalog.pg_class c where c.oid = to_regclass('public.restricted_case_access_grants')), false)
+       and not coalesce(has_table_privilege('authenticated', 'public.restricted_case_access_grants', 'SELECT'), true)
+       and not coalesce(has_table_privilege('authenticated', 'public.restricted_case_access_grants', 'INSERT'), true)
+       and not coalesce(has_table_privilege('anon', 'public.restricted_case_access_grants', 'SELECT'), true)
+       and exists (select 1 from pg_catalog.pg_trigger
+                    where tgrelid = to_regclass('public.restricted_case_access_grants')
+                      and tgname = 'trg_restricted_case_access_grants_guard' and not tgisinternal)
+       and exists (select 1 from pg_catalog.pg_constraint
+                    where conrelid = to_regclass('public.restricted_case_access_grants')
+                      and conname = 'restricted_case_access_grants_two_people')
+       and coalesce((select count(*) = 5
+                            and bool_and(p.prosecdef and p.proconfig @> array['search_path=""']
+                                         and has_function_privilege('authenticated', p.oid, 'EXECUTE')
+                                         and not has_function_privilege('anon', p.oid, 'EXECUTE'))
+                       from pg_catalog.pg_proc p
+                      where p.oid in (to_regprocedure('public.restricted_case_access_request(text, text, integer)'),
+                                      to_regprocedure('public.restricted_case_access_approve(uuid, text)'),
+                                      to_regprocedure('public.restricted_case_access_reject(uuid, text)'),
+                                      to_regprocedure('public.restricted_case_access_revoke(uuid)'),
+                                      to_regprocedure('public.restricted_case_break_glass_read(text)'))), false)
+       and not coalesce(has_function_privilege('authenticated', to_regprocedure('public.restricted_case_grant_active(text)'), 'EXECUTE'), true) as ok;
+select 'l16 س٢١٦ (OPS): two super admins exist, so a break-glass request can get its second approval (C54 — WARN-level: false only means nobody can approve yet)' as check,
+       coalesce((select count(*) >= 2 from public.platform_staff ps join public.profiles p on p.id = ps.user_id
+                  where ps.staff_role = 'super_admin' and p.user_type = 'admin'), false) as ok;
+-- <<< verify:l16_breakglass

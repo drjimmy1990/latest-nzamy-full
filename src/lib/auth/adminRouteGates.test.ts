@@ -365,6 +365,11 @@ const GATES: Array<{ file: string; method: string; action: StaffAction | "per-fi
   { file: "journal/issues/route.ts", method: "POST", action: "broadcasts.send", logs: 1 },
   // send arm + approve / unapprove arm
   { file: "journal/issues/[id]/route.ts", method: "PATCH", action: "broadcasts.send", logs: 2 },
+  // l16 (owner س٢٠٣): the administration lifts a legal hold on a request file
+  { file: "documents/[id]/hold/route.ts", method: "PATCH", action: "orders.manage", logs: 1 },
+  // l16 (owner س٢١٦): break-glass steps run as the admin's own session; the
+  // database functions write the audit rows themselves (20261206_12)
+  { file: "restricted-cases/access/route.ts", method: "POST", action: "staff.manage", logs: 0 },
 ];
 
 for (const { file, method, action, logs } of GATES) {
