@@ -29,7 +29,7 @@ import { useTheme } from "@/components/ThemeProvider";
 
 import { ProviderType, Step } from "./types";
 import { trackEventOnce } from "@/lib/analytics/track";
-import { StepIndicator, Step1, Step2, Step3, Step4, Step5, needsLicenceProofFor, signupNameOk } from "./components/Steps";
+import { StepIndicator, Step1, Step2, Step3, Step4, Step5, needsLicenceProofFor, signupNameOk, signupPlanName } from "./components/Steps";
 import { licenceFormatIssue } from "@/lib/lawyerSignup/licenceFormat";
 import { LawyerVerificationPanel } from "@/components/lawyerSignup/LawyerVerificationPanel";
 import { isThrowawayEmail } from "@/lib/lawyerSignup/throwawayEmail";
@@ -519,7 +519,7 @@ export default function RegisterProviderPage() {
                   mobile. */}
               {step === 5 && signupHasSession && !phoneStepPending && selectedBilling && (
                 <div className="mt-6">
-                  <SignupPlanNextStep planId={selectedPlan} billing={selectedBilling} isAr={isAr} />
+                  <SignupPlanNextStep planId={selectedPlan} planName={signupPlanName(providerType, selectedPlan, isAr)} billing={selectedBilling} isAr={isAr} />
                 </div>
               )}
 

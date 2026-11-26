@@ -168,7 +168,7 @@ test("LIVE-04 wiring: the plan survives the code and is offered afterwards", () 
   assert.match(client, /savePendingPlanChoice\(sessionStorageOrNull\(\), requestedPlan\?\.id \?\? planParam, billingParam\);\s*window\.location\.assign\("\/verify-phone"\);/);
   const provider = code("src/app/register/provider/page.tsx");
   assert.match(provider, /step === 5 && signupHasSession && !phoneStepPending && selectedBilling && \(/);
-  assert.match(provider, /<SignupPlanNextStep planId=\{selectedPlan\} billing=\{selectedBilling\} isAr=\{isAr\} \/>/);
+  assert.match(provider, /<SignupPlanNextStep planId=\{selectedPlan\} planName=\{signupPlanName\(providerType, selectedPlan, isAr\)\} billing=\{selectedBilling\} isAr=\{isAr\} \/>/);
   const card = code("src/components/pricing/PlanRequestCard.tsx");
   assert.match(card, /checkoutHref\(plan\.id, isBilling\(billing\) \? billing : "yearly", gatewayAllowsCheckout\(payments\), true\)/);
 });

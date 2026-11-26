@@ -46,7 +46,7 @@ const FREE_CARDS: Record<"ar" | "en", Record<FreeCardKind, FreeCardText>> = {
     office: {
       name: "الحساب المجاني",
       price: "مجاني",
-      desc: "ابدأ مجانًا؛ إدارة المكتب (القضايا والموكّلون والجلسات والمهام) ضمن الباقات المدفوعة",
+      desc: "ابدأ مجانًا؛ إدارة المكتب (القضايا والموكّلون والجلسات) ضمن الباقات المدفوعة",
       features: ["الملف المهني", "أدوات الذكاء الاصطناعي بالنقاط من حزم الشحن", "مساحة ١ جيجابايت لحفظ ملفاتك"],
     },
     consultant: {
@@ -59,14 +59,14 @@ const FREE_CARDS: Record<"ar" | "en", Record<FreeCardKind, FreeCardText>> = {
       name: "الحساب المجاني",
       price: "مجاني",
       desc: "حسابك مجاني الآن، والباقات المدفوعة لنوع حسابك قيد التفعيل",
-      features: ["الملف المهني"],
+      features: ["الملف المهني", "أدوات الذكاء الاصطناعي بالنقاط من حزم الشحن"],
     },
   },
   en: {
     office: {
       name: "Free account",
       price: "Free",
-      desc: "Start free; office management (cases, clients, hearings and tasks) comes with the paid plans",
+      desc: "Start free; office management (cases, clients and hearings) comes with the paid plans",
       features: ["Professional profile", "AI tools paid in points from top-ups", "1 GB for your files"],
     },
     consultant: {
@@ -79,7 +79,7 @@ const FREE_CARDS: Record<"ar" | "en", Record<FreeCardKind, FreeCardText>> = {
       name: "Free account",
       price: "Free",
       desc: "Your account is free for now; paid plans for your account type are being activated",
-      features: ["Professional profile"],
+      features: ["Professional profile", "AI tools paid in points from top-ups"],
     },
   },
 };

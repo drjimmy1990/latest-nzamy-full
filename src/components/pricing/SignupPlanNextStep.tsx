@@ -16,7 +16,18 @@ import { gatewayAllowsCheckout } from "@/lib/payments/checkoutView";
 import { bookEntry, BILLING_LABEL_AR, BILLING_LABEL_EN, isBilling } from "@/lib/pricing/priceBook";
 import { pendingPlanHref } from "@/lib/pricing/signupPlan";
 
-export default function SignupPlanNextStep({ planId, billing, isAr }: { planId: string; billing: string; isAr: boolean }) {
+export default function SignupPlanNextStep({
+  planId,
+  planName,
+  billing,
+  isAr,
+}: {
+  planId: string;
+  /** The plan's name as /pricing writes it, in the page language. */
+  planName: string;
+  billing: string;
+  isAr: boolean;
+}) {
   const payments = usePaymentsStatus();
   const entry = bookEntry(planId);
   if (!entry || payments.loading) return null;
@@ -27,7 +38,7 @@ export default function SignupPlanNextStep({ planId, billing, isAr }: { planId: 
   return (
     <div className="rounded-2xl border-2 border-royal bg-royal/5 p-4 text-start dark:bg-royal/20">
       <div className="text-sm font-bold text-royal dark:text-gold">
-        {isAr ? `باقتك المختارة: «${entry.labelAr}»${cycle ? ` — ${cycle}` : ""}` : `Your chosen plan: ${planId}${cycle ? ` — ${cycle}` : ""}`}
+        {isAr ? `باقتك المختارة: «${planName}»${cycle ? ` — ${cycle}` : ""}` : `Your chosen plan: ${planName}${cycle ? ` — ${cycle}` : ""}`}
       </div>
       <p className="mt-1.5 text-xs leading-relaxed text-ink-muted dark:text-gray-400">
         {gatewayOn
