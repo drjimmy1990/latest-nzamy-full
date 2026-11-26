@@ -8,7 +8,8 @@ import { WHATSAPP_UNAVAILABLE_AR } from "@/lib/passwordReset/passwordResetRules"
  * POST /api/v1/auth/password-reset/whatsapp/verify — the code from WhatsApp
  * and the new password (batch l17). Signed-out.
  *
- * Body: { email, code, password, confirm }
+ * Body: { email, code, password, confirm } — or { phone, … } with the
+ * confirmed Saudi mobile in place of the e-mail (batch l18, LIVE-06).
  *   200 { ok: true }  the password is set (auth admin API) and the account's
  *       sessions are ended (their refresh tokens are gone; an access token
  *       already issued lapses at its expiry). After the answer, the account's
@@ -18,7 +19,7 @@ import { WHATSAPP_UNAVAILABLE_AR } from "@/lib/passwordReset/passwordResetRules"
  *   400 { code: "invalid_code", error: «الرمز غير صحيح أو انتهت صلاحيته» } —
  *       a wrong, expired, used or locked code, or an address with no
  *       account: one answer, held to one minimum time.
- *   400 { code: "weak_password" | "invalid_email" } · 429 { code:
+ *   400 { code: "weak_password" | "invalid_email" | "invalid_phone" } · 429 { code:
  *       "rate_limited" } · 503 { code: "unavailable" | "password_not_set" }.
  */
 export const dynamic = "force-dynamic";
@@ -46,6 +47,7 @@ export async function POST(request: Request) {
   // limits each address.
   const answer = await verifyWhatsAppReset(serverResetDeps(svc, async () => "ok"), {
     email: body.email,
+    phone: body.phone,
     code: body.code,
     password: body.password,
     confirm: body.confirm,
