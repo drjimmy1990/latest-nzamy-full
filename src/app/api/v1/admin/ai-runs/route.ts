@@ -4,6 +4,7 @@ import { requireStaff } from "@/lib/access-control";
 import { AI_TOOLS } from "@/lib/ai/tools";
 import { registryPointsLabel } from "@/lib/ai/toolPointsDisplay";
 import { resolveToolRuntime } from "@/lib/ai/aiToolsConfig";
+import { AI_MODEL_CHOICES, AI_MODEL_NOTES_AR, AI_MODEL_SETTING, parseAiModel } from "@/lib/ai/aiModel";
 
 /**
  * GET /api/v1/admin/ai-runs — «تشغيلات الذكاء الاصطناعي» (AI wave 0, plan §5).
@@ -16,7 +17,9 @@ import { resolveToolRuntime } from "@/lib/ai/aiToolsConfig";
  *           so the page can say so;
  *   runs    the last 100 runs (?tool=, ?status= to filter) with who ran them,
  *           what was charged or refunded, the error code, tokens and time;
- *   charging  platform_settings.points_enforcement.
+ *   charging  platform_settings.points_enforcement;
+ *   model   owner س٢١٩ (batch l16): the model the runs send to n8n
+ *           (platform_settings.ai_model, aiModel.ts) and the allowed choices.
  *
  * Any staff role may read (requireStaff("read")). Service client: ai_runs has
  * no admin policy, and usage / model are not readable by sessions.
@@ -35,9 +38,13 @@ export async function GET(request: NextRequest) {
     const { data: settings } = await admin
       .from("platform_settings")
       .select("key, value")
-      .in("key", ["ai_tools", "points_enforcement"]);
+      .in("key", ["ai_tools", "points_enforcement", AI_MODEL_SETTING]);
     const byKey = new Map((settings ?? []).map((s: { key: string; value: unknown }) => [s.key, s.value]));
     const aiTools = byKey.get("ai_tools") ?? null;
+    const model = {
+      current: parseAiModel(byKey.get(AI_MODEL_SETTING)),
+      choices: AI_MODEL_CHOICES.map((name) => ({ name, note: AI_MODEL_NOTES_AR[name] ?? null })),
+    };
 
     const tools = Object.values(AI_TOOLS).map((spec) => {
       const rt = resolveToolRuntime(spec, aiTools);
@@ -71,7 +78,7 @@ export async function GET(request: NextRequest) {
     if (error) {
       // Before 20261027_10 runs there is no table: show the tools, no runs.
       if (error.code === "42P01" || error.code === "PGRST205") {
-        return NextResponse.json({ tools, runs: [], charging: byKey.get("points_enforcement") === true, schemaMissing: true });
+        return NextResponse.json({ tools, model, runs: [], charging: byKey.get("points_enforcement") === true, schemaMissing: true });
       }
       console.error("[admin/ai-runs] read failed:", error.code, error.message);
       return NextResponse.json({ error: "تعذّر تحميل التشغيلات" }, { status: 503 });
@@ -89,6 +96,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(
       {
         tools,
+        model,
         charging: byKey.get("points_enforcement") === true,
         runs: (runs ?? []).map((r: { user_id: string; created_at: string; finished_at: string | null }) => ({
           ...r,

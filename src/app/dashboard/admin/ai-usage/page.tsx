@@ -15,7 +15,9 @@ import { sarText, type CostWindow } from "@/lib/ai/aiCost";
  *     platform_settings.ai_tools through PATCH /api/v1/admin/settings;
  *   * a round-trip test (echo-fast / echo-job) run from this session — an
  *     admin is never charged, so a charge test needs a test account;
- *   * the last 100 runs: who, status, points charged / refunded, error, tokens, time.
+ *   * the last 100 runs: who, status, points charged / refunded, error, tokens, time;
+ *   * owner س٢١٩ (batch l16): the model every run sends to n8n, chosen from
+ *     the priced models and saved to platform_settings.ai_model.
  */
 
 interface ToolRow {
@@ -30,6 +32,11 @@ interface ToolRow {
   dailyLimit: number;
   defaultMode: string;
   defaultDailyLimit: number;
+}
+
+interface ModelChoices {
+  current: string;
+  choices: Array<{ name: string; note: string | null }>;
 }
 
 interface RunRow {
@@ -78,6 +85,8 @@ export default function AdminAIUsagePage() {
   const [cost, setCost] = useState<{ windows: CostWindow[]; truncated: boolean } | null>(null);
   const [costError, setCostError] = useState(false);
   const [costDays, setCostDays] = useState<7 | 30>(7);
+  const [aiModel, setAiModel] = useState<ModelChoices | null>(null);
+  const [modelChoice, setModelChoice] = useState("");
   const run = useAiRun();
 
   const load = useCallback(async () => {
@@ -101,6 +110,10 @@ export default function AdminAIUsagePage() {
       setRuns(json.runs ?? []);
       setCharging(json.charging === true);
       setSchemaMissing(json.schemaMissing === true);
+      if (json.model && typeof json.model.current === "string" && Array.isArray(json.model.choices)) {
+        setAiModel(json.model as ModelChoices);
+        setModelChoice(json.model.current);
+      }
       if (graphRes && graphRes.ok) {
         const gJson = (await graphRes.json()) as AdminGraphRagStatusPayload;
         setGraphStatus(gJson);
@@ -160,6 +173,26 @@ export default function AdminAIUsagePage() {
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error ?? "تعذّر الحفظ");
       setToast({ ok: true, msg: "حُفظت إعدادات الأدوات" });
+      await load();
+    } catch (err) {
+      setToast({ ok: false, msg: (err as Error).message });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function saveModel() {
+    setSaving(true);
+    setToast(null);
+    try {
+      const res = await fetch("/api/v1/admin/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key: "ai_model", value: { model: modelChoice } }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error ?? "تعذّر الحفظ");
+      setToast({ ok: true, msg: "حُفظ النموذج، ويُستعمل من التشغيل التالي" });
       await load();
     } catch (err) {
       setToast({ ok: false, msg: (err as Error).message });
@@ -256,6 +289,30 @@ export default function AdminAIUsagePage() {
           {saving ? "جارٍ الحفظ…" : "حفظ"}
         </button>
       </section>
+
+      {aiModel && (
+        <section className="mb-6 rounded-2xl border border-zinc-800 bg-zinc-950/60 p-4">
+          <h2 className="mb-1 text-[14px] font-black text-white">نموذج الذكاء الاصطناعي</h2>
+          <p className="mb-3 text-[12px] text-zinc-500">
+            النموذج الذي تعمل به كل الأدوات. القائمة تضم النماذج التي لها سعر مضبوط فقط، فتُحسب تكلفة كل تشغيل بسعر النموذج الذي عمل به.
+          </p>
+          <div className="flex flex-wrap items-center gap-3">
+            <select value={modelChoice} onChange={(e) => setModelChoice(e.target.value)} dir="ltr"
+              className="rounded-lg border border-zinc-700 bg-zinc-900 px-2 py-1 font-mono text-[12px] text-zinc-100">
+              {aiModel.choices.map((c) => (
+                <option key={c.name} value={c.name}>{c.name}</option>
+              ))}
+            </select>
+            <button disabled={saving || loading || modelChoice === aiModel.current} onClick={saveModel}
+              className="rounded-xl bg-[#C8A762] px-4 py-2 text-[12px] font-black text-black disabled:opacity-50">
+              {saving ? "جارٍ الحفظ…" : "حفظ النموذج"}
+            </button>
+          </div>
+          {aiModel.choices.find((c) => c.name === modelChoice)?.note && (
+            <p className="mt-2 text-[11px] text-amber-300">{aiModel.choices.find((c) => c.name === modelChoice)?.note}</p>
+          )}
+        </section>
+      )}
 
       <AiCostSection cost={cost} error={costError} loading={loading} days={costDays} setDays={setCostDays} />
 

@@ -2,6 +2,25 @@
 
 One self-contained workflow per AI tool. The plan is `docs/plans/2026-10-26-ai-services-n8n-plan.md`.
 
+## Batch l16 (owner س٢١٩): the model is chosen in the admin settings — re-apply every workflow
+
+The model is no longer fixed in the workflows. The admin picks it on `/dashboard/admin/ai-usage` («نموذج الذكاء الاصطناعي»), saved as `platform_settings.ai_model` = `{"model": "models/gemini-3.5-flash-lite"}` (the default). Only a model with a price row in `src/lib/ai/modelPrices.ts` can be chosen (`src/lib/ai/aiModel.ts`). The app sends it as `model` in every package: the tool's call and the library search writer's (lib-queries).
+
+What changed in every workflow file (all 21):
+- each Gemini node (**Write**, **Read**, **Outline**, **Write clause**) takes its model from the package: `modelId` is the expression `MODEL_EXPR` (workflows.mjs). A package without `model`, or with anything that is not a `models/gemini-…` name, runs on `models/gemini-3.5-flash-lite` as before, so the order of deploy and re-apply does not matter;
+- every parse step reports that same name in `usage.model`, so the admin AI usage page prices each run at the model it really ran on;
+- a refused reply (no text, no search lines) now still reports its tokens, and an empty reply says why in the run's error (`finish: MAX_TOKENS, thinking tokens: N` → code `output_truncated`);
+- the library tools read marker variants (`[S1، S2]`, `[S١]`, `【S1】`) as `[S1]`; before, such an answer was refunded as «ungrounded» (422);
+- lib-queries: `maxOutputTokens` 200 → 1024, so a thinking model's thoughts cannot use up the whole budget before the search lines.
+
+**Before pasting (backup):** for each workflow, open it on n8n → ⋯ → **Download** (keeps a JSON copy of the live version), and look at its version history: some were changed live or created through the API.
+
+**Order:**
+1. Apply `lib-queries` and `quick-answer` first (steps under «Updating an existing workflow from its file» below), re-select the Gemini credential on the **Write** node, save.
+2. Ask one fixed Arabic question in «سؤال قانوني سريع» as the admin, then on `/dashboard/admin/ai-usage` the last run must show non-zero tokens, the model `gemini-3.5-flash-lite` and a cost.
+3. Then apply the other 19, re-selecting the Gemini credential on each Gemini node.
+4. Optional check that the setting is followed: save another model on the admin page, run one question, see that model on the run, then save `models/gemini-3.5-flash-lite` back.
+
 ## Batch l13 (owner ١٥٦): real token counts — re-apply every workflow
 
 Every workflow file changed: the AI Agent + **Model** pair became one **Google Gemini** node (Simplify Output off), the document jobs' **Read** node got Simplify Output off, and every parse step now sends Gemini's real `usageMetadata` instead of 0 / 0. The parse steps still read the old reply shapes, so the app keeps working whichever version runs on n8n; a workflow not re-applied only goes on reporting 0 / 0 (shown as «بلا عدد رموز» on the admin page, never as free).
@@ -95,7 +114,7 @@ The five wave-2 workflows were switched **on** on 2026-10-28, after a live test 
 Library tools also pass the library's closed switch and the assistant's tier rule (Pro or higher, or an admin) before anything is charged.
 
 **The model.** Since batch l13 (owner ١٥٦) each workflow calls the model through Google's own **Google Gemini** node, operation **Message a model** (the document jobs: **Analyze document**), with **Simplify Output** off. The old **AI Agent** node with a chat-model sub-node named **Model** never reported Gemini's token counts, so every run sent 0 / 0 and the admin AI usage page could not show a cost.
-- The model is `models/gemini-3.1-flash-lite`, on the instance's existing credential `Google Gemini(PaLM) Api account`.
+- The model is the admin setting `ai_model` (batch l16, owner س٢١٩; default `models/gemini-3.5-flash-lite`), sent by the app as `model` and read by each Gemini node's expression, on the instance's existing credential `Google Gemini(PaLM) Api account`.
 - The other credential is `NZAMY AI · inbound`, on the Webhook.
 - **No Anthropic key is needed.**
 - The parse step reads Gemini's `usageMetadata` and sends `usage: { model, input_tokens, output_tokens, cache_read_tokens }` (thinking tokens count as output). The app prices it with `src/lib/ai/modelPrices.ts`.

@@ -9,6 +9,7 @@ import {
   mergeFounderCampaignSetting,
 } from "@/lib/pricing/campaigns";
 import { aiToolsSettingIssue } from "@/lib/ai/aiToolsConfig";
+import { AI_MODEL_SETTING, aiModelSettingIssue } from "@/lib/ai/aiModel";
 import { founderDiscountExpiresIssue, isFounderDiscountBps } from "@/lib/payments/founderDiscount";
 import { firmExtraSeatPriceIssue } from "@/lib/pricing/firmSeats";
 import { founderRenewalIssue } from "@/lib/membership/founderRenewal";
@@ -73,6 +74,9 @@ const ALLOWED_SETTINGS_KEYS = [
   // "review" is refused (aiToolsSettingIssue) until Wave 3's money-safe gate.
   // A tool not named keeps its default in src/lib/ai/tools.ts ("off").
   "ai_tools",
+  // Batch l16 (owner س٢١٩; src/lib/ai/aiModel.ts): {"model": "models/…"} — the
+  // model every AI run sends to n8n; only a model with a price row may be chosen.
+  AI_MODEL_SETTING,
   // l7 (decision 4, 20261127_10): the founder top-up discount in basis points
   // (1500 = 15 %), a whole number 0–10000; read by founderDiscountBps().
   "founder_topup_discount_bps",
@@ -232,6 +236,8 @@ const SETTINGS_VALUE_VALIDATORS: Record<string, SettingValidator> = {
   founder_campaign: founderCampaignSettingIssue,
   // Pure, so src/lib/ai/runCore.test.ts covers it.
   ai_tools: (value) => aiToolsSettingIssue(value, Object.keys(AI_TOOLS)),
+  // Batch l16: pure, covered by src/lib/ai/aiModel.test.ts.
+  [AI_MODEL_SETTING]: aiModelSettingIssue,
   // A malformed rate would read back as the default 1500 — refuse it here.
   founder_topup_discount_bps: (value) =>
     isFounderDiscountBps(value) ? null : "قيمة founder_topup_discount_bps يجب أن تكون عدداً صحيحاً من 0 إلى 10000 (1500 = ١٥٪)",

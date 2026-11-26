@@ -66,6 +66,9 @@ import { contractDraftingRefusal, draftingRefusal, draftingRequestKind } from ".
 import { checkMinuteLimit, extractionRefusal, guardMessage, logFlagged, type PromptGuardState } from "./assistantGuard.ts";
 import { detectExtraction, isExtractionRefusalReply, leaksPrompt } from "./extractionGuard.ts";
 import { FILE_TEXT_TTL_MS } from "./fileTextToken.ts";
+import { AI_MODEL_DEFAULT, AI_MODEL_SETTING, parseAiModel } from "./aiModel.ts";
+import { citedSourceIds, normalizeCitationMarkers } from "./citationMarkers.ts";
+import { memoPurityIssue } from "./memoPurityGate.ts";
 import {
   SECTION_EDIT_COPY,
   countSectionEdits,
@@ -296,6 +299,26 @@ export async function readAiToolsSetting(admin: SupabaseClient): Promise<unknown
 }
 
 /**
+ * Owner س٢١٩ (batch l16): the model the run's n8n calls use, from the admin
+ * setting platform_settings.ai_model (aiModel.ts). A read error or a missing
+ * row is the default model — the one every workflow ran on before the setting
+ * — so a settings hiccup never stops a run that is already charged.
+ */
+export async function readAiModel(admin: SupabaseClient): Promise<string> {
+  try {
+    const { data, error } = await admin.from("platform_settings").select("value").eq("key", AI_MODEL_SETTING).maybeSingle();
+    if (error) {
+      console.error("[ai] ai_model setting read failed; the default model is used:", error.code, error.message);
+      return AI_MODEL_DEFAULT;
+    }
+    return parseAiModel((data as { value?: unknown } | null)?.value);
+  } catch (err) {
+    console.error("[ai] ai_model setting read threw; the default model is used:", errorName(err));
+    return AI_MODEL_DEFAULT;
+  }
+}
+
+/**
  * l12 simpledraft (owner ١٢٣): a tool whose price is an admin setting
  * (AiToolSpec.priceSetting). The parsed points, undefined when the row is
  * missing or malformed (the tool's default applies), or "error" when the read
@@ -347,6 +370,14 @@ const errorName = (err: unknown) => (err as { name?: unknown } | null)?.name?.to
 
 /** settleRunWith's failure code for an answer the output filter blocked (refunded). */
 const OUTPUT_BLOCKED = "output_blocked";
+
+/**
+ * l16 E-S8 (file 10 §٤.١): the tools whose written memo passes the purity gate
+ * (memoPurityGate.ts) before it is stored; a blocked memo is refunded and the
+ * lawyer may run it again (a failed run is not a turn).
+ */
+const PURITY_GATED_TOOLS: ReadonlySet<string> = new Set(["legal-drafter"]);
+const PURITY_BLOCKED = "purity_blocked";
 
 async function failRun(admin: SupabaseClient, runId: string, code: string, message: string): Promise<void> {
   // The sweeper retries a run left `running` past its deadline, so a failed
@@ -465,7 +496,25 @@ export async function settleRunWith(
   }
   if (raw.status !== "succeeded") return fail("bad_reply", "the result has no final status");
 
-  const checked = ctx.spec.validateOutput(raw.output, ctx.input);
+  // l16 (422 «ungrounded»): a library tool's answer that wrote its markers in
+  // another form ([S1، S2], [S١]) is read as [S1] here too, so a workflow not
+  // yet re-applied on n8n does not refund a grounded answer; its ids still
+  // count only when they are sources this run sent (mapCitations).
+  let rawOutput: unknown = raw.output;
+  let rawCitations: unknown = raw.citations;
+  if (ctx.spec.retrieval && isPlainObject(raw.output)) {
+    const normalized: Record<string, unknown> = { ...raw.output };
+    const fromText: string[] = [];
+    for (const [k, v] of Object.entries(normalized)) {
+      if (typeof v !== "string") continue;
+      normalized[k] = normalizeCitationMarkers(v);
+      fromText.push(...citedSourceIds(v));
+    }
+    rawOutput = normalized;
+    rawCitations = [...(Array.isArray(raw.citations) ? raw.citations : []), ...fromText];
+  }
+
+  const checked = ctx.spec.validateOutput(rawOutput, ctx.input);
   if (!checked) return fail("schema_invalid", "the output does not match the tool's shape");
   // Owner ١٣ / ٢٢: an answer that carries the prompt's canary or its own
   // wording is never stored (GET /ai/runs would hand it out) and is refunded.
@@ -475,6 +524,10 @@ export async function settleRunWith(
     const reply = checked[ctx.spec.promptGuard.replyField];
     if (leaksPrompt(reply)) return fail(OUTPUT_BLOCKED, "the answer quoted the hidden instructions");
     if (isExtractionRefusalReply(reply)) return fail(OUTPUT_BLOCKED, "the model refused an extraction attempt");
+  }
+  if (PURITY_GATED_TOOLS.has(ctx.spec.id)) {
+    const issue = memoPurityIssue(checked);
+    if (issue) return fail(PURITY_BLOCKED, `the memo failed the purity gate: ${issue}`);
   }
   const enrich = OUTPUT_ENRICHERS[ctx.spec.id];
   let output = checked;
@@ -487,7 +540,7 @@ export async function settleRunWith(
     }
   }
 
-  const citations = mapCitations(raw.citations, ctx.sources);
+  const citations = mapCitations(rawCitations, ctx.sources);
   // A library tool's answer stands on the texts it was given or not at all:
   // with no citation that resolves, it is the model's memory, not the library.
   // Owner ٤١٣ option A: quick-answer keeps such an answer, flagged and charged
@@ -1058,6 +1111,20 @@ export async function dispatchRunWith(admin: SupabaseClient, deps: StartRunDeps,
   let sources: SourceMap = {};
   // Owner ١٥٦ (l13): the library search writer's tokens, billed with the run.
   let searchUsage: Record<string, unknown> | null = null;
+  // Owner س٢١٩ (l16): the admin's model, sent to every n8n call of this run.
+  const model = await readAiModel(admin);
+  // l16 (0 tokens): a run refused for finding no text still spent the search
+  // writer's tokens; they stay on the run for the admin AI usage page.
+  const failSearch = async (code: string, message: string) => {
+    if (searchUsage) {
+      try {
+        await admin.from("ai_runs").update({ usage: searchUsage, model: (searchUsage.model as string | null) ?? null }).eq("id", run.run_id).eq("status", "running");
+      } catch (err) {
+        console.error("[ai] storing the search writer's usage threw for", run.run_id, errorName(err));
+      }
+    }
+    await failRun(admin, run.run_id, code, message);
+  };
 
   // Charged first, so the daily limit and the balance hold for the searches
   // too; every way out below refunds.
@@ -1087,6 +1154,7 @@ export async function dispatchRunWith(admin: SupabaseClient, deps: StartRunDeps,
           v: 1,
           run_id: run.run_id,
           tool: "lib-queries",
+          model,
           input: {
             text: searchSeedText,
           },
@@ -1103,6 +1171,17 @@ export async function dispatchRunWith(admin: SupabaseClient, deps: StartRunDeps,
     // Owner ١٥٦ (l13): the search writer is a model call of this run too.
     const libUsage = reply && reply.run_id === run.run_id ? sanitizeUsage(reply.usage) : null;
     if (usageHasTokens(libUsage)) searchUsage = libUsage;
+    // l16: why the search writer gave no searches, for ai_runs.error_message
+    // (an n8n or model failure there shows up as no_queries / no_sources).
+    const replyError = reply && isPlainObject(reply.error) ? reply.error : null;
+    const searchFailure =
+      asked.kind === "failed"
+        ? `search writer: ${asked.code}: ${asked.detail}`
+        : reply && reply.status === "failed"
+          ? `search writer: ${String(replyError?.code ?? "failed")}: ${String(replyError?.message ?? "")}`
+          : !reply
+            ? "search writer: no result"
+            : "";
     report(deps.progress, run.run_id, actor.userId, queryEvents(queries));
     // An open article, one the question names, or a semantic GraphRAG query
     // embedding is a source path even when the keyword writer found nothing.
@@ -1115,7 +1194,7 @@ export async function dispatchRunWith(admin: SupabaseClient, deps: StartRunDeps,
     let found: Retrieved = { sources: [], map: {} };
     if (queries.length === 0 && !hasVector && !pin.articleId && !named) {
       if (!sourcesOptional) {
-        await failRun(admin, run.run_id, "no_queries", asked.kind === "failed" ? asked.detail : "the search writer returned no searches");
+        await failSearch("no_queries", searchFailure || "the search writer returned no searches");
         return { status: 502, body: { error: AI_COPY.failed, code: "tool_failed", runId: run.run_id } };
       }
     } else {
@@ -1134,7 +1213,7 @@ export async function dispatchRunWith(admin: SupabaseClient, deps: StartRunDeps,
       }
     }
     if (found.sources.length === 0 && !sourcesOptional) {
-      await failRun(admin, run.run_id, "no_sources", `no library text matched: ${queries.join(" | ")}`);
+      await failSearch("no_sources", `no library text matched: ${queries.join(" | ")}${searchFailure ? ` (${searchFailure})` : ""}`);
       return { status: 422, body: { error: AI_COPY.noSources, code: "no_sources", runId: run.run_id } };
     }
     if (found.sources.length > 0) {
@@ -1165,6 +1244,8 @@ export async function dispatchRunWith(admin: SupabaseClient, deps: StartRunDeps,
     variant: null,
     class: spec.class,
     model_tier: spec.tier,
+    // Owner س٢١٩ (l16): the admin's model; n8n falls back to its own without it.
+    model,
     locale: "ar",
     actor: {
       role: actor.userType,

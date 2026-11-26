@@ -9,7 +9,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { AI_WORKFLOWS, CODE, MODEL, toWorkflow } from "../../../n8n/ai/workflows.mjs";
+import { AI_WORKFLOWS, CODE, MARKERS_FN, MODEL, MODEL_EXPR, MODEL_PATTERN, toWorkflow } from "../../../n8n/ai/workflows.mjs";
+import { AI_MODEL_CHOICES, AI_MODEL_DEFAULT, aiModelId } from "./aiModel.ts";
+import { normalizeCitationMarkers } from "./citationMarkers.ts";
 import { AI_TOOLS, LIB_QUERIES_PATH, LIBRARY_NO_ANSWER } from "./tools.ts";
 import { REQUEST_SUMMARY_PATH } from "../services/requestPublicSummaryModel.ts";
 import { COMMUNITY_REVIEW_PATH, readAiVerdict } from "../community/aiReview.ts";
@@ -315,7 +317,8 @@ function assertGeminiCall(n: Node) {
   assert.equal(n.parameters.resource, "text");
   assert.equal(n.parameters.operation, "message");
   assert.equal(n.parameters.simplify, false, "the raw reply keeps usageMetadata");
-  assert.equal(n.parameters.modelId.value, MODEL.modelName);
+  // Owner س٢١٩ (l16): the admin's model from the package, the workflow's own as the fallback.
+  assert.equal(n.parameters.modelId.value, MODEL_EXPR);
   assert.deepEqual(n.parameters.messages, { values: [{ content: "={{ $json.content }}" }] });
   assert.equal(n.parameters.options.systemMessage, "={{ $json.system }}");
   assert.ok(n.parameters.options.maxOutputTokens > 0);
@@ -467,6 +470,7 @@ for (const tool of ["wargaming", "analyze-strength", "contract-drafter", "simple
     assert.equal(wf.connections["Build prompt"].main[0][0].node, "Write");
     assertGeminiCall(byName("Write"));
     assert.equal(byName("Read").parameters.simplify, false, "owner ١٥٦: the document reply keeps usageMetadata");
+    assert.equal(byName("Read").parameters.modelId.value, MODEL_EXPR, "owner س٢١٩: the document call follows the setting too");
     for (const from of ["Read", "Write"]) {
       assert.equal(wf.connections[from].main[0][0].node, "Parse result", from);
       assert.equal(wf.connections[from].main[1][0].node, "Model error", from);
@@ -1097,3 +1101,98 @@ test("owner ١٥٦: no exported workflow keeps a hard-coded 0 / 0 or an Agent no
   }
 });
 
+
+// ── owner س٢١٩ (batch l16): the model is an admin setting sent in the package ──
+
+/** MODEL_EXPR evaluated the way n8n does, against a webhook body. */
+function evalModelExpr(body: Record<string, unknown>): string {
+  const $ = (name: string) => {
+    assert.equal(name, "Webhook");
+    return { first: () => ({ json: { body } }) };
+  };
+  return new Function("$", `return (${MODEL_EXPR.replace(/^=\{\{\s*/, "").replace(/\s*\}\}$/, "")});`)($) as string;
+}
+
+test("owner س٢١٩: every Gemini node takes the package's model, with the workflow's own model as the fallback", () => {
+  assert.ok(MODEL_EXPR.startsWith("={{ ") && MODEL_EXPR.endsWith(" }}"));
+  // n8n's expression parser reads {{ … }}: no other brace may appear inside.
+  assert.ok(!/[{}]/.test(MODEL_EXPR.slice(3, -3)), "no brace inside the expression");
+  assert.equal(evalModelExpr({ model: "models/gemini-3.1-flash-lite" }), "models/gemini-3.1-flash-lite");
+  for (const bad of [undefined, null, "", 42, "gpt-4o", "gemini-3.1-flash-lite", "models/gemini-X", "models/gemini-a' + 1", `models/gemini-${"a".repeat(80)}`]) {
+    assert.equal(evalModelExpr(bad === undefined ? {} : { model: bad }), MODEL.modelName, String(bad));
+  }
+  // The setting's default is the workflows' own model, and every choice passes the n8n check.
+  assert.equal(AI_MODEL_DEFAULT, MODEL.modelName);
+  const pattern = new Function(`return ${MODEL_PATTERN};`)() as RegExp;
+  for (const m of AI_MODEL_CHOICES) {
+    assert.ok(pattern.test(m) && m.length <= 80, m);
+    assert.equal(evalModelExpr({ model: m }), m);
+  }
+  // Every Gemini node of every exported workflow uses it.
+  for (const d of AI_WORKFLOWS) {
+    const file = readFileSync(new URL(`../../../n8n/ai/${d.tool}.json`, import.meta.url), "utf8");
+    const wf = JSON.parse(file) as { nodes: Node[] };
+    const calls = wf.nodes.filter((n) => n.type === MODEL.type);
+    assert.ok(calls.length > 0, d.tool);
+    for (const n of calls) assert.equal(n.parameters.modelId.value, MODEL_EXPR, `${d.tool} / ${n.name}`);
+    assert.ok(!file.includes(`"value": "${MODEL.modelName}"`), `${d.tool}.json still names the model as a fixed value`);
+  }
+});
+
+test("owner س٢١٩: usage.model is the model the node used, so the run is priced at it", () => {
+  for (const tool of ["communicate", "quick-answer", "lib-queries", "legal-drafter", "case-brief"]) {
+    const sent = { ...pkg(tool, {}), model: "models/gemini-3.1-flash-lite" };
+    const r = runCode(def(tool).parse, sent, rawGemini('{"a":1} [S1]'))[0].json;
+    assert.equal(r.usage.model, "gemini-3.1-flash-lite", tool);
+    // The same rule as the node's expression: the name it ran on.
+    assert.equal(r.usage.model, aiModelId(evalModelExpr(sent)), tool);
+    const junk = runCode(def(tool).parse, { ...pkg(tool, {}), model: "gpt-4o" }, rawGemini('{"a":1} [S1]'))[0].json;
+    assert.equal(junk.usage.model, aiModelId(MODEL.modelName), `${tool}: an unknown name falls back`);
+  }
+  const summary = runCode(def("request-summary").parse, { tool: "request-summary", input: {} }, rawGemini("طلب استشارة في عقد"))[0].json;
+  assert.equal(summary.usage.model, aiModelId(MODEL.modelName), "an internal call without a model: the workflow's own");
+});
+
+test("l16: a refused reply still reports its tokens, and an empty one says why (MAX_TOKENS → output_truncated)", () => {
+  const body = pkg("lib-queries", { text: "س" });
+  const thinkingOnly = {
+    candidates: [{ content: { parts: [{ text: "أفكر", thought: true }] }, finishReason: "MAX_TOKENS" }],
+    usageMetadata: { promptTokenCount: 300, candidatesTokenCount: 0, thoughtsTokenCount: 200 },
+  };
+  const r = runCode(def("lib-queries").parse, body, thinkingOnly)[0].json;
+  assert.equal(r.status, "failed");
+  assert.equal(r.error.code, "output_truncated");
+  assert.match(r.error.message, /finish: MAX_TOKENS, thinking tokens: 200/);
+  assert.deepEqual(r.usage, { model: aiModelId(MODEL.modelName), input_tokens: 300, output_tokens: 200, cache_read_tokens: 0 });
+  // No search line in a real reply: refused, tokens kept.
+  const noLines = runCode(def("lib-queries").parse, body, rawGemini("-\n1."))[0].json;
+  assert.equal(noLines.status, "failed");
+  assert.equal(noLines.error.code, "schema_invalid");
+  assert.ok(noLines.usage.input_tokens > 0);
+  // The search writer has room for a thinking model's thoughts.
+  assert.ok(def("lib-queries").maxOutputTokens >= 1024);
+});
+
+test("l16 (422 ungrounded): marker variants are read as [S1] in n8n and in the app, by the same rule", () => {
+  const n8nNorm = new Function("s", `${MARKERS_FN}\nreturn normMarkers(s);`) as (s: string) => string;
+  const cases: Array<[string, string]> = [
+    ["أ [S1]. ب [S2][S4].", "أ [S1]. ب [S2][S4]."],
+    ["أ [S1, S2].", "أ [S1][S2]."],
+    ["أ [S1، S3] و[S2 و S4].", "أ [S1][S3] و[S2][S4]."],
+    ["أ [S١] ب [s2] ج [S03] د [ S5 ].", "أ [S1] ب [S2] ج [S3] د [S5]."],
+    ["أ 【S1】 ب ［S2］.", "أ [S1] ب [S2]."],
+    ["ليس مرجعاً: [١] و[المادة 5] و【ملاحظة】 و[....].", "ليس مرجعاً: [١] و[المادة 5] و【ملاحظة】 و[....]."],
+  ];
+  for (const [input, want] of cases) {
+    assert.equal(normalizeCitationMarkers(input), want, input);
+    assert.equal(n8nNorm(input), want, `n8n: ${input}`);
+  }
+  const body = pkg("quick-answer", { question: "س" });
+  const r = runCode(def("quick-answer").parse, body, { output: "يستحق المكافأة [S2، S1]." })[0].json;
+  assert.deepEqual(r.citations, ["S2", "S1"]);
+  assert.deepEqual(r.output, { answer: "يستحق المكافأة [S2][S1]." });
+  // A JSON reply is read unchanged; only the citations follow the variants.
+  const consult = runCode(def("legal-opinion-consult").parse, pkg("legal-opinion-consult", {}), { output: '{"answer":"نص [S1، S2] آخر"}' })[0].json;
+  assert.equal(consult.status, "succeeded");
+  assert.deepEqual(consult.citations, ["S1", "S2"]);
+});
