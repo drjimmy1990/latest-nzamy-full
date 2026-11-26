@@ -4,10 +4,15 @@
 // (4 Oct item 99). The category is the URL's: a category page's own, or
 // `?category=<label>` on /blog for a label with no page of its own. Every pill
 // is a link, so the browser's back button and a shared link both keep it.
-// It reads useSearchParams, so each route renders it inside <Suspense>.
+//
+// Owner package 25-Nov (annex 09 GSC-02): the server renders it. It no longer
+// reads useSearchParams itself — on a prerendered route that hook makes Next
+// leave everything up to the nearest <Suspense> to the browser, so the first
+// HTML had no heading at all (and a `mounted` gate emptied it too). /blog's
+// `?category=` is read by ./BlogListFromUrl.tsx and passed in as
+// `urlCategory`; a category page passes its own slug and needs no Suspense.
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
 import {
   MagnifyingGlass, Newspaper, Clock, Eye, Tag, Warning, ArrowClockwise,
@@ -132,16 +137,15 @@ function rowToArticle(row: BlogRow, index: number): Article {
 // ─── Component ─────────────────────────────────────────────────────────────
 /**
  * `categorySlug` is a category page's slug (the route has already checked
- * it). Without one this is /blog, filtered by `?category=<label>` or not at all.
+ * it). Without one this is /blog, filtered by `urlCategory` (the URL's
+ * `?category=<label>`, read by ./BlogListFromUrl.tsx) or not at all.
  */
-export default function BlogList({ categorySlug }: { categorySlug?: string }) {
+export default function BlogList({ categorySlug, urlCategory }: { categorySlug?: string; urlCategory?: string | null }) {
   const { isRTL, isDark } = useTheme();
-  const searchParams = useSearchParams();
   const fixed = categorySlug ? blogCategoryBySlug(categorySlug) : null;
   // A pill's id is its label; "all" is no filter.
-  const category = fixed ? fixed.label : (searchParams.get("category")?.trim() || "all");
+  const category = fixed ? fixed.label : (urlCategory?.trim() || "all");
   const [search, setSearch] = useState("");
-  const [mounted, setMounted] = useState(false);
   const [items, setItems] = useState<Article[]>([]);
   const [total, setTotal] = useState(0);
   // Every published article — the `total` of one unfiltered read. Not
@@ -161,8 +165,6 @@ export default function BlogList({ categorySlug }: { categorySlug?: string }) {
   const [categoryRows, setCategoryRows] = useState<{ category: string; count: number }[]>([]);
   const offsetRef = useRef(0);
   const requestSeqRef = useRef(0);
-
-  useEffect(() => setMounted(true), []);
 
   // Distinct categories (with counts) drive the pills — real taxonomy, not a
   // hardcoded list.
@@ -253,8 +255,6 @@ export default function BlogList({ categorySlug }: { categorySlug?: string }) {
     const t = setTimeout(() => { void fetchPage(true, search, values); }, search ? 300 : 0);
     return () => clearTimeout(t);
   }, [search, categoryKey, fetchPage]);
-
-  if (!mounted) return null;
 
   const muted = isDark ? "text-zinc-400" : "text-slate-500";
   const card = `rounded-[2rem] border overflow-hidden backdrop-blur-xl shadow-[0_20px_40px_-15px_rgba(11,61,46,0.04)] ${isDark ? "bg-[#161b22]/80 border-white/[0.06]" : "bg-white/80 border-slate-200/50"}`;

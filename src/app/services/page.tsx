@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Briefcase, Users, Star, ArrowRight, MagnifyingGlass,
@@ -140,13 +140,13 @@ const FEATURED_LAWYERS = [
 
 export default function ServicesMarketplacePage() {
   const { isRTL, isDark } = useTheme();
-  const [mounted, setMounted] = useState(false);
   const [role, setRole] = useState<UserRole | null>(null);
   const [search, setSearch] = useState("");
   const [wizardService, setWizardService] = useState<{ id: string; title: string; titleEn: string } | null>(null);
 
-  useEffect(() => setMounted(true), []);
-  if (!mounted) return null;
+  // Owner package 25-Nov (annex 09 GSC-02): no `mounted` gate — the server
+  // renders the page (its <h1> and services); nothing here differs between
+  // the server's render and the browser's first one (role starts null).
 
   const bg = isDark ? "bg-[#0c0f12]" : "bg-gray-50";
   const card = isDark ? "bg-[#161b22] border-[#2d3748]" : "bg-white border-gray-200";

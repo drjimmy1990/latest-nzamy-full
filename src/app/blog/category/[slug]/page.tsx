@@ -3,12 +3,15 @@
 // are fixed by ../../_categories.ts and prerendered at build time, each with
 // its own Arabic title, description and canonical URL. The list is the same
 // <BlogList> /blog renders, filtered by the category. No database read here:
-// the articles are fetched by the list, as on /blog.
+// the articles are fetched by the list, as on /blog. The list reads no search
+// params, so it needs no <Suspense> and the server renders it whole — heading
+// included — with the page's CollectionPage + BreadcrumbList JSON-LD (owner
+// package 25-Nov, annex 09 GSC-02).
 
-import { Suspense } from "react";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { buildMetadata } from "@/lib/seo";
+import { buildBlogListJsonLd, serializeJsonLd } from "@/lib/publicSeo/structuredData";
 import BlogList from "../../BlogList";
 import { BLOG_CATEGORY_PAGES, blogCategoryBySlug } from "../../_categories";
 
@@ -39,9 +42,16 @@ export default async function BlogCategoryPage({ params }: Props) {
   const { slug } = await params;
   const category = blogCategoryBySlug(slug);
   if (!category) notFound();
+  const jsonLd = buildBlogListJsonLd({
+    name: category.label,
+    description: `مقالات المدونة القانونية في ${category.label}.`,
+    path: `/blog/category/${category.slug}`,
+    categoryLabel: category.label,
+  });
   return (
-    <Suspense fallback={null}>
+    <>
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: serializeJsonLd(jsonLd) }} />
       <BlogList key={category.slug} categorySlug={category.slug} />
-    </Suspense>
+    </>
   );
 }
