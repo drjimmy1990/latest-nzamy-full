@@ -305,7 +305,9 @@ test("every nav row to a gated page is badged «قريباً» — the files nav
   // reports) out of ADMIN_SIDEBAR (it is built from adminNavItems.ts now).
   // 11, not 14: l9 row 70 took the lawyer's /ai/legal-translate, /ai/transcriber
   // and /ai/compare rows (DashboardComingSoon pages) out of his menu.
-  assert.ok(seen >= 11, `found only ${seen} rows — the parser broke`);
+  // 10, not 11: l16 C19 pointed ADMIN_NAV's «إعدادات النظام» row (/dashboard/admin/system) at the real
+  // /dashboard/admin/settings page, so the navbar no longer links the «قريباً» page.
+  assert.ok(seen >= 10, `found only ${seen} rows — the parser broke`);
   assert.deepEqual(wrong, []);
   // /ai/analyze is the live case brief for lawyer and firm (S3-01, S3-02): one
   // unbadged row in each of the two sidebars this file holds.

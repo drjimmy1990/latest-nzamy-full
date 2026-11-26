@@ -18,7 +18,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { NAV, adminNavForRole } from "./adminNavByRole.ts";
+import { ADMIN_NAV_ICON_NAMES, NAV, adminNavForRole } from "./adminNavByRole.ts";
 import {
   ADMIN_PAGE_ACTION,
   adminHrefVisible,
@@ -29,6 +29,7 @@ import { STAFF_MATRIX, type StaffRole } from "../../lib/auth/staffRoles.ts";
 import { ADMIN_SIDEBAR, adminSidebarForRole } from "../../constants/navigation.sidebars.primary.ts";
 import { getSidebarByUserType } from "../../constants/navigation.sidebars.ts";
 import { readFileSync } from "node:fs";
+import { ADMIN_NAV_SECTIONS } from "../../constants/adminNavItems.ts";
 
 type Group = { items: ReadonlyArray<{ href: string }> };
 
@@ -45,13 +46,14 @@ const SUPER_ONLY = [
 
 // ─── The console's own sidebar (AdminSidebar.tsx) ─────────────────────────────
 
-test("super_admin sees all 42 items of the console sidebar (l14: + «تغطية الإحالات», − «إضافة مستخدم»)", () => {
+test("super_admin sees all 38 items of the console sidebar (l16: − the four invented or closed pages)", () => {
   const all = hrefsOf(NAV);
   // l9 row 54: one list for both navs — 37, plus إضافة مستخدم, الأدوار والصلاحيات,
   // سجل المدفوعات and إدارة الأسعار from the old ADMIN_SIDEBAR, minus the
   // «قريباً» page «إعدادات النظام» (/dashboard/admin/system); + دفعات الاختبار (l9 testinfra);
-  // + المجلة التشريعية (l13); + تغطية الإحالات (l14 links); − إضافة مستخدم (l14: the page created nothing, now «قيد التفعيل»).
-  assert.equal(all.length, 42, "the console sidebar has 42 items");
+  // + المجلة التشريعية (l13); + تغطية الإحالات (l14 links); − إضافة مستخدم (l14: the page created nothing, now «قيد التفعيل»)
+  // = 42; − التقييمات, شركات المحاماة, بروفيلات القطاعات, أكواد دعوة المكتبة (l16 C01–C03, C18) = 38.
+  assert.equal(all.length, 38, "the console sidebar has 38 items");
   assert.equal(new Set(all).size, all.length, "no href is listed twice");
   assert.deepEqual(adminNavForRole("super_admin"), NAV);
 });
@@ -82,7 +84,6 @@ test("operations keeps its own day-to-day tools and the read pages", () => {
     "/dashboard/admin",
     "/dashboard/admin/users",
     "/dashboard/admin/provider-verification",
-    "/dashboard/admin/provider-verification/firms",
     "/dashboard/admin/entitlements/requests",
     "/dashboard/admin/service-orders",
     "/dashboard/admin/tickets",
@@ -163,17 +164,64 @@ test("the filter never changes the source nav", () => {
   assert.equal(JSON.stringify(hrefsOf(NAV)), before);
 });
 
-test("«حملة المؤسس» sits right after the security item in both navs, and is a read page", () => {
+// l16 (§٨-2): the founder campaign moved from next to «الأمان» into the
+// owner's section ٣ «الاشتراكات والفوترة والأسعار», with the coupons and offers.
+test("«حملة المؤسس» sits after «العروض» in the billing section of both navs, and is a read page", () => {
   const FOUNDER = "/dashboard/admin/founder";
   assert.equal(ADMIN_PAGE_ACTION[FOUNDER], "read", "the overview is requireStaff(\"read\"); its writes are gated on the server");
-  for (const groups of [NAV, ADMIN_SIDEBAR] as ReadonlyArray<ReadonlyArray<{ items: ReadonlyArray<{ href: string; label: string }> }>>) {
+  for (const groups of [NAV.map((g) => ({ title: g.section, items: g.items })), ADMIN_SIDEBAR] as ReadonlyArray<ReadonlyArray<{ title?: string; items: ReadonlyArray<{ href: string; label: string }> }>>) {
     const group = groups.find((g) => g.items.some((i) => i.href === FOUNDER));
     assert.ok(group, "the founder item is listed");
+    assert.equal(group.title, "الاشتراكات والفوترة والأسعار");
     const at = group.items.findIndex((i) => i.href === FOUNDER);
-    assert.equal(group.items[at - 1]?.href, "/dashboard/admin/security", "next to the security item");
+    assert.equal(group.items[at - 1]?.href, "/dashboard/admin/offers", "next to the offers item");
     assert.equal(group.items[at].label, "حملة المؤسس");
   }
   for (const role of ROLES) assert.ok(hrefsOf(adminNavForRole(role)).includes(FOUNDER), role);
+});
+
+// ─── l16 (owner package 25 Nov): the six sections, the delisted pages ────────
+
+test("l16 §٨-2: the console nav is the owner's six sections, in his order", () => {
+  assert.deepEqual(NAV.map((g) => g.section), [
+    "لوحة القيادة والتحليلات",
+    "العملاء والمنشآت",
+    "الاشتراكات والفوترة والأسعار",
+    "العمليات والدعم والسوق",
+    "المعرفة والمحتوى والذكاء",
+    "الحوكمة والأمان والنظام",
+  ]);
+  for (const g of NAV) assert.ok(g.items.length > 0, g.section);
+});
+
+test("l16 C01–C03/C18: the invented and closed pages are offered in no admin nav", () => {
+  const navs = [hrefsOf(NAV), hrefsOf(ADMIN_SIDEBAR)];
+  for (const role of ROLES) navs.push(hrefsOf(adminNavForRole(role)), hrefsOf(adminSidebarForRole(role)));
+  for (const nav of navs) {
+    for (const gone of [
+      "/dashboard/admin/reviews",
+      "/dashboard/admin/provider-verification/firms",
+      "/dashboard/admin/sector-profiles",
+      "/dashboard/admin/library-invitations",
+    ]) {
+      assert.equal(nav.includes(gone), false, gone);
+    }
+  }
+});
+
+test("l16 C01–C03: the three invented pages say «قيد التفعيل» and keep no invented rows", () => {
+  for (const rel of ["reviews/page.tsx", "provider-verification/firms/page.tsx", "sector-profiles/page.tsx"]) {
+    const page = readFileSync(new URL(`../../app/dashboard/admin/${rel}`, import.meta.url), "utf8");
+    assert.match(page, /<DashboardComingSoon/, rel);
+    const code = page.replace(/\/\/.*$/gm, "");
+    assert.doesNotMatch(code, /useAdminSettings|localStorage|SSO pending|F-00\d|G-00\d|const REVIEWS/, rel);
+  }
+});
+
+test("l16 C23: every nav item names an icon the console can draw (no silent ChartBar fallback)", () => {
+  for (const s of ADMIN_NAV_SECTIONS) {
+    for (const i of s.items) assert.ok(ADMIN_NAV_ICON_NAMES.includes(i.icon), `${i.href}: ${i.icon}`);
+  }
 });
 
 // ─── The classification table ─────────────────────────────────────────────────
@@ -222,9 +270,9 @@ test("filterNavGroupsByRole keeps the group's own fields", () => {
 
 // ─── ADMIN_SIDEBAR (SharedSidebar / GlobalSearch) ─────────────────────────────
 
-// l9 row 54: ADMIN_SIDEBAR is the console list (42 since l14) plus the personal /settings.
-test("ADMIN_SIDEBAR: super_admin and a null role see all 43 items", () => {
-  assert.equal(hrefsOf(ADMIN_SIDEBAR).length, 43, "ADMIN_SIDEBAR has 43 items");
+// l9 row 54: ADMIN_SIDEBAR is the console list (38 since l16) plus the personal /settings.
+test("ADMIN_SIDEBAR: super_admin and a null role see all 39 items", () => {
+  assert.equal(hrefsOf(ADMIN_SIDEBAR).length, 39, "ADMIN_SIDEBAR has 39 items");
   assert.deepEqual(adminSidebarForRole("super_admin"), ADMIN_SIDEBAR);
   assert.deepEqual(adminSidebarForRole(null), ADMIN_SIDEBAR);
 });

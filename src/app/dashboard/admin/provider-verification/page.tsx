@@ -2,11 +2,10 @@
 
 import { motion } from "framer-motion";
 import { useState, useEffect, useCallback, useRef } from "react";
-import Link from "next/link";
 import {
   MagnifyingGlass, Check, X, Clock, Warning,
   FileText, Robot, Eye,
-  CheckCircle, IdentificationCard, Buildings,
+  CheckCircle, IdentificationCard,
   SpinnerGap, ArrowClockwise,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
@@ -271,10 +270,6 @@ export default function ProviderVerificationPage() {
             مراجعة طلبات انضمام المحامين ومقدمي الخدمات وشركات المحاماة — مدعوم بتقييم AI تلقائي
           </p>
         </div>
-        <Link href="/dashboard/admin/provider-verification/firms" className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#0B3D2E] px-4 py-2.5 text-xs font-black text-[#C8A762]">
-          <Buildings size={15} weight="duotone" />
-          إدارة شركات المحاماة
-        </Link>
       </motion.div>
 
       {/* Toast / Info banner */}
