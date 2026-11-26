@@ -8958,9 +8958,14 @@ select 'l16 review: the automatic suspension lift counts its failed tries (lift_
        coalesce((select count(*) = 2 from information_schema.columns
                   where table_schema = 'public' and table_name = 'account_suspension_freezes'
                     and column_name in ('lift_attempts', 'lift_last_error')), false) as ok;
-select 'l16 review: an account-type conversion puts the licence verification back to pending (run 20261206_80)' as check,
-       coalesce(position('set verification_status = ''pending'''
-                         in pg_catalog.pg_get_functiondef(to_regprocedure('public.admin_change_account_type(uuid,text,text,uuid)'))) > 0, false) as ok;
+-- l18 (owner ٢٢٣, 20261208_52) reversed the l16 reset to pending: this check now pins what both bodies
+-- share (the audit row records the verification before and after); the reset's absence is checked in
+-- the l18_answers block at the end of this file.
+select 'l16 review: an account-type conversion records the licence verification before and after in its audit row (run 20261206_80; owner ٢٢٣ keeps it — see l18_answers)' as check,
+       coalesce(position('''verification'', v_prev_verification'
+                         in pg_catalog.pg_get_functiondef(to_regprocedure('public.admin_change_account_type(uuid,text,text,uuid)'))) > 0
+                and position('verification_before'
+                             in pg_catalog.pg_get_functiondef(to_regprocedure('public.admin_change_account_type(uuid,text,text,uuid)'))) > 0, false) as ok;
 -- <<< verify:l16_review
 -- >>> verify:l17_pwreset — supabase/tests/rls/l17_pwreset.test.sql
 -- Batch l17: «نسيت كلمة المرور» by a WhatsApp code to the confirmed mobile. 20261207_10 runs BEFORE
