@@ -102,7 +102,10 @@ export const CONSULTANT_NAV: NavItem[] = [
   { label: "لوحة التحكم", labelEn: "Dashboard", href: "/dashboard/lawyer" },
   { label: "المكتبة القانونية", labelEn: "Legal Library", href: "/laws" },
   { label: "مكتبتي", labelEn: "My Library", href: "/laws/my" },
-  { label: "اطلب خدمة", labelEn: "Request a service", href: "/marketplace/post" },
+  // l16 review: /services — the request wizard that reaches the Nezamy team,
+  // open to a consultant; /marketplace/* redirects there while the beta's
+  // single-provider mode is on (src/app/marketplace/layout.tsx).
+  { label: "اطلب خدمة", labelEn: "Request a service", href: "/services" },
   { label: "الباقات", labelEn: "Plans", href: "/pricing" },
 ];
 

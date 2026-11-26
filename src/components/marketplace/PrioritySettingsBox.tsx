@@ -81,7 +81,7 @@ export default function PrioritySettingsBox({ isDark }: { isDark: boolean }) {
         ويستطيع الفريق إسناده خلال النافذة من قائمة الطلبات أدناه. الطلب المنشور يدوياً لا ينتظر.
       </p>
       {!draft && !msg && <p className={`text-sm ${ts}`}>جارٍ التحميل…</p>}
-      {draft && !draft.installed && <p className={`text-sm ${ts}`}>غير مفعّلة بعد على قاعدة البيانات (ملف SQL ‏20261206_40).</p>}
+      {draft && !draft.installed && <p className={`text-sm ${ts}`}>لم تُفعَّل بعد على قاعدة البيانات.</p>}
       {draft && draft.installed && (
         <div className="space-y-3 text-sm">
           <label className={`flex flex-wrap items-center gap-2 ${tp}`}>

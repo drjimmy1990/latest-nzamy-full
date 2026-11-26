@@ -376,6 +376,8 @@ test("l16 A-14: the independent consultant's top bar holds only allowlisted link
   walk(CONSULTANT_NAV);
   assert.ok(hrefs.length > 0);
   for (const h of hrefs) assert.ok(isConsultantAllowedPath(h), `${h} is not on the consultant allowlist`);
+  // l16 review: «اطلب خدمة» opens the services wizard, not the market form the beta redirects away from
+  assert.equal(CONSULTANT_NAV.find((i) => i.label === "اطلب خدمة")?.href, "/services");
   assert.equal(getNavForSession("lawyer", true), CONSULTANT_NAV);
   assert.equal(getNavForSession("lawyer", false), LAWYER_NAV);
   assert.equal(getNavForSession("firm", true), FIRM_NAV, "only a lawyer session");

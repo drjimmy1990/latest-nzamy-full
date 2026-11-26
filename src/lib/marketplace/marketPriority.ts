@@ -149,7 +149,7 @@ export function isPrioritySqlMissing(code: unknown): boolean {
   return code === "42703" || code === "42883" || code === "PGRST202" || code === "PGRST204";
 }
 
-export const PRIORITY_SQL_MISSING_AR = "نافذة أولوية نظامي غير مفعّلة بعد على قاعدة البيانات (ملف SQL ‏20261206_40).";
+export const PRIORITY_SQL_MISSING_AR = "نافذة أولوية نظامي لم تُفعَّل بعد على قاعدة البيانات.";
 
 /** Is the stamped moment still ahead (the request is held)? */
 export function isHeld(releaseAt: unknown, nowMs: number): boolean {
