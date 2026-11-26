@@ -119,7 +119,7 @@ export default function CorporateServicePage() {
           </FadeUp>
           <FadeUp delay={0.12}>
             <p className="text-ink-muted text-lg leading-relaxed max-w-[50ch]">
-              من العقود والعمالة حتى الامتثال التنظيمي — تغطية قانونية مؤسسية شاملة دون تكلفة توظيف مستشار штатного.
+              من العقود والعمالة حتى الامتثال التنظيمي — تغطية قانونية مؤسسية شاملة دون تكلفة توظيف مستشار متفرّغ.
             </p>
           </FadeUp>
           <FadeUp delay={0.18}>
