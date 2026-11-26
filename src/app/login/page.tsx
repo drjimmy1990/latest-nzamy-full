@@ -46,6 +46,12 @@ import { LOGIN_LOCKED_AR, LOGIN_LOCKED_CODE, LOGIN_LOCKED_EN } from "@/lib/auth/
 import { useTurnstile } from "@/components/auth/useTurnstile";
 import { TurnstileWidget } from "@/components/auth/TurnstileWidget";
 import { IDLE_NOTICE_AR } from "@/lib/auth/idleSignOut";
+import {
+  LOGIN_PREFILL_EMAIL_KEY,
+  LOGIN_RESET_DONE_AR,
+  LOGIN_RESET_DONE_EN,
+  LOGIN_RESET_REASON,
+} from "@/lib/passwordReset/passwordResetRules";
 
 const t = {
   ar: {
@@ -190,9 +196,26 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   // T5 (l11): /login?reason=idle — the idle sign-out sent the user here.
   const [idleNotice, setIdleNotice] = useState(false);
+  // Batch l17: /login?reason=password_reset — the WhatsApp reset just set a
+  // new password. The address comes from sessionStorage (never the URL).
+  const [resetNotice, setResetNotice] = useState(false);
   useEffect(() => {
     try {
-      setIdleNotice(new URLSearchParams(window.location.search).get("reason") === "idle");
+      const params = new URLSearchParams(window.location.search);
+      setIdleNotice(params.get("reason") === "idle");
+      const reason = params.get("reason");
+      if (reason === LOGIN_RESET_REASON) {
+        setResetNotice(true);
+        let prefill: string | null = null;
+        try {
+          prefill = window.sessionStorage.getItem(LOGIN_PREFILL_EMAIL_KEY);
+          window.sessionStorage.removeItem(LOGIN_PREFILL_EMAIL_KEY);
+        } catch { /* storage blocked: the field starts empty */ }
+        if (prefill) {
+          setInputMode("email");
+          setIdentifier(prefill);
+        }
+      }
     } catch { /* no window */ }
   }, []);
   const [loading, setLoading] = useState(false);
@@ -777,6 +800,17 @@ export default function LoginPage() {
                   >
                     <Warning size={16} weight="fill" className="flex-shrink-0" />
                     {isAr ? IDLE_NOTICE_AR : "You were signed out after a period of inactivity, to protect your account. Please sign in again."}
+                  </div>
+                )}
+
+                {/* Batch l17: the password was just changed by a WhatsApp code. */}
+                {resetNotice && !idleNotice && !error && (
+                  <div
+                    role="status"
+                    className="mb-4 flex items-center gap-2 rounded-xl border border-emerald-200 dark:border-emerald-900/40 bg-emerald-50 dark:bg-emerald-900/20 px-4 py-3 text-[13px] font-medium text-emerald-800 dark:text-emerald-300"
+                  >
+                    <CheckCircle size={16} weight="fill" className="flex-shrink-0" />
+                    {isAr ? LOGIN_RESET_DONE_AR : LOGIN_RESET_DONE_EN}
                   </div>
                 )}
 

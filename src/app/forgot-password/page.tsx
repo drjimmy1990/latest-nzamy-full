@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import {
   EnvelopeSimple,
@@ -10,6 +11,9 @@ import {
   Scales,
   LockKey,
   Warning,
+  WhatsappLogo,
+  Eye,
+  EyeSlash,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { createClient } from "@/lib/supabase/client";
@@ -17,20 +21,36 @@ import { BACKEND_MODE } from "@/lib/runtimeMode";
 import { canSubmitWithCaptcha, captchaMessage, captchaSubmitError } from "@/lib/auth/captcha";
 import { useTurnstile } from "@/components/auth/useTurnstile";
 import { TurnstileWidget } from "@/components/auth/TurnstileWidget";
-import { classifyRecoverError, isPlausibleEmail, recoveryRedirectTo } from "@/lib/auth/passwordRecovery";
+import { classifyRecoverError, isPlausibleEmail, recoveryRedirectTo, resetPasswordProblem } from "@/lib/auth/passwordRecovery";
+import {
+  LOGIN_AFTER_RESET_PATH,
+  LOGIN_PREFILL_EMAIL_KEY,
+  PASSWORD_RESET_WHATSAPP_API,
+  WHATSAPP_CODE_INVALID_AR,
+  WHATSAPP_CODE_INVALID_EN,
+  WHATSAPP_START_SENT_AR,
+  WHATSAPP_START_SENT_EN,
+  whatsappFromStatus,
+} from "@/lib/passwordReset/passwordResetRules";
 
 /**
  * «نسيت كلمة المرور» — the real flow (owner package 2026-11-02, slice A §1.5).
  *
- * This page used to walk through «رمز التحقق» → «كلمة مرور جديدة» → «تم بنجاح»
- * with local state only: nothing was sent and no password changed. It now
- * does one thing: ask GoTrue to email a reset link
- * (supabase.auth.resetPasswordForEmail). The link opens /auth/callback, which
- * sends the person to /reset-password to choose the new password.
- *
- * Email only: there is no phone reset path on the auth server, so none is
- * offered. The answer is the same neutral message whether or not the address
+ * This page used to walk through fake steps with local state only: nothing
+ * was sent and no password changed. Its e-mail path asks GoTrue to email a
+ * reset link (supabase.auth.resetPasswordForEmail). The link opens
+ * /auth/callback, which sends the person to /reset-password to choose the new
+ * password. The answer is the same neutral message whether or not the address
  * has an account (src/lib/auth/passwordRecovery.ts, classifyRecoverError).
+ *
+ * Batch l17: a second choice, «أرسل رمزًا إلى واتساب», shown only while
+ * GET …/password-reset/whatsapp/status says { whatsapp: true } (WhatsApp
+ * sending configured and the sign-up WhatsApp switch on). The person types
+ * the e-mail only; a six-digit code goes to the mobile already confirmed on
+ * the account, never typed here and never shown. Then the code and the new
+ * password on this page; the server sets it, and the person signs in on
+ * /login with the address prefilled (src/lib/passwordReset/).
+ * While the status is unknown or off, the page is the e-mail page.
  */
 
 const inputCls =
@@ -57,6 +77,28 @@ const TEXT = {
     brandTitle: "الأمان أولويتنا",
     brandBody: "رابط الاستعادة يصل إلى بريدك المسجّل وحده، ويصلح لمرة واحدة ولمدة محدودة.",
     recovery: "استعادة كلمة المرور",
+    introChoice: "أدخل بريدك الإلكتروني المسجّل، ثم اختر طريقة الاستعادة.",
+    submitEmail: "أرسل رابطًا إلى بريدي",
+    submitWhatsApp: "أرسل رمزًا إلى واتساب",
+    waOr: "أو",
+    waTitle: "أدخل الرمز وكلمة المرور الجديدة",
+    waSent: WHATSAPP_START_SENT_AR,
+    waFor: "الحساب:",
+    waCodeLabel: "الرمز المرسل عبر واتساب",
+    waCodeHint: "ستة أرقام، صالحة عشر دقائق.",
+    waNewPass: "كلمة المرور الجديدة",
+    waConfirm: "تأكيد كلمة المرور",
+    waConfirmPlaceholder: "أعد كتابة كلمة المرور",
+    waSave: "حفظ كلمة المرور",
+    waSaving: "جارٍ الحفظ…",
+    waBack: "رجوع وطلب رمز جديد",
+    waCodeMissing: "اكتب الرمز المكوّن من ستة أرقام كما وصلك.",
+    waInvalid: WHATSAPP_CODE_INVALID_AR,
+    waUnavailable: "تعذّر إرسال الرمز الآن. حاول بعد قليل، أو استعمل رابط البريد.",
+    waTooMany: "محاولات كثيرة — حاول بعد قليل.",
+    waNotSaved: "تعذّر حفظ كلمة المرور الآن. حاول مرة أخرى بعد قليل.",
+    show: "إظهار كلمة المرور",
+    hide: "إخفاء كلمة المرور",
   },
   en: {
     title: "Reset Your Password",
@@ -78,6 +120,28 @@ const TEXT = {
     brandTitle: "Your Security First",
     brandBody: "The reset link goes to your registered email only, and works once for a limited time.",
     recovery: "Password Recovery",
+    introChoice: "Enter your registered email, then choose how to reset your password.",
+    submitEmail: "Send a link to my email",
+    submitWhatsApp: "Send a code to WhatsApp",
+    waOr: "or",
+    waTitle: "Enter the code and your new password",
+    waSent: WHATSAPP_START_SENT_EN,
+    waFor: "Account:",
+    waCodeLabel: "The code sent on WhatsApp",
+    waCodeHint: "Six digits, valid for ten minutes.",
+    waNewPass: "New password",
+    waConfirm: "Confirm password",
+    waConfirmPlaceholder: "Re-enter the password",
+    waSave: "Save password",
+    waSaving: "Saving…",
+    waBack: "Back to request a new code",
+    waCodeMissing: "Type the six-digit code as you received it.",
+    waInvalid: WHATSAPP_CODE_INVALID_EN,
+    waUnavailable: "The code could not be sent right now. Try again shortly, or use the email link.",
+    waTooMany: "Too many attempts — try again shortly.",
+    waNotSaved: "The password could not be saved right now. Please try again shortly.",
+    show: "Show password",
+    hide: "Hide password",
   },
 } as const;
 
@@ -95,6 +159,35 @@ export default function ForgotPasswordPage() {
   // GOTRUE_SECURITY_CAPTCHA_* is on (src/lib/auth/captcha.ts).
   const captcha = useTurnstile({ isAr, theme, action: "password_reset" });
   const realBackend = BACKEND_MODE === "supabase";
+  const router = useRouter();
+
+  // Batch l17: the WhatsApp choice. Off until the server says otherwise, so
+  // the page never flickers a button it cannot honour.
+  const [waOn, setWaOn] = useState(false);
+  const [waStage, setWaStage] = useState<"request" | "code">("request");
+  const [waSending, setWaSending] = useState(false);
+  const [waSaving, setWaSaving] = useState(false);
+  const [waCode, setWaCode] = useState("");
+  const [waPassword, setWaPassword] = useState("");
+  const [waConfirm, setWaConfirm] = useState("");
+  const [waShowPass, setWaShowPass] = useState(false);
+  const [waError, setWaError] = useState("");
+
+  useEffect(() => {
+    if (!realBackend) return;
+    let cancelled = false;
+    fetch(`${PASSWORD_RESET_WHATSAPP_API}/status`, { cache: "no-store" })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((body) => {
+        if (!cancelled) setWaOn(whatsappFromStatus(body));
+      })
+      .catch(() => {
+        if (!cancelled) setWaOn(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [realBackend]);
 
   async function handleSubmit() {
     setError("");
@@ -146,6 +239,93 @@ export default function ForgotPasswordPage() {
       setError(t.network);
     } finally {
       setSending(false);
+    }
+  }
+
+  /** «أرسل رمزًا إلى واتساب»: the server answers the same for every address. */
+  async function handleWhatsAppStart() {
+    setError("");
+    setWaError("");
+    if (!realBackend || !waOn) return;
+    if (!isPlausibleEmail(email)) {
+      setError(t.invalidEmail);
+      return;
+    }
+    if (!canSubmitWithCaptcha(captcha.state)) {
+      setError(captchaSubmitError(captcha.state, isAr));
+      return;
+    }
+    setWaSending(true);
+    try {
+      let res: Response;
+      try {
+        res = await fetch(`${PASSWORD_RESET_WHATSAPP_API}/start`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: email.trim(), turnstileToken: captcha.token ?? null }),
+        });
+      } finally {
+        captcha.spend();
+      }
+      const body = (await res.json().catch(() => null)) as { code?: unknown } | null;
+      if (res.ok) {
+        setWaCode("");
+        setWaPassword("");
+        setWaConfirm("");
+        setWaStage("code");
+        return;
+      }
+      const code = body?.code;
+      if (code === "captcha") setError(captchaMessage("captchaRejected", isAr));
+      else if (code === "invalid_email") setError(t.invalidEmail);
+      else if (res.status === 429) setError(t.waTooMany);
+      else setError(t.waUnavailable);
+    } catch {
+      setError(t.network);
+    } finally {
+      setWaSending(false);
+    }
+  }
+
+  /** The code and the new password: the server sets it; the person signs in on /login. */
+  async function handleWhatsAppVerify() {
+    setWaError("");
+    if (!/^[\s0-9٠-٩۰-۹-]{6,9}$/.test(waCode.trim())) {
+      setWaError(t.waCodeMissing);
+      return;
+    }
+    const problem = resetPasswordProblem(waPassword, waConfirm, isAr);
+    if (problem) {
+      setWaError(problem);
+      return;
+    }
+    setWaSaving(true);
+    try {
+      const res = await fetch(`${PASSWORD_RESET_WHATSAPP_API}/verify`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim(), code: waCode, password: waPassword, confirm: waConfirm }),
+      });
+      const body = (await res.json().catch(() => null)) as { ok?: unknown; code?: unknown; error?: unknown } | null;
+      if (res.ok && body?.ok === true) {
+        try {
+          window.sessionStorage.setItem(LOGIN_PREFILL_EMAIL_KEY, email.trim());
+        } catch { /* storage blocked: /login just starts empty */ }
+        setWaPassword("");
+        setWaConfirm("");
+        router.replace(LOGIN_AFTER_RESET_PATH);
+        return;
+      }
+      const code = body?.code;
+      if (code === "invalid_code") setWaError(t.waInvalid);
+      else if (code === "weak_password") setWaError(isAr && typeof body?.error === "string" ? body.error : (resetPasswordProblem(waPassword, waConfirm, false) ?? t.waNotSaved));
+      else if (code === "password_not_set" && isAr && typeof body?.error === "string") setWaError(body.error);
+      else if (res.status === 429) setWaError(t.waTooMany);
+      else setWaError(t.waNotSaved);
+    } catch {
+      setWaError(t.network);
+    } finally {
+      setWaSaving(false);
     }
   }
 
@@ -249,6 +429,112 @@ export default function ForgotPasswordPage() {
                     {t.again}
                   </button>
                 </motion.div>
+              ) : waStage === "code" ? (
+                <motion.form
+                  key="whatsapp-code"
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ type: "spring", stiffness: 300, damping: 28 }}
+                  onSubmit={(e) => { e.preventDefault(); if (!waSaving) void handleWhatsAppVerify(); }}
+                  noValidate
+                >
+                  <div className="mb-2 flex h-14 w-14 items-center justify-center rounded-2xl bg-royal/8 dark:bg-royal/20">
+                    <WhatsappLogo size={28} weight="duotone" className="text-royal dark:text-gold" />
+                  </div>
+                  <h1 className="mt-5 font-brand text-2xl font-bold text-ink">{t.waTitle}</h1>
+                  <p className="mt-2 text-sm text-ink dark:text-gray-300" role="status">{t.waSent}</p>
+                  <p className="mt-2 text-xs text-ink-muted dark:text-gray-400">
+                    {t.waFor} <span dir="ltr" className="font-medium">{email.trim()}</span>
+                  </p>
+
+                  <label htmlFor="reset-code" className="mt-7 mb-1.5 block text-sm font-medium text-ink dark:text-gray-300">
+                    {t.waCodeLabel}
+                  </label>
+                  <input
+                    id="reset-code"
+                    type="text"
+                    inputMode="numeric"
+                    dir="ltr"
+                    autoComplete="one-time-code"
+                    maxLength={9}
+                    placeholder="••••••"
+                    value={waCode}
+                    onChange={(e) => setWaCode(e.target.value)}
+                    className={`${inputCls} text-center tracking-[0.4em]`}
+                  />
+                  <p className="mt-1.5 mb-5 text-xs text-ink-muted dark:text-gray-400">{t.waCodeHint}</p>
+
+                  <label htmlFor="reset-new-password" className="mb-1.5 block text-sm font-medium text-ink dark:text-gray-300">
+                    {t.waNewPass}
+                  </label>
+                  <div className="relative mb-5">
+                    <input
+                      id="reset-new-password"
+                      type={waShowPass ? "text" : "password"}
+                      autoComplete="new-password"
+                      dir="ltr"
+                      value={waPassword}
+                      onChange={(e) => setWaPassword(e.target.value)}
+                      className={`${inputCls} ${isAr ? "pl-11" : "pr-11"}`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setWaShowPass((v) => !v)}
+                      aria-label={waShowPass ? t.hide : t.show}
+                      className={`absolute top-1/2 -translate-y-1/2 text-ink-faint hover:text-royal dark:text-gray-500 dark:hover:text-gold ${isAr ? "left-3.5" : "right-3.5"}`}
+                    >
+                      {waShowPass ? <EyeSlash size={18} /> : <Eye size={18} />}
+                    </button>
+                  </div>
+
+                  <label htmlFor="reset-confirm-password" className="mb-1.5 block text-sm font-medium text-ink dark:text-gray-300">
+                    {t.waConfirm}
+                  </label>
+                  <input
+                    id="reset-confirm-password"
+                    type={waShowPass ? "text" : "password"}
+                    autoComplete="new-password"
+                    dir="ltr"
+                    placeholder={t.waConfirmPlaceholder}
+                    value={waConfirm}
+                    onChange={(e) => setWaConfirm(e.target.value)}
+                    className={`${inputCls} mb-5`}
+                  />
+
+                  {waError && (
+                    <div
+                      role="alert"
+                      className="mb-4 flex items-center gap-2 rounded-xl border border-red-200 dark:border-red-900/40 bg-red-50 dark:bg-red-900/20 px-4 py-3 text-[13px] font-medium text-red-600 dark:text-red-400"
+                    >
+                      <Warning size={16} weight="fill" className="flex-shrink-0" />
+                      {waError}
+                    </div>
+                  )}
+
+                  <button
+                    type="submit"
+                    disabled={waSaving}
+                    className="w-full rounded-xl bg-royal py-3.5 text-sm font-semibold text-white shadow-[0_4px_16px_-4px_rgba(11,61,46,0.4)] hover:bg-royal-light transition-all disabled:opacity-40"
+                  >
+                    {waSaving ? t.waSaving : t.waSave}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => { setWaStage("request"); setWaError(""); setError(""); }}
+                    className="mt-4 text-sm text-ink-muted hover:text-royal dark:text-gray-400 dark:hover:text-gold transition-colors"
+                  >
+                    {t.waBack}
+                  </button>
+
+                  <Link
+                    href="/login"
+                    className="mt-5 flex items-center gap-2 text-sm text-ink-muted hover:text-royal dark:text-gray-400 dark:hover:text-gold transition-colors"
+                  >
+                    {isAr ? <ArrowRight size={14} /> : <ArrowLeft size={14} />}
+                    {t.backToLogin}
+                  </Link>
+                </motion.form>
               ) : (
                 <motion.form
                   key="request"
@@ -262,7 +548,7 @@ export default function ForgotPasswordPage() {
                     <LockKey size={28} weight="duotone" className="text-royal dark:text-gold" />
                   </div>
                   <h1 className="mt-5 font-brand text-2xl font-bold text-ink">{t.title}</h1>
-                  <p className="mt-2 text-sm text-ink-muted dark:text-gray-400">{t.intro}</p>
+                  <p className="mt-2 text-sm text-ink-muted dark:text-gray-400">{waOn ? t.introChoice : t.intro}</p>
 
                   <label htmlFor="reset-email" className="mt-7 mb-1.5 block text-sm font-medium text-ink dark:text-gray-300">
                     {t.emailLabel}
@@ -307,11 +593,31 @@ export default function ForgotPasswordPage() {
 
                   <button
                     type="submit"
-                    disabled={sending || !realBackend}
+                    disabled={sending || waSending || !realBackend}
                     className="w-full rounded-xl bg-royal py-3.5 text-sm font-semibold text-white shadow-[0_4px_16px_-4px_rgba(11,61,46,0.4)] hover:bg-royal-light transition-all disabled:opacity-40"
                   >
-                    {sending ? t.sending : t.submit}
+                    {sending ? t.sending : waOn ? t.submitEmail : t.submit}
                   </button>
+
+                  {/* Batch l17: the WhatsApp code — only while the server offers it. */}
+                  {waOn && (
+                    <>
+                      <div className="my-3 flex items-center gap-3 text-xs text-ink-faint dark:text-gray-500">
+                        <span className="h-px flex-1 bg-slate-200 dark:bg-dark-border" />
+                        {t.waOr}
+                        <span className="h-px flex-1 bg-slate-200 dark:bg-dark-border" />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => { if (!waSending && !sending) void handleWhatsAppStart(); }}
+                        disabled={sending || waSending || !realBackend}
+                        className="flex w-full items-center justify-center gap-2 rounded-xl border border-royal/30 bg-white py-3.5 text-sm font-semibold text-royal hover:bg-royal/5 transition-all disabled:opacity-40 dark:border-gold/40 dark:bg-dark-card dark:text-gold dark:hover:bg-gold/10"
+                      >
+                        <WhatsappLogo size={18} weight="duotone" />
+                        {waSending ? t.sending : t.submitWhatsApp}
+                      </button>
+                    </>
+                  )}
 
                   <Link
                     href="/login"

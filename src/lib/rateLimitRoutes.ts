@@ -273,6 +273,18 @@ export function isAuthSignInRoute(method: string, pathname: string): boolean {
   return method === "POST" && AUTH_SIGN_IN_RE.test(pathname);
 }
 
+// Batch l17: «نسيت كلمة المرور» by a WhatsApp code — POST
+// /api/v1/auth/password-reset/whatsapp/start (sends a code) and …/verify
+// (checks it and sets the password). Its own bucket, keyed like the sign-in
+// (visitor key plus a wider per-IP ceiling); the database caps codes per
+// account and per number, and five wrong tries kill a code.
+export const PASSWORD_RESET_WHATSAPP_RE = /^\/api\/v1\/auth\/password-reset\/whatsapp\/(?:start|verify)$/;
+
+/** True for a POST of /api/v1/auth/password-reset/whatsapp/start or …/verify. */
+export function isPasswordResetWhatsAppRoute(method: string, pathname: string): boolean {
+  return method === "POST" && PASSWORD_RESET_WHATSAPP_RE.test(pathname);
+}
+
 /**
  * The visitor key for the library-read bucket and the other visitor buckets
  * in src/proxy.ts. nezamy.sa is served through Cloudflare (Server: cloudflare,

@@ -592,7 +592,9 @@ test("nothing outside adminAudit.ts inserts into admin_audit_events (one row per
   // below his type's minimum (actor_type "user") — not an admin action either.
   // payments/couponRedeemCore.ts (l16 review) records a USER's own code
   // redemption (actor_type "user", coupon_redeemed), the minTopup pattern.
-  const ALLOWED = new Set(["lib/auth/adminAudit.ts", "app/api/v1/onboarding/account-type/route.ts", "lib/payments/refundCore.ts", "lib/payments/minTopup.ts", "lib/payments/couponRedeemCore.ts"]);
+  // passwordReset/whatsappResetServer.ts (batch l17) records a USER's own
+  // password reset by a WhatsApp code (actor_type "user", password_reset_whatsapp).
+  const ALLOWED = new Set(["lib/auth/adminAudit.ts", "app/api/v1/onboarding/account-type/route.ts", "lib/payments/refundCore.ts", "lib/payments/minTopup.ts", "lib/payments/couponRedeemCore.ts", "lib/passwordReset/whatsappResetServer.ts"]);
   const offenders: string[] = [];
   const walk = (dir: string) => {
     for (const name of readdirSync(dir)) {
@@ -620,6 +622,8 @@ test("nothing outside adminAudit.ts inserts into admin_audit_events (one row per
   assert.ok(minTopup.includes('actor_type: "user"'), "the allow-listed min top-up writer must be a user actor");
   const redeem = codeOnly(readFileSync(join(SRC, "lib/payments/couponRedeemCore.ts"), "utf8"));
   assert.ok(redeem.includes('actor_type: "user"'), "the allow-listed coupon redemption writer must be a user actor");
+  const pwReset = codeOnly(readFileSync(join(SRC, "lib/passwordReset/whatsappResetServer.ts"), "utf8"));
+  assert.ok(pwReset.includes('actor_type: "user"'), "the allow-listed password-reset writer must be a user actor");
 });
 
 test("requireStaff: requireAdmin first, the role from platform_staff with the service client, fail-closed", () => {

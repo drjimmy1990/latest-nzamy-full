@@ -27,7 +27,9 @@ import { safeLocalPath } from "./safeLocalPath.ts";
 import { isCaptchaAuthError } from "./captcha.ts";
 import { translateAuthError } from "./translateAuthError.ts";
 import {
+  MAX_PASSWORD_BYTES,
   MIN_PASSWORD_LENGTH,
+  passwordByteLength,
   validateNewPassword,
 } from "../../app/settings/components/tabs/_securityFields.ts";
 
@@ -184,6 +186,7 @@ export function resetPasswordProblem(password: string, confirm: string, isAr: bo
   if (isAr || arabic === null) return arabic;
   if (!password) return "Enter a new password.";
   if (password.length < MIN_PASSWORD_LENGTH) return `The password must be at least ${MIN_PASSWORD_LENGTH} characters.`;
+  if (passwordByteLength(password) > MAX_PASSWORD_BYTES) return "The password is too long. Choose a shorter one.";
   if (!confirm) return "Type the new password again to confirm it.";
   return "The passwords do not match.";
 }
