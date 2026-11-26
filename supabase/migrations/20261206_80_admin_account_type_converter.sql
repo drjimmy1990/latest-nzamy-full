@@ -35,8 +35,12 @@
 --      checks the actor is an admin and not the account itself, the reason
 --      (5–1000 characters), the move, and the blockers (refuses with the list:
 --      nothing is changed); snapshots the sector rows; creates or updates the
---      lawyer_profiles / provider_profiles row (a NEW row starts «pending»
---      verification; an existing row keeps its verification state); writes
+--      lawyer_profiles / provider_profiles row and puts its verification
+--      back to «pending» (l16 review: every move this slice allows is a new
+--      kind — advocate ↔ consultant, a new sub_role — or a return to a
+--      professional type, so the licence is reviewed again; a new row starts
+--      «pending» anyway; the old state is kept in the snapshot and the audit
+--      row); writes
 --      profiles.user_type; logs one admin_audit_events row
 --      (account_type_converted, before/after, reason) and the conversion row.
 --      No row is ever deleted.
@@ -275,6 +279,7 @@ declare
   v_blockers  text[];
   v_has_confirmed boolean;
   v_conv_id   bigint;
+  v_prev_verification text;
 begin
   -- the caller
   if p_actor is null
@@ -332,6 +337,10 @@ begin
                               where table_schema = 'public' and table_name = 'lawyer_profiles'
                                 and column_name = 'practice_kind_confirmed_at');
 
+  -- the verification state the target row had before (NULL = no row yet)
+  v_prev_verification := case when v_to_type = 'lawyer' then v_lawyer ->> 'verification_status'
+                              else v_provider ->> 'verification_status' end;
+
   if v_to_type = 'lawyer' then
     -- a new row starts «pending» (the column default); the signup trigger may
     -- read old signup metadata, so the kind is written explicitly after it
@@ -348,6 +357,16 @@ begin
       on conflict (user_id) do update set sub_role = excluded.sub_role;
   end if;
 
+  -- l16 review: a new kind or a return to a professional type restarts the
+  -- licence review — the row the account now works under is «pending»
+  if v_to_type = 'lawyer' then
+    update public.lawyer_profiles set verification_status = 'pending'
+     where user_id = p_user and verification_status is distinct from 'pending';
+  else
+    update public.provider_profiles set verification_status = 'pending'
+     where user_id = p_user and verification_status is distinct from 'pending';
+  end if;
+
   if v_from_type <> v_to_type then
     update public.profiles set user_type = v_to_type where id = p_user;
   end if;
@@ -362,9 +381,10 @@ begin
     (actor_id, actor_type, action, target_type, target_id, before_state, after_state, metadata)
   values (
     p_actor, 'admin', 'account_type_converted', 'user', p_user::text,
-    jsonb_build_object('user_type', v_from_type, 'kind', v_from_kind),
-    jsonb_build_object('user_type', v_to_type, 'kind', p_target),
+    jsonb_build_object('user_type', v_from_type, 'kind', v_from_kind, 'verification', v_prev_verification),
+    jsonb_build_object('user_type', v_to_type, 'kind', p_target, 'verification', 'pending'),
     jsonb_build_object('reason', v_reason, 'conversion_id', v_conv_id,
+                       'verification_reset', coalesce(v_prev_verification, 'none') <> 'pending',
                        'archived_tables', (select coalesce(jsonb_agg(e ->> 'table'), '[]'::jsonb) from jsonb_array_elements(v_archived) e))
   );
 
@@ -372,13 +392,15 @@ begin
     'ok', true,
     'conversion_id', v_conv_id,
     'from_type', v_from_type, 'from_kind', v_from_kind,
-    'to_type', v_to_type, 'to_kind', p_target
+    'to_type', v_to_type, 'to_kind', p_target,
+    'verification', 'pending',
+    'verification_before', v_prev_verification
   );
 end
 $fn$;
 
 comment on function public.admin_change_account_type(uuid, text, text, uuid) is
-  'l16 C14 (20261206_80): admin account-type conversion — advocate↔consultant, individual→lawyer (kind), individual→provider (sub_role). Refuses open commitments; snapshots the sector rows; writes the audit row and the conversion row in the same transaction; deletes nothing. Service role only.';
+  'l16 C14 (20261206_80): admin account-type conversion — advocate↔consultant, individual→lawyer (kind), individual→provider (sub_role). Refuses open commitments; snapshots the sector rows; puts the target row''s verification back to pending (l16 review: a new kind restarts the licence review; the old state is in the audit row); writes the audit row and the conversion row in the same transaction; deletes nothing. Service role only.';
 
 -- ── privileges: service_role only ────────────────────────────────────────────
 do $g$

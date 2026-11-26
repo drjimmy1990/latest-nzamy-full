@@ -132,7 +132,6 @@ export default function AccountTypeConverterCard({
   const reasonOk = reason.trim().length >= REASON_MIN && reason.trim().length <= REASON_MAX;
   const verification = state?.user_type === "lawyer" ? state.lawyer_verification : state?.user_type === "provider" ? state.provider_verification : null;
   const blockers = blockerLabelsAr(state?.blockers);
-  const fromIndividual = state?.user_type === "individual";
 
   return (
     <div className={`${card} p-5`}>
@@ -201,9 +200,7 @@ export default function AccountTypeConverterCard({
               </p>
               <p className={`text-[11px] leading-6 ${isDark ? "text-zinc-300" : "text-slate-600"}`}>
                 من «{fullAccountTypeLabelAr(state.user_type, state.kind)}» إلى «{target ? CONVERT_TARGET_LABEL_AR[target] : ""}». يتغيّر معه مسار لوحة التحكم وما يصل إليه صاحب الحساب.
-                {fromIndividual
-                  ? " يُنشأ ملفه المهني الجديد بحالة توثيق «قيد المراجعة» حتى تُراجع رخصته."
-                  : " يحتفظ ملفه المهني بحالة توثيقه الحالية."}
+                {" "}يعود توثيق ملفه المهني إلى «قيد المراجعة» حتى تُراجع رخصته من جديد، ولو كان موثّقاً من قبل.
                 {" "}تُحفظ نسخة من بياناته السابقة ولا يُحذف شيء.
               </p>
               <div className="flex items-center gap-2">

@@ -8,6 +8,8 @@
 --   * actor must be an admin and not the account; reason 5–1000; only the
 --     three moves; an admin account is never converted;
 --   * snapshot + audit row + conversion row; nothing deleted;
+--   * (l16 review) every move puts the target row's verification back to
+--     pending and the audit row records the state before;
 --   * service_role only (a session cannot execute or read the history).
 --
 -- CHAIN (run.sh, postgres:16; stubs.sql loads first by itself). From the repo
@@ -112,8 +114,18 @@ begin
   if (select practice_kind from public.lawyer_profiles where user_id = '00000000-0000-0000-0000-00000000d001') <> 'consultant' then
     raise exception 'T2 kind not consultant';
   end if;
-  if (select verification_status from public.lawyer_profiles where user_id = '00000000-0000-0000-0000-00000000d001') <> 'verified' then
-    raise exception 'T2 an existing row must keep its verification state';
+  -- l16 review: a new kind restarts the licence review; the audit row keeps the old state
+  if (select verification_status from public.lawyer_profiles where user_id = '00000000-0000-0000-0000-00000000d001') <> 'pending' then
+    raise exception 'T2 a new kind must put the verification back to pending';
+  end if;
+  if r ->> 'verification_before' is distinct from 'verified' or r ->> 'verification' is distinct from 'pending' then
+    raise exception 'T2 the answer does not say the verification restarted: %', r;
+  end if;
+  if not exists (select 1 from public.admin_audit_events
+                  where target_id = '00000000-0000-0000-0000-00000000d001' and action = 'account_type_converted'
+                    and before_state ->> 'verification' = 'verified' and after_state ->> 'verification' = 'pending'
+                    and (metadata ->> 'verification_reset')::boolean) then
+    raise exception 'T2 the audit row does not record the verification reset';
   end if;
   if not exists (select 1 from public.account_type_conversions
                   where user_id = '00000000-0000-0000-0000-00000000d001' and from_kind = 'advocate' and to_kind = 'consultant'
@@ -131,7 +143,11 @@ begin
   -- same kind again: not a move
   r := public.admin_change_account_type('00000000-0000-0000-0000-00000000d001', 'advocate', 'لا تغيير هنا أبداً', '00000000-0000-0000-0000-00000000a001');
   if r ->> 'code' is distinct from 'not_supported' then raise exception 'T3 same-kind must be not_supported: %', r; end if;
-  raise notice 'T2/T3 ok: advocate ↔ consultant, snapshot kept, verification kept';
+  -- a same-kind refusal changes nothing (the row stays as T3 left it)
+  if (select verification_status from public.lawyer_profiles where user_id = '00000000-0000-0000-0000-00000000d001') <> 'pending' then
+    raise exception 'T3 verification changed by a refused move';
+  end if;
+  raise notice 'T2/T3 ok: advocate ↔ consultant, snapshot kept, verification restarts (pending) and is audited';
 end $$;
 
 -- ── T4: the signup trigger's old metadata cannot override the admin ─────────
@@ -253,7 +269,7 @@ begin
     raise exception 'T13 individual state: %', s;
   end if;
   s := public.admin_account_type_state('00000000-0000-0000-0000-00000000d001');
-  if s ->> 'kind' <> 'advocate' or s -> 'targets' <> '["consultant"]'::jsonb or s ->> 'lawyer_verification' <> 'verified' then
+  if s ->> 'kind' <> 'advocate' or s -> 'targets' <> '["consultant"]'::jsonb or s ->> 'lawyer_verification' <> 'pending' then
     raise exception 'T13 lawyer state: %', s;
   end if;
   s := public.admin_account_type_state('00000000-0000-0000-0000-00000000e001');
