@@ -9068,13 +9068,15 @@ select 'l18 pay: coupon_redeem_full_open / coupon_redeem_grant_library are SECUR
                    from pg_catalog.pg_proc p
                   where p.oid in (to_regprocedure('public.coupon_redeem_full_open(uuid,uuid,text,text,text,integer,timestamp with time zone)'),
                                   to_regprocedure('public.coupon_redeem_grant_library(uuid,text,integer,integer,timestamp with time zone)'))), false) as ok;
-select 'l18 pay: a 0 SAR activation locks the coupon row and refuses a code that does not cover the price (run 20261208_30)' as check,
+select 'l18 pay: a 0 SAR activation locks the coupon row, refuses a code that does not cover the price, and waits for an open order that may still be paid (run 20261208_30)' as check,
        coalesce(position('for update' in lower(pg_catalog.pg_get_functiondef(to_regprocedure('public.coupon_redeem_full_open(uuid,uuid,text,text,text,integer,timestamp with time zone)')))) > 0
-                and position('not_full' in pg_catalog.pg_get_functiondef(to_regprocedure('public.coupon_redeem_full_open(uuid,uuid,text,text,text,integer,timestamp with time zone)'))) > 0, false) as ok;
+                and position('not_full' in pg_catalog.pg_get_functiondef(to_regprocedure('public.coupon_redeem_full_open(uuid,uuid,text,text,text,integer,timestamp with time zone)'))) > 0
+                and position('''pending''' in pg_catalog.pg_get_functiondef(to_regprocedure('public.coupon_redeem_full_open(uuid,uuid,text,text,text,integer,timestamp with time zone)'))) > 0, false) as ok;
 select 'l18 pay: a redemption''s library pass is granted once (coupon_redemptions.library_grant_id, not readable by a session) (run 20261208_30)' as check,
-       coalesce(exists (select 1 from pg_catalog.pg_attribute
-                         where attrelid = to_regclass('public.coupon_redemptions') and attname = 'library_grant_id' and not attisdropped)
-                and not has_column_privilege('authenticated', 'public.coupon_redemptions', 'library_grant_id', 'SELECT'), false) as ok;
+       coalesce(case when exists (select 1 from pg_catalog.pg_attribute
+                                   where attrelid = to_regclass('public.coupon_redemptions') and attname = 'library_grant_id' and not attisdropped)
+                     then not has_column_privilege('authenticated', 'public.coupon_redemptions', 'library_grant_id', 'SELECT')
+                     else false end, false) as ok;
 select 'l18 billing: billing_company holds CR 7049168854 (run 20261208_31 once; a later edit of the name in admin settings does not fail this check)' as check,
        coalesce((select s.value ->> 'cr_number' = '7049168854'
                    from public.platform_settings s where s.key = 'billing_company'), false) as ok;

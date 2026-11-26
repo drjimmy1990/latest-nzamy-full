@@ -728,6 +728,16 @@ export async function startCheckoutWith(deps: CheckoutDeps, input: CheckoutInput
       const free = licenceFreeCodeDecision(userType as string, licenceFacts ?? null);
       if (free.ok === false) return { status: free.status, body: { error: free.error, ...(free.code ? { code: free.code } : {}) } };
     }
+    // l18 review: an open order for this item (any billing) — e.g. a payment
+    // form opened before the code was applied — is closed first, as step 4
+    // does for a paid order. One a payment may still settle stays open, and
+    // coupon_redeem_full_open then answers «pending» under the coupon's lock.
+    const supersededFree = await supersedeEarlierOrders(deps, user.id, q.item.id);
+    if (supersededFree.missing) {
+      logMissingOnce("open orders read", supersededFree.code);
+      return fail(503, MOYASAR_DISABLED_MESSAGE_AR);
+    }
+    if (supersededFree.code) console.warn("[payments/checkout] reading earlier open orders failed:", supersededFree.code);
     return await activateFullDiscountWith(
       { admin, ranks: deps.ranks, catalog },
       {
@@ -737,6 +747,7 @@ export async function startCheckoutWith(deps: CheckoutDeps, input: CheckoutInput
         billing: input.billing,
         listNetHalalas: couponQuote.listNet,
         now,
+        gatewayMode: input.gatewayMode,
       },
     );
   }

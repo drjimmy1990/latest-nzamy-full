@@ -53,7 +53,9 @@ const RULES: ReadonlyArray<{ test: RegExp; ar: string }> = [
   },
   {
     test: /timeout|timed out|network|connection|unreachable|service unavailable|try again later/,
-    ar: "انقطع الاتصال ببوابة الدفع أثناء العملية. أعد المحاولة بعد قليل؛ ولن يُخصم مبلغ عن عملية لم تكتمل.",
+    // l18 review: a timeout can follow a charge that went through — no promise
+    // that nothing was taken; the result is checked, look at billing first
+    ar: "انقطع الاتصال ببوابة الدفع أثناء العملية، ونتيجتها قيد التحقق. راجع صفحة «الفواتير» قبل أن تدفع مرة أخرى، وتواصل معنا إن ظهر خصم في حسابك دون اشتراك.",
   },
   {
     test: /lost|stolen|restricted card|pick ?up card|fraud|suspected/,

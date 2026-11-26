@@ -26,11 +26,14 @@
 --      exists), once per user (a redemption or a coupon_usage row), and the
 --      code really leaves less than 1 SAR of p_list_net (the same arithmetic
 --      as couponRules.evaluateCoupon: value, capped at max_discount_pct).
+--      l18 review: and no open order of this buyer that may still be paid
+--      carries the code or is for the same item (any billing) → pending
+--      (+ reason 'coupon' | 'item').
 --      Then the redemption row (list = discount = p_list_net, net 0, VAT 0)
 --      and its coupon_usage row (order_id 'redemption:<id>', so used_count
 --      moves by its trigger and checkout's once-per-user check sees it).
 --      Answers {status}: invalid | not_discount | not_for_item | not_full |
---      already_used | exhausted | opened | resume (+ id, item_id, billing,
+--      already_used | exhausted | pending | opened | resume (+ id, item_id, billing,
 --      receipt_number). The server then grants the item and closes the row
 --      with coupon_redeem_finish (20261206_30) — granted, or void (the use
 --      comes back).
@@ -115,6 +118,7 @@ declare
   v_disc     bigint;
   v_id       uuid;
   v_receipt  text;
+  v_pending  text;
 begin
   if p_user is null or p_coupon is null or p_now is null or p_item is null or p_billing is null then
     raise exception 'coupon_redeem_full_open: p_user, p_coupon, p_item, p_billing and p_now are required' using errcode = '22023';
@@ -149,6 +153,27 @@ begin
   end if;
   if exists (select 1 from public.coupon_usage u where u.coupon_id = p_coupon and u.user_id = p_user) then
     return pg_catalog.jsonb_build_object('status', 'already_used');
+  end if;
+
+  -- l18 review: never beside a payment of this buyer that may still go
+  -- through — an open order carrying THIS code (any item, any billing), or an
+  -- open order for the SAME item (any billing, e.g. a payment form opened
+  -- before the code was applied). Checkout closes what it can first
+  -- (supersedeEarlierOrders); what is left may still be paid: younger than an
+  -- intent's life (65 minutes, checkoutRules.SUPERSEDE_WINDOW_MS) or reached
+  -- by a payment the sweep can still settle (7 days). Under the row lock.
+  select case when (o.metadata -> 'coupon' ->> 'id') = p_coupon::text then 'coupon' else 'item' end
+    into v_pending
+    from public.payment_orders o
+   where o.user_id = p_user
+     and o.status in ('created', 'initiated')
+     and ((o.metadata -> 'coupon' ->> 'id') = p_coupon::text or o.item_id = p_item)
+     and (o.created_at > pg_catalog.now() - interval '65 minutes'
+          or (o.moyasar_payment_id is not null and o.created_at > pg_catalog.now() - interval '7 days'))
+   order by ((o.metadata -> 'coupon' ->> 'id') = p_coupon::text) desc
+   limit 1;
+  if v_pending is not null then
+    return pg_catalog.jsonb_build_object('status', 'pending', 'reason', v_pending);
   end if;
 
   if not v_coupon.active
@@ -324,14 +349,15 @@ begin
   end loop;
   if to_regprocedure('public.coupon_redeem_full_open(uuid, uuid, text, text, text, integer, timestamp with time zone)') is not null
      and (position('for update' in lower(pg_get_functiondef(to_regprocedure('public.coupon_redeem_full_open(uuid, uuid, text, text, text, integer, timestamp with time zone)')))) = 0
-          or position('not_full' in pg_get_functiondef(to_regprocedure('public.coupon_redeem_full_open(uuid, uuid, text, text, text, integer, timestamp with time zone)'))) = 0) then
-    missing := missing || ' coupon_redeem_full_open lost its row lock or its full-discount guard;';
+          or position('not_full' in pg_get_functiondef(to_regprocedure('public.coupon_redeem_full_open(uuid, uuid, text, text, text, integer, timestamp with time zone)'))) = 0
+          or position('''pending''' in pg_get_functiondef(to_regprocedure('public.coupon_redeem_full_open(uuid, uuid, text, text, text, integer, timestamp with time zone)'))) = 0) then
+    missing := missing || ' coupon_redeem_full_open lost its row lock, its full-discount guard or its open-order guard;';
   end if;
 
   if missing <> '' then
     raise exception 'l18_pay verify:%', missing;
   end if;
-  raise notice 'l18_pay verify: OK — coupon_redemptions.library_grant_id + coupon_redeem_full_open (row lock, full-discount guard) / coupon_redeem_grant_library (exactly once), definer, service role only';
+  raise notice 'l18_pay verify: OK — coupon_redemptions.library_grant_id + coupon_redeem_full_open (row lock, full-discount guard, open-order guard) / coupon_redeem_grant_library (exactly once), definer, service role only';
 end
 $verify$;
 

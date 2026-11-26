@@ -20,7 +20,9 @@ import { buildCatalog } from "./catalog.ts";
 import { PRICE_BOOK, type BookEntry } from "../pricing/priceBook.ts";
 import { createCouponAttemptBudget } from "./couponAttempts.ts";
 import { COUPON_INVALID_AR, GRANT_CODE_AT_CHECKOUT_AR, GRANT_CODE_AT_CHECKOUT_CODE } from "./couponRules.ts";
-import { FREE_ACTIVATION_HIGHER_PLAN_AR, FREE_ACTIVATION_PAID_PLAN_RUNNING_AR, FREE_ACTIVATION_UNAVAILABLE_AR } from "./freeActivationCore.ts";
+import { FREE_ACTIVATION_HIGHER_PLAN_AR, FREE_ACTIVATION_OPEN_ORDER_AR, FREE_ACTIVATION_PAID_PLAN_RUNNING_AR, FREE_ACTIVATION_UNAVAILABLE_AR } from "./freeActivationCore.ts";
+import { COUPON_PENDING_AR } from "./couponServer.ts";
+import { DEMO_LIVE_PAYMENT_AR } from "../api/dbErrorCore.ts";
 import { parseCouponPreview, parseFreeActivation } from "./checkoutView.ts";
 import { LICENCE_FREE_CODE_PENDING_AR, LICENCE_PURCHASE_CODE, LICENCE_UNVERIFIED_PURCHASE_AR } from "./licenceGate.ts";
 import { LIBRARY_ACCOUNT_LOCKED_AR } from "../library/accountAccess.ts";
@@ -377,4 +379,59 @@ test("source contract: the checkout route wires the licence facts; the page tell
   assert.match(page, /const notes = licenceHeld \? \[LICENCE_HELD_NOTE_AR, \.\.\.itemNotes\] : itemNotes;/);
   const redeem = readFileSync(join(ROOT, "src", "app", "api", "v1", "coupons", "redeem", "route.ts"), "utf8");
   assert.match(redeem, /licenceFacts: \(userId, userType\) => readLicenceFacts\(admin, userId, userType\),/);
+});
+
+// ── l18 review (pay S1 / S4) ─────────────────────────────────────────────────
+
+test("checkout S1: an open order for the same item (a form opened before the code) is closed first; the database's «pending» answers 409", async () => {
+  const OPEN_ID = "00000000-0000-0000-0000-0000000b0019";
+  const { client, log } = db({}, (q) => {
+    // the supersede read (by item_id) sees the earlier form's order; the coupon read sees nothing
+    if (q.table === "payment_orders" && q.op === "select" && q.filters.some(([, c]) => c === "item_id")) {
+      return { data: [{ id: OPEN_ID, item_id: "ind-preventive", status: "initiated", moyasar_intent_id: "pi_old", moyasar_payment_id: null }] };
+    }
+    return undefined;
+  });
+  const m = moyasar();
+  const cancelled: string[] = [];
+  (m.client as unknown as { cancelIntent: (id: string) => Promise<unknown> }).cancelIntent = async (id: string) => {
+    cancelled.push(id);
+    return { ok: true, data: { id, status: "canceled" } };
+  };
+  const r = await startCheckoutWith(deps(client, m), input({ billing: "monthly" }));
+  assert.equal(r.status, 201, JSON.stringify(r.body));
+  assert.deepEqual(cancelled, ["pi_old"], "the earlier intent is cancelled");
+  const close = log.findIndex((q) => q.table === "payment_orders" && q.op === "update" && q.filters.some(([, c, v]) => c === "id" && v === OPEN_ID));
+  const open = log.findIndex((q) => q.op === "rpc" && q.table === "coupon_redeem_full_open");
+  assert.ok(close >= 0 && open > close, "the order is closed before the code is opened");
+
+  for (const [reason, expected] of [["coupon", COUPON_PENDING_AR], ["item", FREE_ACTIVATION_OPEN_ORDER_AR]] as const) {
+    const pending = db({ open: { status: "pending", reason } });
+    const p = await startCheckoutWith(deps(pending.client), input());
+    assert.equal(p.status, 409, reason);
+    assert.equal((p.body as { error: string }).error, expected, reason);
+    assert.equal(rpcs(pending.log, "grant_plan_subscription").length, 0, `${reason}: nothing granted`);
+  }
+});
+
+test("checkout S4: a test account gets no real 0 SAR activation outside test mode (the paid-order rule)", async () => {
+  const testAccount = (q: FakeQuery) => (q.op === "rpc" && q.table === "is_test_account" ? { data: true } : undefined);
+  const live = db({}, testAccount);
+  const r = await startCheckoutWith(deps(live.client), input({ gatewayMode: "live" }));
+  assert.equal(r.status, 403, JSON.stringify(r.body));
+  assert.equal((r.body as { error: string }).error, DEMO_LIVE_PAYMENT_AR);
+  assert.equal(rpcs(live.log, "coupon_redeem_full_open").length, 0, "the code is never opened");
+  // in test mode the same account is activated (nothing real is spent)
+  const sandbox = db({}, testAccount);
+  const t = await startCheckoutWith(deps(sandbox.client), input({ gatewayMode: "test" }));
+  assert.equal(t.status, 201, JSON.stringify(t.body));
+  assert.equal(rpcs(sandbox.log, "is_test_account").length, 0);
+  // a real account in live mode: asked, then activated; an unreadable answer → 503
+  const real = db();
+  assert.equal((await startCheckoutWith(deps(real.client), input({ gatewayMode: "live" }))).status, 201);
+  assert.equal(rpcs(real.log, "is_test_account").length, 1);
+  const down = db({}, (q) => (q.op === "rpc" && q.table === "is_test_account" ? { error: { code: "XX000" } } : undefined));
+  const d = await startCheckoutWith(deps(down.client), input({ gatewayMode: "live" }));
+  assert.equal(d.status, 503);
+  assert.equal(rpcs(down.log, "coupon_redeem_full_open").length, 0);
 });

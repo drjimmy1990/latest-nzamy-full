@@ -188,6 +188,39 @@ begin
   raise notice 'T7 PASS: a free LIBRARY code from the code box opens, grants one pass (no order) and closes';
 end $$;
 
+-- T8 (l18 review): never beside an open order that may still be paid — one carrying THIS code
+--    (another item), or one for the SAME item (another billing); an expired one does not block
+do $$
+declare r jsonb; o1 uuid; o2 uuid; n int;
+begin
+  insert into auth.users (id) values ('00000000-0000-0000-0000-0000000018a5');
+  insert into public.profiles (id, user_type, display_name) values ('00000000-0000-0000-0000-0000000018a5', 'individual', 'a5');
+  insert into public.coupons (code, discount_type, discount_value, min_order_amount, eligible_user_types,
+                              max_uses, used_count, valid_from, valid_until, active, max_discount_pct, excluded_kinds, metadata)
+  values ('OPENX', 'percentage', 100, 0, '{}', 9, 0, now() - interval '1 day', now() + interval '30 days', true, 100, '{topup,service}', '{}');
+  select count(*) into n from public.coupon_redemptions;
+  -- (a) an open order of a5 carrying OPENX for another item (a partial use on the yearly price)
+  insert into public.payment_orders (user_id, kind, item_id, billing, net_halalas, vat_halalas, total_halalas, vat_mode, status, metadata)
+  values ('00000000-0000-0000-0000-0000000018a5', 'plan', 'ind-pro', 'yearly', 1000, 0, 1000, 'exclusive', 'initiated',
+          jsonb_build_object('coupon', jsonb_build_object('id', pg_temp.cid('OPENX')::text)))
+  returning id into o1;
+  r := public.coupon_redeem_full_open('00000000-0000-0000-0000-0000000018a5', pg_temp.cid('OPENX'), 'plan', 'ind-ai', 'monthly', 2900, now());
+  if r ->> 'status' <> 'pending' or r ->> 'reason' <> 'coupon' then raise exception 'T8 FAIL (a): an open order with the code → %', r; end if;
+  update public.payment_orders set status = 'cancelled' where id = o1;
+  -- (b) an open order for the SAME item, another billing, no code (a payment form opened before the code)
+  insert into public.payment_orders (user_id, kind, item_id, billing, net_halalas, vat_halalas, total_halalas, vat_mode, status, moyasar_intent_id)
+  values ('00000000-0000-0000-0000-0000000018a5', 'plan', 'ind-ai', 'yearly', 24900, 0, 24900, 'exclusive', 'initiated', 'intent-x')
+  returning id into o2;
+  r := public.coupon_redeem_full_open('00000000-0000-0000-0000-0000000018a5', pg_temp.cid('OPENX'), 'plan', 'ind-ai', 'monthly', 2900, now());
+  if r ->> 'status' <> 'pending' or r ->> 'reason' <> 'item' then raise exception 'T8 FAIL (b): an open order for the same item → %', r; end if;
+  if (select count(*) from public.coupon_redemptions) <> n then raise exception 'T8 FAIL: a pending answer wrote a row'; end if;
+  -- (c) the same order, past an intent's life and never reached by a payment: no longer blocks
+  update public.payment_orders set created_at = now() - interval '2 hours' where id = o2;
+  r := public.coupon_redeem_full_open('00000000-0000-0000-0000-0000000018a5', pg_temp.cid('OPENX'), 'plan', 'ind-ai', 'monthly', 2900, now());
+  if r ->> 'status' <> 'opened' then raise exception 'T8 FAIL (c): an expired open order still blocks → %', r; end if;
+  raise notice 'T8 PASS: a 0 SAR activation waits for an open order with the code or for the same item; an expired one does not block';
+end $$;
+
 -- T6 billing_company: the three values set, vat_number untouched, idempotent
 do $$
 declare v jsonb;

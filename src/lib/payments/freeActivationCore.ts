@@ -41,6 +41,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { PAYABLE_ITEMS, resolveItem, type Billing, type PayableItem } from "./catalog.ts";
 import { COUPON_INVALID_AR, COUPON_NOT_FOR_ITEM_AR } from "./couponRules.ts";
+import { COUPON_PENDING_AR } from "./couponServer.ts";
+import { DEMO_LIVE_PAYMENT_AR } from "../api/dbErrorCore.ts";
 import { grantPurchase } from "./grantPurchase.ts";
 import { isMissingPaymentsObject } from "./fulfillDecision.ts";
 import { otherPaidPlanRunning, readHeldPlans } from "./upgradeProration.ts";
@@ -51,6 +53,9 @@ export const FREE_ACTIVATION_UNAVAILABLE_AR = "تفعيل الأكواد غير 
 export const FREE_ACTIVATION_PAID_PLAN_RUNNING_AR =
   "لديك باقة مدفوعة سارية لم تنتهِ أيامها، وتفعيل هذا الكود الآن يلغي ما تبقى منها. فعّله بعد انتهائها، أو تواصل مع الدعم.";
 export const FREE_ACTIVATION_HIGHER_PLAN_AR = "لديك باقة أعلى سارية، فلا يُضاف إليها هذا الكود.";
+/** l18 review: an open payment for the same item may still go through — never a free activation beside it. */
+export const FREE_ACTIVATION_OPEN_ORDER_AR =
+  "لديك عملية دفع مفتوحة لهذا الاشتراك لم تُغلق بعد. انتظر قليلاً ثم أعد المحاولة، وراجع «الفواتير» قبل أي دفع جديد.";
 
 /** What the checkout answers for a 0 SAR activation (in place of the Moyasar intent). */
 export interface FreeActivationResponse {
@@ -68,14 +73,14 @@ export interface FreeActivationResponse {
 export type FreeActivationReply =
   // 201: the activation was created (no payment intent) — never confused with checkout's 200 intent
   | { status: 201; body: FreeActivationResponse }
-  | { status: 400 | 409 | 503; body: { error: string } };
+  | { status: 400 | 403 | 409 | 503; body: { error: string } };
 
 export type GrantRedeemedResult =
   | { ok: true; subscriptionId: string | null }
   | { ok: false; alreadyEntitled: true }
   | { ok: false; alreadyEntitled?: false; error: string; missing?: boolean };
 
-const fail = (status: 400 | 409 | 503, error: string): FreeActivationReply => ({ status, body: { error } });
+const fail = (status: 400 | 403 | 409 | 503, error: string): FreeActivationReply => ({ status, body: { error } });
 
 /** coupon_redeem_finish (20261206_30): 'granted' / 'void' / the row's status; null on an error. */
 export async function finishRedemption(admin: SupabaseClient, id: string, ok: boolean, subscriptionId: string | null): Promise<string | null> {
@@ -208,6 +213,13 @@ export interface FullDiscountInput {
   /** The net before the coupon (after a launch price), in halalas — the receipt's «السعر الكامل». */
   listNetHalalas: number;
   now: Date;
+  /**
+   * l18 review: the gateway's mode at this checkout. A TEST ACCOUNT
+   * (public.is_test_account, 20261127_80) is activated only in test mode —
+   * the rule its paid orders follow (test_account_payment_guard). Absent →
+   * treated as live.
+   */
+  gatewayMode?: "test" | "live";
 }
 
 /** Checkout's step 3f: the 0 SAR activation of a code that covers the whole price. */
@@ -236,6 +248,17 @@ export async function activateFullDiscountWith(
     if (otherPaidPlanRunning(read.rows, input.item.id, input.now.getTime())) return fail(409, FREE_ACTIVATION_PAID_PLAN_RUNNING_AR);
   }
 
+  // 1b. a test account: never a real activation outside test mode (l18 review;
+  // the same rule as its paid orders, 20261127_80)
+  if (input.gatewayMode !== "test") {
+    const { data: isTest, error: testErr } = await admin.rpc("is_test_account", { p_user: input.userId });
+    if (testErr) {
+      if (!isMissingPaymentsObject(testErr.code)) console.error("[coupons/free] is_test_account failed:", testErr.code);
+      return fail(503, FREE_ACTIVATION_UNAVAILABLE_AR);
+    }
+    if (isTest === true) return fail(403, DEMO_LIVE_PAYMENT_AR);
+  }
+
   // 2. the redemption, under the coupon's row lock
   const { data: opened, error: openErr } = await admin.rpc("coupon_redeem_full_open", {
     p_user: input.userId,
@@ -250,8 +273,11 @@ export async function activateFullDiscountWith(
     if (!isMissingPaymentsObject(openErr.code)) console.error("[coupons/free] coupon_redeem_full_open failed:", openErr.code);
     return fail(503, FREE_ACTIVATION_UNAVAILABLE_AR);
   }
-  const answer = (opened ?? {}) as { status?: unknown; id?: unknown; item_id?: unknown; billing?: unknown; receipt_number?: unknown };
+  const answer = (opened ?? {}) as { status?: unknown; reason?: unknown; id?: unknown; item_id?: unknown; billing?: unknown; receipt_number?: unknown };
   const status = typeof answer.status === "string" ? answer.status : "";
+  // l18 review: an open order of this buyer that may still be paid — carrying
+  // this code, or for this item (checkout closed what it could first)
+  if (status === "pending") return fail(409, answer.reason === "coupon" ? COUPON_PENDING_AR : FREE_ACTIVATION_OPEN_ORDER_AR);
   if (status === "invalid" || status === "already_used" || status === "exhausted" || status === "not_discount") return fail(400, COUPON_INVALID_AR);
   if (status === "not_for_item") return fail(400, COUPON_NOT_FOR_ITEM_AR);
   const id = typeof answer.id === "string" ? answer.id : "";

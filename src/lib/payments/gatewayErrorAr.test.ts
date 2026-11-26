@@ -57,3 +57,12 @@ test("the /checkout notice: the reason in Arabic, then how to try again", () => 
   assert.ok(n.includes("بلد إصدارها") && n.includes("«متابعة الدفع»"), n);
   assert.ok(!/BLOCKED|COUNTRY/i.test(n));
 });
+
+// l18 review S5: a timeout can follow a charge that went through — never a promise that nothing was taken.
+test("a timeout says the result is being checked and points to billing before paying again", () => {
+  for (const m of ["timeout", "Connection lost — timeout", "network error", "service unavailable"]) {
+    const ar = gatewayErrorAr(m);
+    assert.ok(ar.includes("قيد التحقق") && ar.includes("«الفواتير»"), `${m} → ${ar}`);
+    assert.doesNotMatch(ar, /لن يُخصم|لا يُخصم/, `${m}: no promise of no charge`);
+  }
+});
