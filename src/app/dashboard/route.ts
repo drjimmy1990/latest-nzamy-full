@@ -1,28 +1,37 @@
-import { redirect } from "next/navigation";
+import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { dashboardLandingFor } from "@/lib/auth/dashboardLanding";
 import { FALLBACK_DASHBOARD_PATH } from "@/lib/auth/userTypes";
 
 /**
- * /dashboard — not a screen: it sends each account to its own home (owner
+ * GET /dashboard — not a screen: it sends each account to its own home (owner
  * package 25-Nov, D-33; the rules are src/lib/auth/dashboardLanding.ts).
  * Every "back to my dashboard" link and two notifications point here.
  *
+ * A route handler, not a page: a page here would render inside
+ * dashboard/loading.tsx's boundary, so the shell would stream as a 200 and the
+ * redirect would arrive later in the browser. This answers a real 307.
+ *
  * A guest never reaches this file: /dashboard is PROTECTED in src/proxy.ts
- * (guest → /login) and dashboard/layout.tsx gates the session on the server
- * too; the redirect below is only the belt. The reads are the caller's own,
- * RLS-scoped (profiles: own row; firm_members: own row), exactly as
- * GET /api/v1/auth/session reads them. A failed profile read lands on the
- * home page, never on a guessed dashboard.
+ * (guest → /login); the redirect below is only the belt. The reads are the
+ * caller's own, RLS-scoped (profiles: own row; firm_members: own row),
+ * exactly as GET /api/v1/auth/session reads them. A failed profile read lands
+ * on the home page, never on a guessed dashboard. Never cached.
  */
 export const dynamic = "force-dynamic";
 
-export default async function DashboardHomeRedirect(): Promise<never> {
+function go(req: NextRequest, path: string) {
+  const res = NextResponse.redirect(new URL(path, req.url));
+  res.headers.set("Cache-Control", "private, no-store");
+  return res;
+}
+
+export async function GET(req: NextRequest) {
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) redirect("/login?from=%2Fdashboard");
+  if (!user) return go(req, "/login?from=%2Fdashboard");
 
   const [profileRead, membershipRead] = await Promise.all([
     supabase.from("profiles").select("user_type, phone, onboarding_completed").eq("id", user.id).maybeSingle(),
@@ -30,11 +39,12 @@ export default async function DashboardHomeRedirect(): Promise<never> {
   ]);
   if (profileRead.error) {
     console.error("[dashboard] profile read failed:", profileRead.error.code);
-    redirect(FALLBACK_DASHBOARD_PATH);
+    return go(req, FALLBACK_DASHBOARD_PATH);
   }
   const profile = profileRead.data as { user_type?: string | null; phone?: unknown; onboarding_completed?: unknown } | null;
 
-  redirect(
+  return go(
+    req,
     dashboardLandingFor({
       userType: profile?.user_type,
       onboardingCompleted: profile?.onboarding_completed,

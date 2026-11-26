@@ -37,13 +37,15 @@ test("never /dashboard itself (no loop), never a path built from the type", () =
   assert.doesNotMatch(out, /evil/);
 });
 
-test("the page redirects with the caller's own RLS reads, and is dynamic", () => {
-  const page = readFileSync(new URL("../../app/dashboard/page.tsx", import.meta.url), "utf8");
-  assert.doesNotMatch(page, /["']use client["']/);
-  assert.match(page, /export const dynamic = "force-dynamic";/);
-  assert.match(page, /import \{ createClient \} from "@\/lib\/supabase\/server";/);
-  assert.doesNotMatch(page, /createServiceClient|service_role/);
-  assert.match(page, /\.from\("profiles"\)\.select\("user_type, phone, onboarding_completed"\)\.eq\("id", user\.id\)/);
-  assert.match(page, /\.from\("firm_members"\)\.select\("id"\)\.eq\("user_id", user\.id\)\.eq\("status", "active"\)/);
-  assert.match(page, /redirect\(\s*dashboardLandingFor\(/);
+test("GET /dashboard is a route handler (a real 307, not a page streamed under loading.tsx), with the caller's own RLS reads", () => {
+  const route = readFileSync(new URL("../../app/dashboard/route.ts", import.meta.url), "utf8");
+  assert.throws(() => readFileSync(new URL("../../app/dashboard/page.tsx", import.meta.url)), "no page beside it");
+  assert.match(route, /export async function GET\(req: NextRequest\)/);
+  assert.match(route, /export const dynamic = "force-dynamic";/);
+  assert.match(route, /import \{ createClient \} from "@\/lib\/supabase\/server";/);
+  assert.doesNotMatch(route, /createServiceClient|service_role/);
+  assert.match(route, /\.from\("profiles"\)\.select\("user_type, phone, onboarding_completed"\)\.eq\("id", user\.id\)/);
+  assert.match(route, /\.from\("firm_members"\)\.select\("id"\)\.eq\("user_id", user\.id\)\.eq\("status", "active"\)/);
+  assert.match(route, /dashboardLandingFor\(\{/);
+  assert.match(route, /"Cache-Control", "private, no-store"/);
 });
