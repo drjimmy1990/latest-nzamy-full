@@ -5,7 +5,7 @@
  *
  *   1. start answers the same (status, body, nothing account-dependent before
  *      the answer) for an unknown address, no confirmed mobile, staff,
- *      suspended / frozen, a database limit, a per-address limit and a real
+ *      suspended / frozen, a database limit, a per-e-mail-address limit and a real
  *      account; only the real account gets a WhatsApp message.
  *   2. verify answers one refusal (and one minimum time) for an unknown
  *      address, a wrong code and a malformed code; nothing is changed.
@@ -34,7 +34,9 @@ import {
   WHATSAPP_START_SENT_AR,
 } from "./passwordResetRules.ts";
 import { hashOtpCode, hashOtpTarget } from "../lawyerSignup/otpCode.ts";
-import { validateNewPassword } from "../../app/settings/components/tabs/_securityFields.ts";
+import { MAX_PASSWORD_BYTES, PASSWORD_TOO_LONG_AR, validateNewPassword } from "../../app/settings/components/tabs/_securityFields.ts";
+import { resetPasswordProblem } from "../auth/passwordRecovery.ts";
+import { PASSWORD_CHANGED_MAIL_BODY_AR } from "./passwordResetRules.ts";
 
 const PEPPER = "p".repeat(40);
 const USER = "00000000-0000-0000-0000-0000000017a1";
@@ -49,6 +51,7 @@ type Calls = {
   passwords: Array<{ userId: string; password: string }>;
   revoked: string[];
   audits: number;
+  notices: string[];
   logs: string[];
   sleeps: number[];
 };
@@ -64,8 +67,9 @@ function world(opts: {
   /** Codes stored by issue(): their hashes, as the database would keep them. */
   stored?: string[];
   setPasswordFails?: boolean;
+  notify?: "sent" | "failed" | "throws";
 }) {
-  const calls: Calls = { lookups: [], issued: [], sent: [], verified: [], passwords: [], revoked: [], audits: 0, logs: [], sleeps: [] };
+  const calls: Calls = { lookups: [], issued: [], sent: [], verified: [], passwords: [], revoked: [], audits: 0, notices: [], logs: [], sleeps: [] };
   const stored = opts.stored ?? [];
   let clock = 1_000_000;
   const deps: ResetDeps = {
@@ -106,6 +110,11 @@ function world(opts: {
     audit: async () => {
       calls.audits += 1;
     },
+    notify: async (userId) => {
+      calls.notices.push(userId);
+      if (opts.notify === "throws") throw new Error("smtp down");
+      return opts.notify ?? "sent";
+    },
     log: (m) => calls.logs.push(m),
     now: () => clock,
     sleep: async (ms) => {
@@ -128,7 +137,7 @@ test("start: the same 200 and body for every kind of address; the lookup runs on
     { label: "staff", email: "admin@example.test", opts: { accounts: { "admin@example.test": null } }, sends: false },
     { label: "suspended", email: "banned@example.test", opts: { accounts: { "banned@example.test": null } }, sends: false },
     { label: "a database limit (cooldown / per hour / per number)", email: "reset.ok@example.test", opts: { accounts: { "reset.ok@example.test": target }, issueRefused: true }, sends: false },
-    { label: "the per-address limit of this process", email: "reset.ok@example.test", opts: { accounts: { "reset.ok@example.test": target }, allow: false }, sends: false },
+    { label: "the per-e-mail-address limit of this process", email: "reset.ok@example.test", opts: { accounts: { "reset.ok@example.test": target }, allow: false }, sends: false },
   ];
   const answers: string[] = [];
   for (const c of cases) {
@@ -226,7 +235,11 @@ test("verify: the right code sets the password, ends the sessions, writes the au
   // Arabic-Indic digits are accepted, as on the sign-up screen.
   const arabic = code.replace(/\d/g, (d) => String.fromCharCode(0x0660 + Number(d)));
   const ok = await verifyWhatsAppReset(w.deps, { email: "Reset.OK@example.test", code: arabic, password: GOOD_PASSWORD, confirm: GOOD_PASSWORD });
-  assert.deepEqual(ok, { status: 200, body: { ok: true } });
+  assert.equal(ok.status, 200);
+  assert.deepEqual(ok.body, { ok: true });
+  assert.equal(w.calls.notices.length, 0, "the e-mail goes after the answer");
+  await ok.background?.();
+  assert.deepEqual(w.calls.notices, [USER]);
   assert.deepEqual(w.calls.passwords, [{ userId: USER, password: GOOD_PASSWORD }]);
   assert.deepEqual(w.calls.revoked, [USER]);
   assert.equal(w.calls.audits, 1);
@@ -382,4 +395,65 @@ test("verify: the database compares the number as profiles.phone holds it; the h
   assert.equal(w.calls.sent[0].e164, PHONE);
   const server = readFileSync(new URL("./whatsappResetServer.ts", import.meta.url), "utf8");
   assert.match(server, /return \{ userId: j\.user_id, phone: phone\.e164, storedPhone: stored \}/);
+});
+
+// ── review S2: the account's e-mail is told; a failed mail never fails the reset ──
+test("verify: the «password changed» e-mail goes after the answer; a failed or throwing send changes nothing", async () => {
+  for (const mode of ["failed", "throws"] as const) {
+    const w = world({ accounts: { "reset.ok@example.test": target }, notify: mode });
+    const code = await sentCode(w, "reset.ok@example.test");
+    const out = await verifyWhatsAppReset(w.deps, { email: "reset.ok@example.test", code, password: GOOD_PASSWORD, confirm: GOOD_PASSWORD });
+    assert.equal(out.status, 200, mode);
+    assert.deepEqual(out.body, { ok: true });
+    await assert.doesNotReject(async () => out.background?.());
+    assert.deepEqual(w.calls.notices, [USER]);
+    assert.equal(w.calls.passwords.length, 1, "the password stays set");
+    assert.ok(w.calls.logs.some((l) => l.includes("notice e-mail")), `${mode}: logged`);
+    for (const l of w.calls.logs) assert.ok(!l.includes("@") && !l.includes(PHONE), l);
+  }
+  const refused = world({ accounts: { "reset.ok@example.test": target } });
+  const bad = await verifyWhatsAppReset(refused.deps, { email: "reset.ok@example.test", code: "000000", password: GOOD_PASSWORD, confirm: GOOD_PASSWORD });
+  assert.equal(bad.background ?? null, null, "no e-mail on a refusal");
+});
+
+test("the notice e-mail: the brief's words, the /forgot-password link, no number", () => {
+  assert.equal(PASSWORD_CHANGED_MAIL_BODY_AR, "تم تغيير كلمة مرور حسابك في نظامي عبر رمز واتساب. إن لم تكن أنت، فاطلب رابط إعادة التعيين على بريدك فورًا وتواصل معنا.");
+  assert.doesNotMatch(PASSWORD_CHANGED_MAIL_BODY_AR, /\d/);
+  const server = readFileSync(new URL("./whatsappResetServer.ts", import.meta.url), "utf8");
+  assert.match(server, /const href = siteLink\(FORGOT_PASSWORD_PATH\)/);
+  assert.match(server, /paragraphs: \[PASSWORD_CHANGED_MAIL_BODY_AR\]/);
+  assert.match(server, /userIds: \[userId\]/);
+  const notify = server.slice(server.indexOf("notify: async"), server.indexOf("log: (message)"));
+  assert.doesNotMatch(notify, /phone|e164/i, "the mail never carries the number");
+  const route = readFileSync(new URL("../../app/api/v1/auth/password-reset/whatsapp/verify/route.ts", import.meta.url), "utf8");
+  assert.match(route, /if \(answer\.background\) after\(answer\.background\)/);
+});
+
+// ── review S3: what GoTrue would refuse is refused before the code is spent ──
+test("verify: a password over bcrypt's 72 UTF-8 bytes is refused before the code is checked", async () => {
+  const arabic = "ب".repeat(37); // 37 letters, 74 bytes — under any length rule, over bcrypt's
+  const latin = "a".repeat(73);
+  for (const pw of [arabic, latin]) {
+    assert.equal(validateNewPassword(pw, pw), PASSWORD_TOO_LONG_AR);
+    const w = world({ accounts: { "reset.ok@example.test": target } });
+    const code = await sentCode(w, "reset.ok@example.test");
+    const out = await verifyWhatsAppReset(w.deps, { email: "reset.ok@example.test", code, password: pw, confirm: pw });
+    assert.equal(out.status, 400);
+    assert.equal(out.body.code, "weak_password");
+    assert.match(String(out.body.error), /^كلمة المرور طويلة جدًا/);
+    assert.equal(w.calls.verified.length, 0, "the code is not spent");
+    assert.equal(w.calls.passwords.length, 0);
+  }
+  const edge = "a".repeat(MAX_PASSWORD_BYTES);
+  assert.equal(validateNewPassword(edge, edge), null, "exactly 72 bytes passes");
+  const arabic36 = "ب".repeat(36);
+  assert.equal(validateNewPassword(arabic36, arabic36), null, "36 Arabic letters = 72 bytes passes");
+  assert.equal(resetPasswordProblem(latin, latin, false), "The password is too long. Choose a shorter one.");
+  assert.equal(resetPasswordProblem(latin, latin, true), PASSWORD_TOO_LONG_AR);
+});
+
+test("status: the choice is off when the security check of start is not configured in production", () => {
+  const server = readFileSync(new URL("./whatsappResetServer.ts", import.meta.url), "utf8");
+  const fn = server.slice(server.indexOf("export async function whatsappResetIsAvailable"));
+  assert.match(fn, /if \(turnstilePolicy\(process\.env\.TURNSTILE_SECRET_KEY, process\.env\.NODE_ENV\) === "misconfigured"\) return false;/);
 });

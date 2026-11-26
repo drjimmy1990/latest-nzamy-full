@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { verifyWhatsAppReset } from "@/lib/passwordReset/whatsappReset";
 import { serverResetDeps } from "@/lib/passwordReset/whatsappResetServer";
@@ -9,8 +9,10 @@ import { WHATSAPP_UNAVAILABLE_AR } from "@/lib/passwordReset/passwordResetRules"
  * and the new password (batch l17). Signed-out.
  *
  * Body: { email, code, password, confirm }
- *   200 { ok: true }  the password is set (auth admin API) and every session
- *       of the account is ended. No session is created here: the page sends
+ *   200 { ok: true }  the password is set (auth admin API) and the account's
+ *       sessions are ended (their refresh tokens are gone; an access token
+ *       already issued lapses at its expiry). After the answer, the account's
+ *       e-mail is told (after()). No session is created here: the page sends
  *       the person to /login, so the lockout, suspension, security check and
  *       the staff two-step all still apply to the next sign-in.
  *   400 { code: "invalid_code", error: «الرمز غير صحيح أو انتهت صلاحيته» } —
@@ -40,12 +42,14 @@ export async function POST(request: Request) {
   }
 
   // verify takes no security check of its own: the code is the secret, five
-  // tries kill it, and the proxy bucket limits each address.
+  // tries kill it, the proxy bucket limits each visitor and IP, and the core
+  // limits each address.
   const answer = await verifyWhatsAppReset(serverResetDeps(svc, async () => "ok"), {
     email: body.email,
     code: body.code,
     password: body.password,
     confirm: body.confirm,
   });
+  if (answer.background) after(answer.background);
   return NextResponse.json(answer.body, { status: answer.status, headers: NO_STORE });
 }

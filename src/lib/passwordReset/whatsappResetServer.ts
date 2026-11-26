@@ -26,14 +26,29 @@ import { readZernioConfig, sendWhatsAppCode } from "@/lib/phoneOtp/zernioWhatsAp
 import { loadSignupPhoneOtpSetting } from "@/lib/phoneOtp/phoneGateServer";
 import { normalizeSaudiMobile } from "@/lib/services/saudiMobile";
 import { rateLimit } from "@/lib/rateLimit";
-import { whatsappResetAvailable } from "./passwordResetRules";
+import { turnstilePolicy } from "@/lib/auth/turnstileServer";
+import { FORGOT_PASSWORD_PATH } from "@/lib/auth/passwordRecovery";
+import { renderEmailAr, sendEmail, siteLink } from "@/lib/email/sendEmail";
+import {
+  PASSWORD_CHANGED_MAIL_ACTION_AR,
+  PASSWORD_CHANGED_MAIL_BODY_AR,
+  PASSWORD_CHANGED_MAIL_SUBJECT_AR,
+  PASSWORD_CHANGED_MAIL_TAG,
+  whatsappResetAvailable,
+} from "./passwordResetRules";
 import { authUserMayReset, type ResetDeps, type ResetTarget } from "./whatsappReset";
 
 type Svc = Awaited<ReturnType<typeof createServiceClient>>;
 
-/** Is the WhatsApp choice on right now? Never throws (off on any error). */
+/**
+ * Is the WhatsApp choice on right now? Never throws (off on any error). Off
+ * as well when the security check of «start» is not configured in production
+ * (turnstilePolicy "misconfigured"): a button every press of which would
+ * answer 503 is not shown.
+ */
 export async function whatsappResetIsAvailable(): Promise<boolean> {
   try {
+    if (turnstilePolicy(process.env.TURNSTILE_SECRET_KEY, process.env.NODE_ENV) === "misconfigured") return false;
     const setting = await loadSignupPhoneOtpSetting();
     return whatsappResetAvailable({
       switchOn: setting.enabled,
@@ -126,6 +141,25 @@ export function serverResetDeps(svc: Svc, captcha: ResetDeps["captcha"]): ResetD
         },
       });
       if (error) throw new Error(`audit insert failed: ${error.code ?? "error"}`);
+    },
+    notify: async (userId) => {
+      const { data, error } = await svc.auth.admin.getUserById(userId);
+      const to = !error ? data?.user?.email ?? null : null;
+      if (!to) return "no_address";
+      const href = siteLink(FORGOT_PASSWORD_PATH);
+      const rendered = renderEmailAr({
+        heading: PASSWORD_CHANGED_MAIL_SUBJECT_AR,
+        paragraphs: [PASSWORD_CHANGED_MAIL_BODY_AR],
+        action: href ? { label: PASSWORD_CHANGED_MAIL_ACTION_AR, href } : null,
+      });
+      return sendEmail({
+        to,
+        subject: PASSWORD_CHANGED_MAIL_SUBJECT_AR,
+        text: rendered.text,
+        html: rendered.html,
+        tag: PASSWORD_CHANGED_MAIL_TAG,
+        userIds: [userId],
+      });
     },
     log: (message) => console.error(message),
     now: () => Date.now(),

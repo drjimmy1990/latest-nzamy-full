@@ -17,9 +17,11 @@ import { WHATSAPP_UNAVAILABLE_AR } from "@/lib/passwordReset/passwordResetRules"
  *       out after the answer (after()), to the account's confirmed mobile.
  *   400 { code: "invalid_email" } · 403 { code: "captcha" } · 503 { code:
  *       "unavailable" } (WhatsApp sending or the switch off, or the security
- *       check not configured in production). None of these depends on the account.
- * The proxy's own per-address bucket (rateLimitRoutes.ts, password-reset)
- * runs first; the database caps codes per account and per number.
+ *       check not configured in production — the status route then answers
+ *       { whatsapp: false } too). None of these depends on the account.
+ * The proxy's per-visitor / per-IP bucket (rateLimitRoutes.ts,
+ * password-reset-whatsapp) runs first; the core limits each address, and the
+ * database caps codes per account and per number.
  */
 export const dynamic = "force-dynamic";
 

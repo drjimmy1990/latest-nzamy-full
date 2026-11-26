@@ -8970,6 +8970,8 @@ select 'l17 pwreset: the reset codes table is server-only (RLS on, no policy, no
                         and not exists (select 1 from pg_catalog.pg_policy p where p.polrelid = c.oid)
                         and not has_table_privilege('anon', c.oid, 'SELECT')
                         and not has_table_privilege('anon', c.oid, 'INSERT')
+                        and not has_table_privilege('anon', c.oid, 'UPDATE')
+                        and not has_table_privilege('anon', c.oid, 'DELETE')
                         and not has_table_privilege('authenticated', c.oid, 'SELECT')
                         and not has_table_privilege('authenticated', c.oid, 'INSERT')
                         and not has_table_privilege('authenticated', c.oid, 'UPDATE')
@@ -8990,4 +8992,7 @@ select 'l17 pwreset: a reset code never touches the sign-up codes, and a hit nee
        coalesce(position('phone_otp_challenges' in pg_catalog.pg_get_functiondef(to_regprocedure('public.pw_reset_verify(uuid,text,text,text)'))) = 0
                 and position('phone_verified_at is not null' in pg_catalog.pg_get_functiondef(to_regprocedure('public.pw_reset_verify(uuid,text,text,text)'))) > 0
                 and position('password_reset_challenges' in pg_catalog.pg_get_functiondef(to_regprocedure('public.phone_otp_verify(uuid,text,text,text)'))) = 0, false) as ok;
+select 'l17 pwreset: a mobile confirmed in place of another in the last 7 days opens no reset yet (pw_reset_target reads the sign-up code rows) (run 20261207_10)' as check,
+       coalesce(position('recent_phone_change' in pg_catalog.pg_get_functiondef(to_regprocedure('public.pw_reset_target(text)'))) > 0
+                and position('phone_otp_challenges' in pg_catalog.pg_get_functiondef(to_regprocedure('public.pw_reset_target(text)'))) > 0, false) as ok;
 -- <<< verify:l17_pwreset

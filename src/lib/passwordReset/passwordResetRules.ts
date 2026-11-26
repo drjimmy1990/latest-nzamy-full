@@ -35,6 +35,16 @@ export const WHATSAPP_TOO_MANY_AR = "محاولات كثيرة — حاول بع
 export const WHATSAPP_PASSWORD_NOT_SET_AR =
   "تعذّر حفظ كلمة المرور الجديدة، وقد استُعمل الرمز. اطلب رمزًا جديدًا وأعد المحاولة.";
 
+/**
+ * The e-mail to the account's own address after a WhatsApp reset (review S2).
+ * No number and no code in it — only what happened and the e-mail link.
+ */
+export const PASSWORD_CHANGED_MAIL_SUBJECT_AR = "تم تغيير كلمة مرور حسابك في نظامي";
+export const PASSWORD_CHANGED_MAIL_BODY_AR =
+  "تم تغيير كلمة مرور حسابك في نظامي عبر رمز واتساب. إن لم تكن أنت، فاطلب رابط إعادة التعيين على بريدك فورًا وتواصل معنا.";
+export const PASSWORD_CHANGED_MAIL_ACTION_AR = "طلب رابط إعادة التعيين";
+export const PASSWORD_CHANGED_MAIL_TAG = "password_reset_whatsapp";
+
 /** /login reads these: the success line and the address to prefill. */
 export const LOGIN_RESET_REASON = "password_reset";
 export const LOGIN_RESET_DONE_AR = "تم تغيير كلمة المرور، ادخل بكلمتك الجديدة";

@@ -19,9 +19,12 @@
 --        pw_reset_target(email) → {ok, user_id, phone} only for an account
 --          that may receive a reset code: found by its e-mail (not an SSO
 --          row, not deleted), a confirmed mobile, not staff (user_type admin
---          or a platform_staff row), not banned. Otherwise {ok: false}. The
---          app adds the suspension / freeze copies in app_metadata and never
---          tells the caller which case it was;
+--          or a platform_staff row), not banned, and its mobile not
+--          confirmed IN PLACE OF another one in the last 7 days (from the
+--          sign-up code rows, phone_otp_challenges). Otherwise {ok: false}.
+--          The app adds the suspension / freeze copies in app_metadata and
+--          never tells the caller which case it was. verify asks it again, so
+--          a code sent before a change of number cannot be used after it;
 --        pw_reset_issue(user, target hash, hint, code hash) → the sign-up
 --          code's limits, counted on this table: 60 s between two codes, 5 per
 --          hour and 10 per 24 h per account, 10 per 24 h to one number; a
@@ -68,6 +71,9 @@ begin
   if not exists (select 1 from information_schema.columns
                   where table_schema = 'auth' and table_name = 'users' and column_name = 'email') then
     raise exception '20261207_10: auth.users.email is missing';
+  end if;
+  if to_regclass('public.phone_otp_challenges') is null then
+    raise exception '20261207_10: public.phone_otp_challenges is missing (run 20261205_10_phone_otp.sql first)';
   end if;
 end
 $pre$;
@@ -120,19 +126,23 @@ begin
     return pg_catalog.jsonb_build_object('ok', false, 'reason', 'no_account');
   end if;
 
-  -- to_jsonb keeps this readable whichever optional GoTrue columns exist.
+  -- One row at most, deterministically: deleted and SSO rows are never
+  -- candidates; GoTrue keeps one non-SSO row per address (its partial unique
+  -- index on email where is_sso_user is false) and stores the address
+  -- lower-cased, so the exact spelling wins and a case variant can only be a
+  -- row written outside GoTrue — then the newest. to_jsonb keeps this
+  -- readable whichever optional GoTrue columns exist.
   select pg_catalog.to_jsonb(u.*) into v_user
     from auth.users u
    where pg_catalog.lower(u.email) = v_email
+     and (pg_catalog.to_jsonb(u.*) ->> 'deleted_at') is null
      and coalesce((pg_catalog.to_jsonb(u.*) ->> 'is_sso_user')::boolean, false) = false
+   order by (u.email = v_email) desc, (pg_catalog.to_jsonb(u.*) ->> 'created_at') desc nulls last, u.id
    limit 1;
   if v_user is null then
     return pg_catalog.jsonb_build_object('ok', false, 'reason', 'no_account');
   end if;
   v_id := (v_user ->> 'id')::uuid;
-  if v_user ->> 'deleted_at' is not null then
-    return pg_catalog.jsonb_build_object('ok', false, 'reason', 'deleted');
-  end if;
   if (v_user ->> 'banned_until') is not null and (v_user ->> 'banned_until')::timestamptz > pg_catalog.now() then
     return pg_catalog.jsonb_build_object('ok', false, 'reason', 'banned');
   end if;
@@ -153,12 +163,34 @@ begin
     return pg_catalog.jsonb_build_object('ok', false, 'reason', 'no_confirmed_phone');
   end if;
 
+  -- A mobile confirmed in place of another one in the last 7 days does not
+  -- open a reset yet. phone_verified_at is stamped only by phone_otp_verify
+  -- (20261205_10), always with a sign-up code row of the number it confirmed,
+  -- and every number change clears it (trg_phone_verified_guard), so a
+  -- change shows as a delivered, consumed code created in the last 7 days to
+  -- a number other than an earlier delivered, consumed code of the account.
+  -- A failed delivery reached nobody and confirms nothing, so it is ignored.
+  -- One confirmed number, however recent, still passes.
+  if exists (
+    select 1
+      from public.phone_otp_challenges c
+     where c.user_id = v_id
+       and c.delivery <> 'failed' and c.consumed_at is not null
+       and c.created_at > pg_catalog.now() - interval '7 days'
+       and exists (select 1 from public.phone_otp_challenges e
+                    where e.user_id = v_id
+                      and e.delivery <> 'failed' and e.consumed_at is not null
+                      and e.created_at < c.created_at
+                      and e.target_hash <> c.target_hash)) then
+    return pg_catalog.jsonb_build_object('ok', false, 'reason', 'recent_phone_change');
+  end if;
+
   return pg_catalog.jsonb_build_object('ok', true, 'user_id', v_id, 'phone', v_profile ->> 'phone');
 end
 $fn$;
 
 comment on function public.pw_reset_target(text) is
-  '20261207_10: {ok, user_id, phone} for an account that may receive a WhatsApp password-reset code (found by e-mail, not SSO, not deleted, not banned, not staff, confirmed mobile); otherwise {ok: false}. The reason is for tests only — the app never returns it. service_role only.';
+  '20261207_10: {ok, user_id, phone} for an account that may receive a WhatsApp password-reset code (found by e-mail, not SSO, not deleted, not banned, not staff, confirmed mobile, no change of confirmed number in the last 7 days); otherwise {ok: false}. The reason is for tests only — the app never returns it. service_role only.';
 
 -- ── 2b. issue a reset code (limits, then insert) ────────────────────────────
 create or replace function public.pw_reset_issue(

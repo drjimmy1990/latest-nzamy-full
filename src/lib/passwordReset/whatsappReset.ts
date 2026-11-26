@@ -73,6 +73,8 @@ export type ResetDeps = {
   /** Ends every session of the account; the number ended, or null when it failed. */
   revokeSessions: (userId: string) => Promise<number | null>;
   audit: (row: { userId: string; sessionsEnded: number | null }) => Promise<void>;
+  /** The «your password was changed» e-mail to the account's own address. Best effort. */
+  notify: (userId: string) => Promise<"sent" | "sunk" | "unavailable" | "failed" | "no_address">;
   log: (message: string) => void;
   now: () => number;
   sleep: (ms: number) => Promise<void>;
@@ -80,8 +82,12 @@ export type ResetDeps = {
 
 export type RouteAnswer = { status: number; body: Record<string, unknown> };
 export type StartAnswer = RouteAnswer & { background: (() => Promise<void>) | null };
+export type VerifyAnswer = RouteAnswer & { background?: (() => Promise<void>) | null };
 
-/** Per-process limits on top of the proxy's per-address bucket and the database's per-account limits. */
+/**
+ * Per-process limits keyed on the normalised address, on top of the proxy's
+ * per-visitor / per-IP bucket and the database's per-account limits.
+ */
 export const START_PER_EMAIL = { limit: 5, windowMs: 10 * 60_000 };
 export const VERIFY_PER_EMAIL = { limit: 10, windowMs: 10 * 60_000 };
 /** Every verify refusal takes at least this long, found account or not. */
@@ -125,7 +131,7 @@ export async function startWhatsAppReset(deps: ResetDeps, input: { email: unknow
   if (check !== "ok") return { status: 403, body: { ok: false, code: "captcha", error: WHATSAPP_CAPTCHA_AR }, background: null };
 
   const uniform: StartAnswer = { status: 200, body: { ...START_UNIFORM_BODY }, background: null };
-  // Over the per-address limit: the same answer, and nothing is sent.
+  // Over the per-e-mail-address limit: the same answer, and nothing is sent.
   if (!deps.allow(`pwreset:start:${email}`, START_PER_EMAIL.limit, START_PER_EMAIL.windowMs)) return uniform;
 
   uniform.background = async () => {
@@ -153,7 +159,7 @@ export async function startWhatsAppReset(deps: ResetDeps, input: { email: unknow
 export async function verifyWhatsAppReset(
   deps: ResetDeps,
   input: { email: unknown; code: unknown; password: unknown; confirm: unknown },
-): Promise<RouteAnswer> {
+): Promise<VerifyAnswer> {
   const startedAt = deps.now();
   const refuse = async (): Promise<RouteAnswer> => {
     const wait = startedAt + VERIFY_FAILURE_FLOOR_MS - deps.now();
@@ -216,5 +222,16 @@ export async function verifyWhatsAppReset(
   } catch {
     deps.log("[password-reset whatsapp verify] audit row failed");
   }
-  return { status: 200, body: { ok: true } };
+  const userId = target.userId;
+  // The account's own address is told, after the answer; a failed mail never
+  // undoes or fails the reset.
+  const background = async () => {
+    try {
+      const sent = await deps.notify(userId);
+      if (sent !== "sent" && sent !== "sunk") deps.log(`[password-reset whatsapp verify] notice e-mail not sent: ${sent}`);
+    } catch (err) {
+      deps.log(`[password-reset whatsapp verify] notice e-mail failed: ${errorName(err)}`);
+    }
+  };
+  return { status: 200, body: { ok: true }, background };
 }

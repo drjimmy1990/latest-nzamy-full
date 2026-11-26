@@ -72,7 +72,7 @@ select pg_temp.expect('Q1 no mobile', (select public.pw_reset_target('nophone@ex
 select pg_temp.expect('Q1 admin refused', (select public.pw_reset_target('admin@example.test') ->> 'reason'), 'staff');
 select pg_temp.expect('Q1 platform_staff refused', (select public.pw_reset_target('staff@example.test') ->> 'reason'), 'staff');
 select pg_temp.expect('Q1 banned refused', (select public.pw_reset_target('banned@example.test') ->> 'reason'), 'banned');
-select pg_temp.expect('Q1 deleted refused', (select public.pw_reset_target('deleted@example.test') ->> 'reason'), 'deleted');
+select pg_temp.expect('Q1 a deleted row is never a candidate', (select public.pw_reset_target('deleted@example.test') ->> 'reason'), 'no_account');
 select pg_temp.expect('Q1 SSO row not matched', (select public.pw_reset_target('sso@example.test') ->> 'reason'), 'no_account');
 select pg_temp.expect('Q1 an expired ban does not block', (select public.pw_reset_target('oldban@example.test') ->> 'ok'), 'true');
 
@@ -210,6 +210,58 @@ select pg_temp.expect('Q8 a guest cannot verify a reset code',
   pg_temp.try($q$select public.pw_reset_verify('00000000-0000-0000-0000-0000000017a2', repeat('a', 64), '+966500001702', repeat('b', 64))$q$), 'refused:42501');
 select pg_temp.expect('Q8 a guest cannot read the reset codes',
   pg_temp.try('select count(*) from public.password_reset_challenges'), 'refused:42501');
+reset role;
+
+-- Q9 a mobile confirmed in place of another in the last 7 days opens no reset (review S1)
+insert into auth.users (id, email) values
+  ('00000000-0000-0000-0000-0000000017e1', 'one.number@example.test'),    -- new account, one number
+  ('00000000-0000-0000-0000-0000000017e2', 'swapped.recent@example.test'), -- number changed 2 days ago
+  ('00000000-0000-0000-0000-0000000017e3', 'swapped.old@example.test'),    -- number changed 10 days ago
+  ('00000000-0000-0000-0000-0000000017e4', 'failed.first@example.test'),   -- a failed send to another number, then one number
+  ('00000000-0000-0000-0000-0000000017e5', 'swap.after.code@example.test'); -- a reset code, then a change of number
+insert into public.profiles (id, user_type, display_name, phone, phone_verified_at) values
+  ('00000000-0000-0000-0000-0000000017e1', 'individual', 'ك', '+966500001711', now()),
+  ('00000000-0000-0000-0000-0000000017e2', 'individual', 'ل', '+966500001712', now() - interval '2 days'),
+  ('00000000-0000-0000-0000-0000000017e3', 'individual', 'م', '+966500001713', now() - interval '10 days'),
+  ('00000000-0000-0000-0000-0000000017e4', 'individual', 'ن', '+966500001714', now()),
+  ('00000000-0000-0000-0000-0000000017e5', 'individual', 'س', '+966500001715', now() - interval '30 days');
+-- the sign-up code rows phone_otp_verify leaves behind (consumed on a hit)
+insert into public.phone_otp_challenges (user_id, target_hash, code_hash, delivery, consumed_at, created_at) values
+  ('00000000-0000-0000-0000-0000000017e1', pg_temp.h('+966500001711'), pg_temp.h('e1a'), 'sent', now() - interval '1 hour',  now() - interval '1 hour'),
+  ('00000000-0000-0000-0000-0000000017e1', pg_temp.h('+966500001711'), pg_temp.h('e1b'), 'sent', now() - interval '1 hour',  now() - interval '2 hours'),
+  ('00000000-0000-0000-0000-0000000017e2', pg_temp.h('+966500009001'), pg_temp.h('e2a'), 'sent', now() - interval '40 days', now() - interval '40 days'),
+  ('00000000-0000-0000-0000-0000000017e2', pg_temp.h('+966500001712'), pg_temp.h('e2b'), 'sent', now() - interval '2 days',  now() - interval '2 days'),
+  ('00000000-0000-0000-0000-0000000017e3', pg_temp.h('+966500009002'), pg_temp.h('e3a'), 'sent', now() - interval '40 days', now() - interval '40 days'),
+  ('00000000-0000-0000-0000-0000000017e3', pg_temp.h('+966500001713'), pg_temp.h('e3b'), 'sent', now() - interval '10 days', now() - interval '10 days'),
+  ('00000000-0000-0000-0000-0000000017e4', pg_temp.h('+966500009003'), pg_temp.h('e4a'), 'failed', now() - interval '3 hours', now() - interval '3 hours'),
+  ('00000000-0000-0000-0000-0000000017e4', pg_temp.h('+966500001714'), pg_temp.h('e4b'), 'sent', now() - interval '1 hour',  now() - interval '2 hours'),
+  ('00000000-0000-0000-0000-0000000017e5', pg_temp.h('+966500001715'), pg_temp.h('e5a'), 'sent', now() - interval '30 days', now() - interval '30 days');
+set role service_role;
+select pg_temp.expect('Q9 a new account with one confirmed number may reset',
+  (select public.pw_reset_target('one.number@example.test') ->> 'ok'), 'true');
+select pg_temp.expect('Q9 a number confirmed in place of another 2 days ago: no reset',
+  (select public.pw_reset_target('swapped.recent@example.test') ->> 'reason'), 'recent_phone_change');
+select pg_temp.expect('Q9 a change 10 days ago no longer blocks',
+  (select public.pw_reset_target('swapped.old@example.test') ->> 'ok'), 'true');
+select pg_temp.expect('Q9 a failed send to another number is not a change',
+  (select public.pw_reset_target('failed.first@example.test') ->> 'ok'), 'true');
+select pg_temp.expect('Q9 the long-confirmed account may reset before any change',
+  (select public.pw_reset_target('swap.after.code@example.test') ->> 'ok'), 'true');
+select pg_temp.expect('Q9 a reset code for it',
+  (select public.pw_reset_issue('00000000-0000-0000-0000-0000000017e5',
+     pg_temp.h('+966500001715'), '…15', pg_temp.h('reset-777777')) ->> 'ok'), 'true');
+reset role;
+-- now the number is moved and the new one confirmed, as phone_otp/start + verify would do
+update public.profiles set phone = '+966500009005' where id = '00000000-0000-0000-0000-0000000017e5';
+insert into public.phone_otp_challenges (user_id, target_hash, code_hash, delivery, consumed_at, created_at) values
+  ('00000000-0000-0000-0000-0000000017e5', pg_temp.h('+966500009005'), pg_temp.h('e5b'), 'sent', now(), now());
+update public.profiles set phone_verified_at = now() where id = '00000000-0000-0000-0000-0000000017e5';
+set role service_role;
+select pg_temp.expect('Q9 after the change the account gets no reset (the app asks this again at verify)',
+  (select public.pw_reset_target('swap.after.code@example.test') ->> 'reason'), 'recent_phone_change');
+select pg_temp.expect('Q9 … and the code sent before the change is refused by the database too',
+  (select public.pw_reset_verify('00000000-0000-0000-0000-0000000017e5', pg_temp.h('+966500001715'),
+     '+966500001715', pg_temp.h('reset-777777')) ->> 'ok'), 'false');
 reset role;
 
 do $$ begin raise notice 'l17_pwreset: ALL PASS'; end $$;

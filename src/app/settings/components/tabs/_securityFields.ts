@@ -24,6 +24,19 @@ import { MIN_PASSWORD_LENGTH, translateAuthError } from "../../../../lib/auth/tr
 export { MIN_PASSWORD_LENGTH };
 
 /**
+ * GoTrue stores a bcrypt hash, and bcrypt reads at most 72 bytes: a longer
+ * password is refused by the auth server. Counted in UTF-8 bytes, so an
+ * Arabic letter (2 bytes) counts twice.
+ */
+export const MAX_PASSWORD_BYTES = 72;
+export const PASSWORD_TOO_LONG_AR = "كلمة المرور طويلة جدًا. اختر كلمة أقصر.";
+
+/** The UTF-8 length of a password (TextEncoder: the browser and Node alike). */
+export function passwordByteLength(password: string): number {
+  return new TextEncoder().encode(password).length;
+}
+
+/**
  * Client-side validation before calling Supabase. Returns the Arabic error to
  * show, or `null` when the pair is ready to submit.
  */
@@ -32,6 +45,7 @@ export function validateNewPassword(password: string, confirm: string): string |
   if (password.length < MIN_PASSWORD_LENGTH) {
     return `كلمة المرور يجب ألا تقل عن ${toArabicDigits(MIN_PASSWORD_LENGTH)} أحرف.`;
   }
+  if (passwordByteLength(password) > MAX_PASSWORD_BYTES) return PASSWORD_TOO_LONG_AR;
   if (!confirm) return "أعد كتابة كلمة المرور الجديدة في حقل التأكيد.";
   if (password !== confirm) return "كلمتا المرور غير متطابقتين.";
   return null;
