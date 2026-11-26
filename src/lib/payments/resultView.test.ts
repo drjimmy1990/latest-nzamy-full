@@ -284,7 +284,7 @@ test("l7 (decision 1): a founder seat paid before the licence check — «قيد
     const view = paymentResultView({ outcome, reason: "founder_pending_verification", receiptNumber: "NZ-2026-000010" }, founder);
     assert.equal(view.tone, "review", outcome);
     assert.equal(view.title, "تم الدفع وحُجز مقعدك");
-    assert.match(view.body, /تُفعَّل الباقة بعد توثيق رخصتك، وإن لم تُوثَّق يُردّ المبلغ كاملاً\./);
+    assert.match(view.body, /تُفعَّل الباقة بعد اعتماد التوثيق، وإن لم يُعتمد يُردّ المبلغ كاملاً\./);
     assert.match(view.body, /NZ-2026-000010/);
     assert.ok(!view.body.includes("تفعيل عضويتك"), "never «تم التفعيل»");
     assert.equal(founderWelcomeFor(view, founder), null);

@@ -85,8 +85,8 @@ export default function BookConsultationPage() {
                 costs nothing and the quote comes afterwards. */}
             <p className="mt-1 text-sm text-ink-muted dark:text-gray-400">
               {isAr
-                ? "أرسل طلبك مجاناً — يراجعه فريق نظامي ويعود إليك بالموعد وعرض السعر"
-                : "Send your request free — the Nezamy team reviews it and returns with a time and a quote"}
+                ? "أرسل طلبك مجاناً — يراجعه فريق نظامي ويعود إليك بالموعد وعرض السعر. الدفع يتم بالتنسيق المباشر مع المحامي مؤقتًا."
+                : "Send your request free — the Nezamy team reviews it and returns with a time and a quote. For now, payment is arranged directly with the lawyer."}
             </p>
           </div>
 

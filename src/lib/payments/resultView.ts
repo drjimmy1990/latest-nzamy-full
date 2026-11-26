@@ -22,7 +22,7 @@
  */
 
 import { orderLabelWithPointsAr, sellableItem } from "./catalog.ts";
-import { FOUNDER_PENDING_REASON, fulfilmentNoticeAr } from "./fulfillDecision.ts";
+import { FOUNDER_PENDING_REASON, LICENCE_PENDING_REASON, fulfilmentNoticeAr } from "./fulfillDecision.ts";
 import { FOUNDER_PLAN_ID } from "../membership/founderPlan.ts";
 import { FOUNDER_BENEFITS } from "../pricing/founderCard.ts";
 import { gatewayErrorAr } from "./gatewayErrorAr.ts";
@@ -125,6 +125,11 @@ export function paymentResultView(result: ResultInput, order: ResultOrder): Resu
       alreadyEntitled: false,
       founderPending: true,
     });
+    return { tone: "review", title: n.title, body: n.body, receiptHref: receiptHrefFor(order), refresh: false, contact: false };
+  }
+  // l18 (٢٣٩): a professional plan paid before the licence approval — held, not active
+  if ((result.outcome === "granted" || result.outcome === "already_done") && result.reason === LICENCE_PENDING_REASON) {
+    const n = fulfilmentNoticeAr({ kind: noticeKind(order.kind), labelAr: labelOf(order), receiptNumber, alreadyEntitled: false, licencePending: true });
     return { tone: "review", title: n.title, body: n.body, receiptHref: receiptHrefFor(order), refresh: false, contact: false };
   }
 

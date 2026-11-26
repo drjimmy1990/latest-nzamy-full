@@ -9116,3 +9116,14 @@ select 'l18 answers: a firm contract''s fee schedule is for the firm owner, mana
                       and pg_catalog.pg_get_expr(p.polqual, p.polrelid) like '%contract_fees_visible(contract_id)%'
                       and pg_catalog.pg_get_expr(p.polwithcheck, p.polrelid) like '%contract_fees_visible(contract_id)%') as ok;
 -- <<< verify:l18_answers
+-- >>> verify:l18_pay_held — supabase/tests/rls/l18_pay_held_plans.test.sql
+-- Batch l18-pay (owner ٢٣٩): a professional plan paid before the licence approval is held; the buyer
+-- sees it on /dashboard/billing through my_licence_held_orders(). 20261208_32 runs BEFORE the deploy.
+select 'l18 pay held: my_licence_held_orders() is SECURITY DEFINER with an empty search_path, keyed on auth.uid(), authenticated only (run 20261208_32)' as check,
+       coalesce((select p.prosecdef
+                        and p.proconfig @> array['search_path=""']
+                        and position('auth.uid()' in pg_catalog.pg_get_functiondef(p.oid)) > 0
+                        and not has_function_privilege('anon', p.oid, 'EXECUTE')
+                        and has_function_privilege('authenticated', p.oid, 'EXECUTE')
+                   from pg_catalog.pg_proc p where p.oid = to_regprocedure('public.my_licence_held_orders()')), false) as ok;
+-- <<< verify:l18_pay_held

@@ -81,11 +81,12 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { MoyasarClient, MoyasarPayment } from "./moyasarClient.ts";
-import { resolveItem } from "./catalog.ts";
+import { resolveItem, type PayableItem } from "./catalog.ts";
 import { grantPurchase, type FounderRefundReason, type GrantPurchaseDeps } from "./grantPurchase.ts";
 import { recordCouponUsage } from "./couponServer.ts";
 import {
   FOUNDER_PENDING_REASON,
+  LICENCE_PENDING_REASON,
   fulfilmentNoticeAr,
   fulfillDecision,
   isMissingPaymentsObject,
@@ -154,6 +155,17 @@ export interface FulfilDeps extends GrantPurchaseDeps {
     currency: string;
     metadata: Record<string, unknown> | null;
   }) => Promise<unknown>;
+  /**
+   * l18 (owner ٢٣٩): may this PLAN be activated now for its buyer? "go" (no
+   * licence rule, or the licence is verified); "hold" (a pending licence —
+   * the plan waits for the admin's approval, heldPlanActivation.ts);
+   * "review" (paid by an account whose licence is rejected / suspended / not
+   * submitted — no approval will come: held and sent to the admin's refund
+   * review); null (the read failed → pending, the sweep retries). Read at
+   * fulfilment, not at checkout: the licence may change in between. Absent →
+   * "go" (fulfillOrder.ts wires it).
+   */
+  licenceHold?: (userId: string, item: PayableItem) => Promise<"go" | "hold" | "review" | null>;
 }
 
 interface OrderRow {
@@ -393,6 +405,19 @@ async function finish(
   const token = payment?.source?.token;
   const paymentMethodId = item.saveCard && token && client ? await saveCard(admin, client, order, token) : null;
 
+  // l18 (owner ٢٣٩): a professional plan paid before the licence approval is
+  // held — paid and stamped, no subscription — until the admin approves
+  if (item.kind === "plan" && order.kind === "plan" && deps.licenceHold) {
+    let hold: "go" | "hold" | "review" | null;
+    try {
+      hold = await deps.licenceHold(order.user_id, item);
+    } catch {
+      hold = null;
+    }
+    if (hold === null) return { outcome: "pending", reason: "licence_check_failed", receiptNumber };
+    if (hold !== "go") return await holdForLicence(deps, { ...order, user_id: order.user_id }, item, receiptNumber, now, hold === "review");
+  }
+
   const granted = await grantPurchase(
     deps,
     { id: order.id, user_id: order.user_id, kind: order.kind, item_id: order.item_id, billing: order.billing, metadata: order.metadata },
@@ -485,6 +510,75 @@ async function finish(
   return { outcome: "granted", receiptNumber };
 }
 
+/**
+ * l18 (owner ٢٣٩): a paid PLAN whose buyer's licence is not approved yet —
+ * the coupon use is recorded (the sale happened), metadata.licence_pending is
+ * merged BEFORE the stamp (a refresh that finds the order fulfilled finds the
+ * flag too), the order is stamped fulfilled (the sweep leaves it), and the
+ * payer is told plainly that the plan starts on the approval day. `review`
+ * (rejected / suspended / no licence — no approval will follow): also
+ * already_entitled, so it sits in the admin's refund review, and every admin
+ * is alerted.
+ */
+async function holdForLicence(
+  deps: FulfilDeps,
+  order: OrderRow & { user_id: string },
+  item: PayableItem,
+  receiptNumber: string | null,
+  now: Date,
+  review: boolean,
+): Promise<FulfillResult> {
+  const { admin } = deps;
+  if ((await recordCouponUsage(admin, order)) === "reused") await mergeOrderMetadata(admin, order.id, { coupon_reused: true });
+  const patch: Record<string, unknown> = { licence_pending: true, licence_held_at: now.toISOString() };
+  if (review) Object.assign(patch, { already_entitled: true, licence_review: true });
+  if (!(await mergeOrderMetadata(admin, order.id, patch))) {
+    return { outcome: "pending", reason: "metadata_merge_failed", receiptNumber };
+  }
+  const { data: stamped, error: stampErr } = await admin
+    .from("payment_orders")
+    .update({ fulfilled_at: now.toISOString() })
+    .eq("id", order.id)
+    .is("fulfilled_at", null)
+    .select("id");
+  if (stampErr) return pendingForDbError("fulfilled_at stamp", stampErr);
+  if (!Array.isArray(stamped) || stamped.length === 0) return { outcome: "already_done", receiptNumber };
+
+  const notice = fulfilmentNoticeAr({ kind: "plan", labelAr: item.labelAr, receiptNumber, alreadyEntitled: review, licencePending: !review });
+  await deps.notify({ userId: order.user_id, title: notice.title, body: notice.body, href: notice.href });
+  if (review) {
+    console.warn("[payments] fulfillOrder: a plan paid by an account whose licence is not pending — refund review:", order.id);
+    if (deps.notifyAdmins) {
+      try {
+        await deps.notifyAdmins({
+          title: "باقة مهنية مدفوعة لحساب غير موثّق",
+          body: `دُفعت باقة «${item.labelAr}» من حساب توثيقه مرفوض أو موقوف أو غير مرفوع، فلم تُفعَّل. الطلب ${order.id}. راجع الاسترداد من صفحة المدفوعات.`,
+          href: "/dashboard/admin/subscriptions/orders",
+        });
+      } catch {
+        // best-effort
+      }
+    }
+    return { outcome: "already_done", reason: "already_entitled", receiptNumber };
+  }
+  if (deps.reportPurchase && order.live === true) {
+    try {
+      await deps.reportPurchase({
+        orderId: order.id,
+        itemId: order.item_id,
+        itemName: item.labelAr,
+        kind: order.kind,
+        totalHalalas: order.total_halalas,
+        currency: order.currency,
+        metadata: order.metadata,
+      });
+    } catch {
+      // analytics never touches a sale
+    }
+  }
+  return { outcome: "granted", reason: LICENCE_PENDING_REASON, receiptNumber };
+}
+
 /** The sweep's resume: the claim already verified the payment; fetch it only for the card. */
 async function resume(deps: FulfilDeps, order: OrderRow): Promise<FulfillResult> {
   let client: GatewayClient | null = null;
@@ -533,7 +627,9 @@ async function run(deps: FulfilDeps, input: FulfillOrderInput): Promise<FulfillR
           ? "order_refunded"
           : order.kind === "membership" && order.metadata?.founder === "pending_verification"
             ? FOUNDER_PENDING_REASON
-            : undefined;
+            : order.kind === "plan" && order.metadata?.licence_pending === true
+              ? LICENCE_PENDING_REASON
+              : undefined;
     return { outcome: "already_done", ...(reason ? { reason } : {}), receiptNumber: order.receipt_number };
   }
 

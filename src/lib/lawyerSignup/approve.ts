@@ -25,6 +25,7 @@
 import type { createServiceClient } from "@/lib/supabase/server";
 import { recordNotification } from "@/lib/notify";
 import { settleFounderSeatAfterDecision } from "@/lib/membership/founderVerificationServer";
+import { settleHeldPlansAfterDecision } from "@/lib/payments/heldPlanActivationServer";
 import { dispatchVerificationToN8n } from "@/lib/n8n/dispatch";
 import { isFakeLicenceDbError } from "./fakeLicence.ts";
 
@@ -62,5 +63,7 @@ export async function approveLawyerInstantly(svc: Svc, userId: string): Promise<
   // l7 (decision 1): a founder seat paid while pending is activated now, as
   // the admin approval does (founderVerification.ts). Never fails the approval.
   await settleFounderSeatAfterDecision(svc, userId, userId, "approve");
+  // l18 (owner ٢٣٩): a professional plan paid while pending activates from today
+  await settleHeldPlansAfterDecision(svc, userId, userId, "approve");
   return "approved";
 }

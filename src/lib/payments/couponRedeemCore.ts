@@ -43,8 +43,9 @@
  * freeActivationCore.grantRedeemedItem (the library pass on the redemption
  * itself, 20261208_30). The box applies checkout's newer gates as well: the
  * library lock for the account type (deps.libraryAccountAllowed — a library
- * pass or the bundle) and the licence (deps.licenceAllowed, ق٢٦-٩ — the
- * professional plans), so a code is never a way around them.
+ * pass or the bundle) and the licence (deps.licenceFacts, ٢٣٩ — a free code
+ * activates a professional plan only for a verified licence), so a code is
+ * never a way around them.
  * Missing objects (the migration not run) → 503 «تفعيل الأكواد غير متاح
  * حالياً», nothing written. Never a 500.
  *
@@ -63,7 +64,8 @@ import { CONSULTANT_REFUSED_PLAN_ID_LIST } from "../pricing/audienceForUserType.
 import { isMissingPaymentsObject } from "./fulfillDecision.ts";
 import type { TierRankTable } from "../entitlementGrantRules.ts";
 import { auditRedemption, finishRedemption as finish, grantRedeemedItem } from "./freeActivationCore.ts";
-import { LICENCE_CHECK_FAILED_AR, licenceGatedPurchase, type LicencePurchaseDecision } from "./licenceGate.ts";
+import { licenceFreeCodeDecision, licenceGatedPurchase } from "./licenceGate.ts";
+import type { VerifiedProviderFacts } from "../auth/verifiedProvider.ts";
 import { LIBRARY_ACCOUNT_LOCKED_AR } from "../library/accountAccess.ts";
 
 export const REDEEM_UNAVAILABLE_AR = "تفعيل الأكواد غير متاح حالياً، حاول مرة أخرى بعد قليل";
@@ -86,8 +88,8 @@ export interface RedeemDeps {
   catalog?: Readonly<Record<string, PayableItem>>;
   /** l18: the library lock for the account type (checkout's step 2b) — asked for a library pass or the bundle; a throw is a refusal. Absent → not asked. */
   libraryAccountAllowed?: (userId: string) => Promise<boolean>;
-  /** l18 (ق٢٦-٩): the licence check of a professional plan (checkout's step 2d). Absent → not asked. */
-  licenceAllowed?: (userId: string, userType: string) => Promise<LicencePurchaseDecision>;
+  /** l18 (٢٣٩): the verification facts — a free code activates a professional plan only for a VERIFIED licence. Absent → not asked. */
+  licenceFacts?: (userId: string, userType: string) => Promise<VerifiedProviderFacts | null>;
 }
 
 export type RedeemReply =
@@ -198,14 +200,16 @@ export async function redeemCouponWith(deps: RedeemDeps, input: { userId: string
       if (standing.readFailed) return fail(503, REDEEM_CHECK_FAILED_AR);
       if (standing.scopeKind === "consultant") return fail(403, REDEEM_CONSULTANT_AR);
     }
-    // l18 (ق٢٦-٩): a professional plan waits for a verified, unexpired licence
-    if (deps.licenceAllowed && licenceGatedPurchase(item, userType)) {
-      let decision: LicencePurchaseDecision;
+    // l18 (٢٣٩): a free code activates a professional plan only for a verified
+    // licence (nothing paid to hold until approval) — refused before the code is opened
+    if (deps.licenceFacts && licenceGatedPurchase(item, userType)) {
+      let facts: VerifiedProviderFacts | null;
       try {
-        decision = await deps.licenceAllowed(input.userId, userType as string);
+        facts = await deps.licenceFacts(input.userId, userType as string);
       } catch {
-        decision = { ok: false, status: 503, error: LICENCE_CHECK_FAILED_AR };
+        facts = null;
       }
+      const decision = licenceFreeCodeDecision(userType as string, facts);
       if (decision.ok === false) return fail(decision.status, decision.error);
     }
     if (item.kind === "plan" && item.tier) {

@@ -30,8 +30,6 @@ import {
   founderVerificationFromProfile,
   FOUNDER_PENDING_MEMBER_LABEL,
   FOUNDER_PENDING_NOTE,
-  FOUNDER_LICENCE_REVIEW_LABEL,
-  FOUNDER_LICENCE_REVIEW_NOTE,
   type FounderCtaState,
 } from "./founderCard.ts";
 
@@ -306,12 +304,13 @@ test("founderMemberFromReply: exactly true or false, anything else unknown", () 
   assert.equal(founderMemberFromReply({ member: true, pendingVerification: true }), true);
 });
 
-test("founderCta (l18, ق٢٦-٩ — reverses l7 decision 1): a pending lawyer cannot pay yet; one who already paid sees his held seat", () => {
+test("founderCta (l7 decision 1, owner ٢٣٩): a pending lawyer may pay and is told it activates after the approval; one who paid sees his held seat", () => {
   const cta = founderCta({ ...lawyer, verification: "pending" });
-  assert.deepEqual([cta.kind, cta.label, cta.note], ["unavailable", FOUNDER_LICENCE_REVIEW_LABEL, FOUNDER_LICENCE_REVIEW_NOTE]);
-  assert.equal(founderCta({ ...lawyer, verification: "pending", gateway: { disabled: true, provider: null } }).kind, "unavailable");
-  assert.equal(FOUNDER_PENDING_NOTE, "تُفعَّل الباقة بعد توثيق رخصتك، وإن لم تُوثَّق يُردّ المبلغ كاملاً.");
-  void CHECKOUT;
+  assert.equal(cta.kind, "checkout");
+  if (cta.kind === "checkout") assert.equal(cta.href, CHECKOUT);
+  assert.equal(cta.note, FOUNDER_PENDING_NOTE);
+  assert.equal(FOUNDER_PENDING_NOTE, "تُفعَّل الباقة بعد اعتماد التوثيق، وإن لم يُعتمد يُردّ المبلغ كاملاً.");
+  assert.equal(founderCta({ ...lawyer, verification: "pending", gateway: { disabled: true, provider: null } }).note, FOUNDER_PENDING_NOTE);
   const held = founderCta({ ...lawyer, member: "pending", verification: "pending" });
   assert.deepEqual([held.kind, held.label, held.note], ["member", FOUNDER_PENDING_MEMBER_LABEL, FOUNDER_PENDING_NOTE]);
   // a consultant is still refused before payment, pending or not

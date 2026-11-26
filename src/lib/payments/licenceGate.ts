@@ -1,27 +1,36 @@
 /**
- * licenceGate.ts — batch l18, owner decision ق٢٦-٩ (package of 26 Nov): while
- * a lawyer's or a firm's licence is not verified yet (pending / under the
- * team's review / rejected / suspended), or the licence on file has expired,
- * the account may not BUY the founder plan or any professional plan. Browsing
- * the dashboard, the library preview and the free questions stay open (they
- * are not purchases). This reverses the earlier "pay before verification"
- * rule (verifiedProvider.ts q٦١ and the 18 Nov founder decision 1) for NEW
- * purchases only: founder seats already held are not touched.
+ * licenceGate.ts — the licence rule for buying the founder plan or a
+ * professional plan. Batch l18 first built owner decision ق٢٦-٩ as a purchase
+ * block; the owner's answer ٢٣٩ (27 Nov) replaced it:
  *
- * What is gated (licenceGatedPurchase): the founder membership, and every
- * PLAN sold to lawyers or firms (lawyer-pro, lawyer-bundle,
- * consultant-independent, firm-basic, firm-enterprise …) — only when the buyer
- * is a lawyer or a firm account. Library passes and point top-ups are not a
- * professional plan and stay open (our reading of «باقة مهنية»); a provider
- * account (notary, arbitrator …) has no verification flow yet and is not
- * gated here.
+ *   «يُسمح بالدفع وحجز باقة المؤسس أو أي باقة مهنية قبل اعتماد التوثيق، ولكن
+ *    لا تُفعَّل الباقة ولا الأدوات المهنية إلا بعد اعتماد التوثيق من الإدارة.»
  *
- * Who passes (licencePurchaseDecision): verifiedProvider.ts's rule as it is
- * (a verified lawyer, the owner of a verified firm, an active member of a
- * verified firm, an admin) — and then, for the lawyer's own licence or the
- * firm's own licence, a license_expiry on file that is not before today in
- * Riyadh. A NULL expiry passes (most profiles have none; failing closed would
- * lock every verified lawyer out). A failed read → 503, never a guess.
+ * So, for a lawyer or a firm buying a gated item (licenceGatedPurchase — the
+ * founder membership and every plan sold to lawyers / firms; library passes,
+ * top-ups, individuals and providers are not gated):
+ *
+ *   verified   → bought and activated as before;
+ *   pending    → (the licence was submitted and waits for the team) MAY PAY.
+ *                A professional plan is then held at fulfilment
+ *                (fulfillCore: metadata.licence_pending, no subscription) and
+ *                activated when the admin approves the verification — its
+ *                period starts on the approval day (heldPlanActivation.ts).
+ *                The founder seat already works this way (20261127_10:
+ *                pending_verification, founderVerification.ts);
+ *   unverified → (rejected, suspended, no licence submitted) refused with
+ *                «وثّق رخصتك أولاً» and the verify link: nothing would ever
+ *                release the hold (no approval event follows), and
+ *                founder_reserve_seat refuses the same accounts.
+ *
+ * A FREE activation (a 100 % code at checkout, a free-plan code in the box)
+ * of a gated item needs a VERIFIED licence: there is nothing paid to hold,
+ * and activating it would put the plan to work before approval. The code is
+ * refused before it is opened, so it is not used up.
+ *
+ * The licence expiry date is not part of the purchase rule: an expired
+ * licence of an already verified account has no approval event that would
+ * ever release a held order.
  *
  * Pure: relative imports only (type-only for Supabase), so `node --test` loads it.
  */
@@ -33,18 +42,21 @@ import { readVerifiedProviderFacts } from "../auth/verifiedProviderRead.ts";
 
 export const LICENCE_PURCHASE_CODE = "licence_not_verified";
 
-export const LICENCE_PENDING_PURCHASE_AR =
-  "تُتاح باقة المؤسس والباقات المهنية بعد أن يعتمد فريق المنصة توثيق رخصتك. وإلى ذلك الحين يمكنك تصفح لوحتك ومعاينة المكتبة واستعمال الأسئلة المجانية.";
-export const LICENCE_PENDING_FIRM_PURCHASE_AR =
-  "تُتاح باقات المكاتب بعد أن يعتمد فريق المنصة توثيق مكتبك. وإلى ذلك الحين يمكنك تصفح لوحتك ومعاينة المكتبة.";
-export const LICENCE_EXPIRED_PURCHASE_AR =
-  "انتهت صلاحية الرخصة المسجلة في حسابك، فلا تُشترى الباقات المهنية حتى تُحدَّث الرخصة ويعتمدها فريق المنصة. تواصل مع الدعم لتحديثها.";
+/** Under the price on /checkout, for a pending lawyer / firm (٢٣٩). */
+export const LICENCE_HELD_NOTE_AR =
+  "تُفعَّل الباقة بعد اعتماد التوثيق: يمكنك الدفع الآن ويُحجز اشتراكك، وتبدأ مدته من يوم اعتماد الإدارة لتوثيق رخصتك. وإن لم يُعتمد التوثيق يُردّ المبلغ كاملاً.";
+export const LICENCE_UNVERIFIED_PURCHASE_AR =
+  "وثّق رخصتك أولاً: باقة المؤسس والباقات المهنية تُشترى بعد رفع توثيق الرخصة، وتُفعَّل بعد اعتماده.";
+export const LICENCE_UNVERIFIED_FIRM_PURCHASE_AR =
+  "يلزم توثيق مكتبك أولاً: باقات المكاتب تُشترى بعد رفع توثيق المكتب، وتُفعَّل بعد اعتماده.";
+export const LICENCE_FREE_CODE_PENDING_AR =
+  "هذا الكود يفعّل باقة مهنية، والباقات المهنية تُفعَّل بعد اعتماد توثيق رخصتك. فعّل الكود بعد الاعتماد.";
 export const LICENCE_CHECK_FAILED_AR = "تعذّر التحقق من توثيق رخصتك الآن، حاول مرة أخرى بعد قليل";
 
-/** The account types whose purchases the licence gates. */
+/** The account types whose purchases the licence rule covers. */
 const GATED_BUYERS = new Set(["lawyer", "firm"]);
 
-/** True when this purchase waits for a verified, unexpired licence (ق٢٦-٩). */
+/** True when this purchase follows the licence rule (٢٣٩). */
 export function licenceGatedPurchase(item: Pick<PayableItem, "kind" | "buyers">, userType: string | null | undefined): boolean {
   if (typeof userType !== "string" || !GATED_BUYERS.has(userType)) return false;
   if (item.kind === "membership") return true;
@@ -53,69 +65,50 @@ export function licenceGatedPurchase(item: Pick<PayableItem, "kind" | "buyers">,
   return buyers.some((b) => GATED_BUYERS.has(b));
 }
 
-/** YYYY-MM-DD of `now` in Riyadh (+03:00, no daylight saving). */
-function riyadhToday(now: Date): string {
-  return new Date(now.getTime() + 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
-}
+export type LicenceStanding = "verified" | "pending" | "unverified";
 
-/** True when a license_expiry (a date) is before today in Riyadh; null / unreadable is not expired. */
-export function licenceExpired(expiry: string | null | undefined, now: Date): boolean {
-  if (typeof expiry !== "string" || !/^\d{4}-\d{2}-\d{2}/.test(expiry)) return false;
-  return expiry.slice(0, 10) < riyadhToday(now);
-}
-
-export interface LicencePurchaseFacts {
-  provider: VerifiedProviderFacts | null;
-  /** The buyer's own licence expiry (lawyer_profiles / the owned firm_profiles row); null when none is on file. */
-  ownExpiry: string | null;
-  /** True when the buyer passes only as a member of a verified firm (his own licence is not the one checked). */
-  viaFirmMembership?: boolean;
+/**
+ * verified: verifiedProvider.ts's rule as it is (a verified lawyer, the owner
+ * of a verified firm, an active member of a verified firm, an admin);
+ * pending: the lawyer's own licence, or the firm he owns, waits for the team;
+ * unverified: anything else. Null when the facts could not be read.
+ */
+export function licenceStanding(facts: VerifiedProviderFacts | null): LicenceStanding | null {
+  if (!facts) return null;
+  if (verifiedProviderDecision(facts).ok) return "verified";
+  if (facts.userType === "lawyer" && facts.lawyerStatus === "pending") return "pending";
+  if (facts.userType === "firm" && facts.ownedFirmStatuses.includes("pending")) return "pending";
+  return "unverified";
 }
 
 export type LicencePurchaseDecision =
-  | { ok: true }
+  | { ok: true; held: boolean }
   | { ok: false; status: 403 | 503; error: string; code?: string; verifyHref?: string | null };
 
-export function licencePurchaseDecision(userType: string, facts: LicencePurchaseFacts | null, now: Date): LicencePurchaseDecision {
-  if (!facts || !facts.provider) return { ok: false, status: 503, error: LICENCE_CHECK_FAILED_AR };
-  const verified = verifiedProviderDecision(facts.provider);
-  if (verified.ok === false) {
-    if (verified.status === 503) return { ok: false, status: 503, error: LICENCE_CHECK_FAILED_AR };
-    return userType === "firm"
-      ? { ok: false, status: 403, error: LICENCE_PENDING_FIRM_PURCHASE_AR, code: LICENCE_PURCHASE_CODE, verifyHref: null }
-      : { ok: false, status: 403, error: LICENCE_PENDING_PURCHASE_AR, code: LICENCE_PURCHASE_CODE, verifyHref: LICENCE_VERIFY_HREF };
-  }
-  if (!facts.viaFirmMembership && licenceExpired(facts.ownExpiry, now)) {
-    return { ok: false, status: 403, error: LICENCE_EXPIRED_PURCHASE_AR, code: LICENCE_PURCHASE_CODE, verifyHref: null };
-  }
-  return { ok: true };
+const unverifiedRefusal = (userType: string): LicencePurchaseDecision =>
+  userType === "firm"
+    ? { ok: false, status: 403, error: LICENCE_UNVERIFIED_FIRM_PURCHASE_AR, code: LICENCE_PURCHASE_CODE, verifyHref: null }
+    : { ok: false, status: 403, error: LICENCE_UNVERIFIED_PURCHASE_AR, code: LICENCE_PURCHASE_CODE, verifyHref: LICENCE_VERIFY_HREF };
+
+/** A PAID purchase (٢٣٩): verified → go; pending → go, held until approval; unverified → 403; unread → 503. */
+export function licenceCheckoutDecision(userType: string, facts: VerifiedProviderFacts | null): LicencePurchaseDecision {
+  const standing = licenceStanding(facts);
+  if (standing === null) return { ok: false, status: 503, error: LICENCE_CHECK_FAILED_AR };
+  if (standing === "verified") return { ok: true, held: false };
+  if (standing === "pending") return { ok: true, held: true };
+  return unverifiedRefusal(userType);
 }
 
-/**
- * The reads (service client, keyed on the session's user id): the
- * verification facts (verifiedProviderRead.ts, unchanged) and the buyer's own
- * licence expiry. Null on any failed read.
- */
-export async function readLicencePurchaseFacts(admin: SupabaseClient, userId: string, userType: string): Promise<LicencePurchaseFacts | null> {
-  const provider = await readVerifiedProviderFacts(admin, userId, userType);
-  if (!provider) return null;
-  const ownVerified =
-    (userType === "lawyer" && provider.lawyerStatus === "verified") ||
-    (userType === "firm" && provider.ownedFirmStatuses.includes("verified"));
-  if (!ownVerified) return { provider, ownExpiry: null, viaFirmMembership: provider.memberFirmStatuses.includes("verified") };
-  try {
-    const read =
-      userType === "lawyer"
-        ? await admin.from("lawyer_profiles").select("license_expiry").eq("user_id", userId).maybeSingle()
-        : await admin.from("firm_profiles").select("license_expiry, verification_status").eq("owner_user_id", userId).eq("verification_status", "verified").limit(1).maybeSingle();
-    if (read.error) {
-      console.error("[payments/licence] reading the licence expiry failed:", read.error.code ?? "no-code");
-      return null;
-    }
-    const raw = (read.data as { license_expiry?: unknown } | null)?.license_expiry;
-    return { provider, ownExpiry: typeof raw === "string" ? raw : null, viaFirmMembership: false };
-  } catch (err) {
-    console.error("[payments/licence] reading the licence expiry threw:", err instanceof Error ? err.name : "error");
-    return null;
-  }
+/** A FREE activation of a gated item: only a verified licence; pending → 403 (the code stays unused). */
+export function licenceFreeCodeDecision(userType: string, facts: VerifiedProviderFacts | null): LicencePurchaseDecision {
+  const standing = licenceStanding(facts);
+  if (standing === null) return { ok: false, status: 503, error: LICENCE_CHECK_FAILED_AR };
+  if (standing === "verified") return { ok: true, held: false };
+  if (standing === "pending") return { ok: false, status: 403, error: LICENCE_FREE_CODE_PENDING_AR, code: LICENCE_PURCHASE_CODE, verifyHref: null };
+  return unverifiedRefusal(userType);
+}
+
+/** The verification facts (service client, keyed on the session's user id); null on a failed read. */
+export async function readLicenceFacts(admin: SupabaseClient, userId: string, userType: string): Promise<VerifiedProviderFacts | null> {
+  return readVerifiedProviderFacts(admin, userId, userType);
 }

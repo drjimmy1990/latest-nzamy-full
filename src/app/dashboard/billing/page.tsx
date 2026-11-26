@@ -10,6 +10,7 @@ import { formatHalalas } from "@/lib/payments/catalog";
 import { TOPUP_BUTTON_AR, TOPUP_HREF } from "@/lib/payments/topUpLinks";
 import { RedeemCodeBox } from "@/components/payments/RedeemCodeBox";
 import { FREE_ACTIVATION_COLUMNS, freeActivationItemAr, type FreeActivationRow } from "@/lib/payments/freeActivationView";
+import { LICENCE_PENDING_SENTENCE_AR, LICENCE_PENDING_STATE_AR } from "@/lib/payments/fulfillDecision";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "الفوترة والمدفوعات | نظامي", robots: { index: false, follow: false } };
@@ -32,6 +33,13 @@ export default async function BillingPage() {
     const { data: rows, error } = await supabase.from("coupon_redemptions").select(FREE_ACTIVATION_COLUMNS).eq("status", "granted").order("created_at", { ascending: false }).limit(50);
     if (!error && Array.isArray(rows)) activations = rows as unknown as FreeActivationRow[];
   } catch { activations = []; }
+  // l18 (owner ٢٣٩): professional plans paid before the licence approval —
+  // «بانتظار اعتماد التوثيق» (his own rows, 20261208_32; a failed read shows no section)
+  let heldPlans: Array<{ id: string; item_id: string; billing: string | null }> = [];
+  try {
+    const { data: rows, error } = await supabase.rpc("my_licence_held_orders");
+    if (!error && Array.isArray(rows)) heldPlans = rows as Array<{ id: string; item_id: string; billing: string | null }>;
+  } catch { heldPlans = []; }
   // Live check row 12: the viewer's own dashboard sidebar, not the site navbar.
   return <AccountDashboardShell>
     <main dir="rtl" className="min-h-[75dvh] bg-zinc-50 px-4 pb-20 pt-8 text-zinc-900 dark:bg-[#0A0A0A] dark:text-zinc-100">
@@ -46,6 +54,13 @@ export default async function BillingPage() {
           <h2 className="mb-3 text-xl font-bold">باقتك الحالية</h2>
           <CurrentPlanCard plansHref="/settings?tab=subscription#account-plans" />
         </section>
+        {heldPlans.length > 0 && (
+          <section className="rounded-2xl border border-amber-300 bg-amber-50 p-5 text-amber-900 sm:p-7 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-200" aria-label={LICENCE_PENDING_STATE_AR}>
+            <h2 className="text-xl font-bold">{LICENCE_PENDING_STATE_AR}</h2>
+            <ul className="mt-3 space-y-1 text-sm font-semibold">{heldPlans.map(h => <li key={h.id}>{billingOrderItemAr({ item_id: h.item_id })} — <Link href={`/dashboard/billing/receipt/${h.id}`} className="underline underline-offset-2">الإيصال</Link></li>)}</ul>
+            <p className="mt-3 text-sm leading-7">{LICENCE_PENDING_SENTENCE_AR}</p>
+          </section>
+        )}
         {/* l16 (A-59, owner 25 Nov §7.7.3): «هل لديك كود خصم أو قسيمة؟» */}
         <RedeemCodeBox />
         {activations.length > 0 && (

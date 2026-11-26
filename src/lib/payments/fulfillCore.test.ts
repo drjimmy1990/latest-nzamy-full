@@ -660,7 +660,7 @@ test("purchase event: never for a test-mode order, and a throwing reporter never
   }
 });
 
-test("l7 (decision 1): a pending lawyer's paid membership — stamped, «تُفعَّل الباقة بعد توثيق رخصتك» notice, no refund flag, no admin alert", async () => {
+test("l7 (decision 1): a pending lawyer's paid membership — stamped, «تُفعَّل الباقة بعد اعتماد التوثيق» notice (l18 wording, ٢٣٩), no refund flag, no admin alert", async () => {
   const { client, log } = memberDb();
   const f = founderDeps(client, gateway(MEMBER_PAY()), "pending_verification");
   const r = await fulfillOrderWith(f.d, INPUT);
@@ -668,7 +668,7 @@ test("l7 (decision 1): a pending lawyer's paid membership — stamped, «تُف�
   assert.equal(stamps(log).length, 1);
   assert.equal(f.notices.length, 1);
   assert.equal(f.notices[0].title, "تم الدفع وحُجز مقعدك");
-  assert.match(f.notices[0].body, /تُفعَّل الباقة بعد توثيق رخصتك، وإن لم تُوثَّق يُردّ المبلغ كاملاً/);
+  assert.match(f.notices[0].body, /تُفعَّل الباقة بعد اعتماد التوثيق، وإن لم يُعتمد يُردّ المبلغ كاملاً/);
   assert.equal(f.admins.length, 0, "not a refund review");
   assert.equal(
     log.filter((q) => q.table === "merge_payment_order_metadata" && JSON.stringify(q.payload).includes("already_entitled")).length,

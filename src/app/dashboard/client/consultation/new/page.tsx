@@ -49,6 +49,13 @@ import {
 import { StepBar } from "@/components/consultation/ClientConsultationComponents";
 import { COMING_SOON_BADGE_AR, isTerminalToolHref } from "@/constants/betaGatedRoutes";
 
+/**
+ * l18 (owner ٢٣٤, interim): a consultation request stays free to SEND, and
+ * its fee is not collected through the platform yet — said plainly on the
+ * last step and on the confirmation (no 0 SAR receipt, no payment wording).
+ */
+const CONSULTATION_PAYMENT_INTERIM_AR = "الدفع يتم بالتنسيق المباشر مع المحامي مؤقتًا، ولا يُحصَّل أي مبلغ عبر المنصة.";
+
 // ─── Attachment failure reporting ─────────────────────────────────────────────
 
 /** One file that did not become an attachment on the created request. */
@@ -655,7 +662,7 @@ export default function NewConsultationPage() {
                   on that field — and the only queue that reads it is the نظامي
                   team's fulfilment queue. No lawyer dashboard is shown this
                   request, so the sentence now names the desk that does see it. */}
-              <span>رقم الطلب <strong dir="ltr">{orderReference(requestId) || requestId}</strong>. يظهر الآن في طلباتك، ووصل إلى فريق نظامي كطلب وارد.</span>
+              <span>رقم الطلب <strong dir="ltr">{orderReference(requestId) || requestId}</strong>. يظهر الآن في طلباتك، ووصل إلى فريق نظامي كطلب وارد. {CONSULTATION_PAYMENT_INTERIM_AR}</span>
             </div>
           )}
           {path === "ai" && requestId && (
@@ -1044,7 +1051,7 @@ export default function NewConsultationPage() {
                   <p className={`text-[11px] font-normal ${isDark ? "text-emerald-300/80" : "text-emerald-700"}`}>
                     {path === "ai"
                       ? (aiPathSoon ? "استشارة ذكاء نظامي: قريباً. لا يُخصم أي مبلغ." : "استشارة ذكاء نظامي مشمولة مجاناً للاستفسار اليومي الأول.")
-                      : `السعر التقديري لـ (${MODE_COPY[mode].label}): ${servicePriceLabel(service)} — لا يُخصم أي مبلغ الآن، ويتواصل معك فريق نظامي لتأكيد الموعد والتفاصيل.`}
+                      : `السعر التقديري لـ (${MODE_COPY[mode].label}): ${servicePriceLabel(service)} — لا يُخصم أي مبلغ في المنصة، ويتواصل معك فريق نظامي لتأكيد الموعد والتفاصيل. ${CONSULTATION_PAYMENT_INTERIM_AR}`}
                   </p>
                 </div>
               </div>

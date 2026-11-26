@@ -4,7 +4,7 @@ import { frozenAccountResponse, isAuthUnavailable, authUnavailableResponse } fro
 import { TIER_RANK } from "@/lib/access-control";
 import { readGiftValidDays } from "@/lib/points/pointsSettings";
 import { REDEEM_UNAVAILABLE_AR, redeemCouponWith } from "@/lib/payments/couponRedeemCore";
-import { licencePurchaseDecision, readLicencePurchaseFacts } from "@/lib/payments/licenceGate";
+import { readLicenceFacts } from "@/lib/payments/licenceGate";
 import { readLibraryAccountAccess } from "@/lib/library/accountAccessServer";
 
 /**
@@ -55,10 +55,9 @@ export async function POST(request: NextRequest) {
         admin,
         ranks: TIER_RANK,
         giftValidDays: () => readGiftValidDays(admin),
-        // l18: checkout's gates — the library lock for the account type, and the licence (ق٢٦-٩)
+        // l18: checkout's gates — the library lock for the account type, and the licence (٢٣٩: a free code needs it verified)
         libraryAccountAllowed: async (userId) => (await readLibraryAccountAccess(userId)).allowed,
-        licenceAllowed: async (userId, userType) =>
-          licencePurchaseDecision(userType, await readLicencePurchaseFacts(admin, userId, userType), new Date()),
+        licenceFacts: (userId, userType) => readLicenceFacts(admin, userId, userType),
       },
       { userId: user.id, code },
     );
