@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, type FormEvent } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
 import { instantBoxItems, type InstantItem } from "../instantBox";
@@ -449,6 +449,18 @@ export default function LegalLibraryPage() {
     loadMoreAbortRef.current?.abort();
     autocompleteAbortRef.current?.abort();
   }, []);
+
+  // Owner package 25-Nov §2.2 (batch l16, B-06): «بحث» and Enter run the search
+  // at once — the pending 300 ms timers are dropped first (or they would send a
+  // second request), and the suggestions close so the results are in view.
+  const submitSearch = (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    if (autocompleteTimerRef.current) clearTimeout(autocompleteTimerRef.current);
+    autocompleteAbortRef.current?.abort();
+    setShowSuggest(false);
+    void fetchSearchResults(search, activeType, activeCat);
+  };
 
   // Next page of a single-section search. Keeps the loaded rows on failure
   // (an inline notice + retry), and drops a response once a newer search
@@ -1564,22 +1576,34 @@ export default function LegalLibraryPage() {
                 replaces the big green «بحث متقدم» button). */}
             <div className="flex-1 min-w-0">
             <div className="relative">
+              {/* B-06 (batch l16): a real search form — Enter or «بحث» submits. */}
+              <form role="search" onSubmit={submitSearch} className="relative">
               <div className={`absolute top-1/2 -translate-y-1/2 z-10 ${isRTL ? "right-4" : "left-4"}`}>
                 <MagnifyingGlass size={20} className={isDark ? "text-gray-500" : "text-gray-400"} />
               </div>
               <input
                 type="text"
+                enterKeyHint="search"
+                aria-label={isRTL ? "ابحث في المكتبة" : "Search the library"}
                 value={search}
                 onChange={e => { setSearch(e.target.value); setShowSuggest(true); }}
                 onFocus={() => setShowSuggest(true)}
                 onBlur={() => setTimeout(() => setShowSuggest(false), 180)}
                 placeholder={phList[phIdx]}
-                className={`w-full py-4 px-12 rounded-2xl border text-sm font-medium transition-all focus:ring-2 focus:ring-[#0B3D2E]/20 focus:border-[#0B3D2E] outline-none ${
+                className={`w-full py-4 ${isRTL ? "pr-12 pl-24" : "pl-12 pr-24"} rounded-2xl border text-sm font-medium transition-all focus:ring-2 focus:ring-[#0B3D2E]/20 focus:border-[#0B3D2E] outline-none ${
                   isDark
                     ? "bg-[#161b22] border-[#2d3748] text-white placeholder-gray-500"
                     : "bg-white border-gray-200 text-gray-900 placeholder-gray-400 shadow-sm"
                 }`}
               />
+              <button
+                type="submit"
+                data-testid="library-search-submit"
+                className={`absolute top-1/2 -translate-y-1/2 z-10 ${isRTL ? "left-2" : "right-2"} min-h-11 px-4 rounded-xl text-sm font-bold bg-[#0B3D2E] text-white hover:bg-[#0a3328] transition-colors`}
+              >
+                {isRTL ? "بحث" : "Search"}
+              </button>
+              </form>
               {/* Autocomplete dropdown */}
               <AnimatePresence>
                 {/* Also open for a failed lookup, so its notice shows instead of nothing. */}
@@ -1628,7 +1652,7 @@ export default function LegalLibraryPage() {
                     </div>
 
                     {/* Results list */}
-                    <div className="max-h-[320px] overflow-y-auto">
+                    <div className="max-h-[min(320px,40vh)] overflow-y-auto">
                       {searchSuggestions.map((s, i) => (
                         <button key={`${s.type}:${s.id}:${i}`}
                           type="button"

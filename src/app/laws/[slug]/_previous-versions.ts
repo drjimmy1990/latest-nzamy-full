@@ -182,7 +182,12 @@ export type AmendedByLine =
   | { kind: "locked" };
 
 export function amendedByLine(cards: ReadonlyArray<PreviousVersionCard>): AmendedByLine | null {
-  const newest = cards.find((c) => c.sourceLocked || c.source !== "");
+  const named = cards.filter((c) => c.sourceLocked || c.source !== "");
+  // Batch l16 (B-07): the parser's `position` is the source order, which may run
+  // oldest first — when every named card carries a Hijri date, the latest date wins.
+  const keyOf = (c: PreviousVersionCard) => hijriDateKey(c.date) || hijriDateKey(c.source);
+  const allDated = named.length > 1 && named.every((c) => !c.sourceLocked && keyOf(c) > 0);
+  const newest = allDated ? named.reduce((best, c) => (keyOf(c) > keyOf(best) ? c : best)) : named[0];
   if (!newest) return null;
   if (newest.sourceLocked) return { kind: "locked" };
   const text = `عُدّلت بموجب ${newest.source}${newest.date ? ` بتاريخ ${newest.date}` : ""}`;

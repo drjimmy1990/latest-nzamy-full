@@ -16,13 +16,46 @@ export function explainSubtitle(articleTitle: string | null | undefined, lawName
   return clean(articleTitle) || clean(lawName);
 }
 
+/**
+ * W1 #54 (batch l16, B-17): an article whose label is a bare ordinal or number
+ * («الأولى», «٥») reads «المادة الأولى» in a sentence. A label that already
+ * names its unit («المادة …», «البند …», «الفقرة …»), a bracketed position
+ * («(3)») or a topical heading of an unnumbered document («التعريفات») is kept
+ * as written — never «المادة التعريفات».
+ */
+const ORDINAL_OR_NUMBER =
+  /^(?:[0-9٠-٩]+|(?:ال)?(?:أولى|أول|ثاني[ةه]?|ثالث[ةه]?|رابع[ةه]?|خامس[ةه]?|سادس[ةه]?|سابع[ةه]?|ثامن[ةه]?|تاسع[ةه]?|عاشر[ةه]?|حادي[ةه]?|عشرون|ثلاثون|أربعون|خمسون|ستون|سبعون|ثمانون|تسعون|مائة|مئة|مائتان|مئتان))(?:\s|$)/u;
+
+export function spokenArticle(num: string | null | undefined): string {
+  const n = clean(num);
+  if (!n) return "المادة";
+  return ORDINAL_OR_NUMBER.test(n) ? `المادة ${n}` : n;
+}
+
+/**
+ * Owner package 25-Nov §2.7 (batch l16, B-16 / E-20): «اشرح لي» sends this
+ * request by itself as soon as the window opens (the article itself goes with
+ * it as the first source), in place of a greeting that waited for a question.
+ */
+export function explainRequest(input: { num: string; articleTitle?: string | null; lawName?: string | null; isRTL: boolean }): string {
+  const title = clean(input.articleTitle);
+  const law = clean(input.lawName);
+  if (input.isRTL) {
+    const subject = title ? ` المتضمنة لـ «${title}»` : "";
+    const from = law ? ` من «${law}»` : "";
+    return `اشرح لي ${spokenArticle(input.num)}${subject}${from} بلغة واضحة، مع بيان ما يترتب عليها.`;
+  }
+  const num = clean(input.num) || "this article";
+  return `Explain ${num}${title ? ` (${title})` : ""}${law ? ` of ${law}` : ""} in plain language, with what follows from it.`;
+}
+
 export function explainGreeting(input: {
   num: string;
   articleTitle?: string | null;
   lawName?: string | null;
   isRTL: boolean;
 }): string {
-  const num = clean(input.num);
+  const num = input.isRTL ? spokenArticle(input.num) : clean(input.num);
   const title = clean(input.articleTitle);
   const law = clean(input.lawName);
 

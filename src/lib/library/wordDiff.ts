@@ -160,3 +160,108 @@ export function diffWords(oldText: string, newText: string, maxCells = MAX_DIFF_
     added: toks.filter((t) => t.op === "add" && isWord(t)).length,
   };
 }
+
+/** Words in a run's text (line breaks and spaces are not words). */
+function countWords(text: string): number {
+  return (text.match(/[^\s]+/g) ?? []).length;
+}
+
+function lineKey(line: string): string {
+  return line.replace(HARAKAT_TATWEEL, "").replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Owner package 25-Nov §2.4 (batch l16, B-09): «إظهار الفروق الملونة» never
+ * disappears. The word diff first; when the texts are too long for it
+ * (MAX_DIFF_CELLS), the lines are compared instead and each changed block of
+ * lines is diffed word by word when it fits — else that block is shown whole,
+ * the old lines red and the new ones green. When even the lines are too many,
+ * the changed middle is shown whole the same way. Never null.
+ */
+export function diffTexts(oldText: string, newText: string, maxCells = MAX_DIFF_CELLS): WordDiff {
+  const words = diffWords(oldText, newText, maxCells);
+  if (words) return words;
+
+  const a = String(oldText ?? "").split("\n");
+  const b = String(newText ?? "").split("\n");
+  const ka = a.map(lineKey);
+  const kb = b.map(lineKey);
+  let head = 0;
+  while (head < a.length && head < b.length && ka[head] === kb[head]) head += 1;
+  let tail = 0;
+  while (tail < a.length - head && tail < b.length - head && ka[a.length - 1 - tail] === kb[b.length - 1 - tail]) tail += 1;
+  const n = a.length - head - tail;
+  const m = b.length - head - tail;
+
+  // One entry per line of the result: equal lines, or a changed block (old lines → new lines).
+  type Block = { op: "equal"; line: string } | { op: "change"; del: string[]; add: string[] };
+  const blocks: Block[] = b.slice(0, head).map((line) => ({ op: "equal" as const, line }));
+  if (n * m > maxCells || n === 0 || m === 0) {
+    blocks.push({ op: "change", del: a.slice(head, head + n), add: b.slice(head, head + m) });
+  } else {
+    const w = m + 1;
+    const dp = new Uint32Array((n + 1) * w);
+    for (let i = n - 1; i >= 0; i -= 1) {
+      for (let j = m - 1; j >= 0; j -= 1) {
+        dp[i * w + j] = ka[head + i] === kb[head + j]
+          ? dp[(i + 1) * w + j + 1] + 1
+          : Math.max(dp[(i + 1) * w + j], dp[i * w + j + 1]);
+      }
+    }
+    let i = 0;
+    let j = 0;
+    let open: { op: "change"; del: string[]; add: string[] } | null = null;
+    const change = () => {
+      if (!open) {
+        open = { op: "change", del: [], add: [] };
+        blocks.push(open);
+      }
+      return open;
+    };
+    while (i < n || j < m) {
+      if (i < n && j < m && ka[head + i] === kb[head + j]) {
+        open = null;
+        blocks.push({ op: "equal", line: b[head + j] });
+        i += 1;
+        j += 1;
+      } else if (j >= m || (i < n && dp[(i + 1) * w + j] >= dp[i * w + j + 1])) {
+        change().del.push(a[head + i]);
+        i += 1;
+      } else {
+        change().add.push(b[head + j]);
+        j += 1;
+      }
+    }
+  }
+  for (const line of b.slice(b.length - tail)) blocks.push({ op: "equal", line });
+
+  const runs: DiffRun[] = [];
+  const push = (op: DiffOp, text: string) => {
+    if (!text) return;
+    const last = runs[runs.length - 1];
+    if (last && last.op === op) last.text += text;
+    else runs.push({ op, text });
+  };
+  blocks.forEach((block, bi) => {
+    if (bi > 0) push("equal", "\n");
+    if (block.op === "equal") {
+      push("equal", block.line);
+      return;
+    }
+    const oldPart = block.del.join("\n");
+    const newPart = block.add.join("\n");
+    const inner = diffWords(oldPart, newPart, maxCells);
+    if (inner) {
+      for (const r of inner.runs) push(r.op, r.text);
+    } else {
+      push("del", oldPart);
+      if (oldPart && newPart) push("equal", "\n");
+      push("add", newPart);
+    }
+  });
+  return {
+    runs,
+    removed: runs.filter((r) => r.op === "del").reduce((s, r) => s + countWords(r.text), 0),
+    added: runs.filter((r) => r.op === "add").reduce((s, r) => s + countWords(r.text), 0),
+  };
+}
