@@ -33,7 +33,7 @@ import {
   withHrefs,
 } from './_shape';
 import { maskDecreeTitlesForViewer } from './_decree-titles';
-import { articleBoxLocked, lockedArticleRefs, withoutLockedArticles } from './_locked-articles';
+import { articleBoxLockedByOwnLaw, lockedArticleRefs, withoutLockedArticles } from './_locked-articles';
 import {
   ARTICLE_CACHE_ENTRIES,
   BULK_CACHE_ENTRIES,
@@ -146,6 +146,14 @@ async function viewerLinksAccess(db: ServiceClient, slug: string): Promise<{ isS
   }
 }
 
+/** library.articles.law_slug of one id; null when not found or unreadable. */
+async function articleLawSlugOf(db: ServiceClient, articleId: string): Promise<string | null> {
+  const { data, error } = await db.schema('library').from('articles').select('law_slug').eq('id', articleId).limit(1);
+  if (error) return null;
+  const own = (data?.[0] as { law_slug?: unknown } | undefined)?.law_slug;
+  return typeof own === 'string' && own ? own : null;
+}
+
 function tierJson(body: unknown, timing?: string) {
   return NextResponse.json(body, {
     headers: { 'Cache-Control': TIER_SHAPED_CACHE_CONTROL, ...(timing ? { 'Server-Timing': timing } : {}) },
@@ -240,8 +248,16 @@ export async function GET(
       const id = validArticleId(url.searchParams.get('article'));
       if (!id) return json({ error: 'bad article' }, 400);
       // Owner ٢٣٦: a locked article's box answers nothing — no item, no total.
+      // The lock is read from the article's own law, never only from the URL's
+      // slug (articleBoxLockedByOwnLaw).
       const viewer = await viewerLinksAccess(serverOnly, slug);
-      if (articleBoxLocked(id, viewer.openIds)) {
+      const boxLocked = await articleBoxLockedByOwnLaw(id, slug, {
+        isSubscriber: viewer.isSubscriber,
+        urlOpenIds: viewer.openIds,
+        ownLawSlug: (articleId) => articleLawSlugOf(serverOnly, articleId),
+        openIdsFor: async (lawSlug) => (await viewerLinksAccess(serverOnly, lawSlug)).openIds,
+      });
+      if (boxLocked) {
         return tierJson({ available: true, ...lockedArticleRefs() });
       }
       const key = linksCacheKey('article', slug, id, types);

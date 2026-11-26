@@ -44,3 +44,41 @@ export function lockedArticleRefs(): { found: false; locked: true; sections: Ret
 export function articleBoxLocked(articleId: string, openIds: ReadonlySet<string> | null): boolean {
   return openIds !== null && articleId !== LAW_LINKS_ID && !openIds.has(articleId);
 }
+
+/**
+ * The ?article= box lock, decided by the article's OWN law (l18 review). The
+ * graph node is `article:<id>` whatever slug the URL names, so a whitelisted
+ * law's URL must not open another law's locked article: the lock is read from
+ * the law the article belongs to. An article that cannot be found (or whose
+ * law cannot be read) stays locked — fails closed, like the text.
+ *   urlOpenIds   viewerLinksAccess for the URL's law (reused when it is the
+ *                article's own law: no extra read)
+ *   ownLawSlug   library.articles.law_slug of the id, null when not found
+ *   openIdsFor   viewerLinksAccess(...).openIds for another law
+ */
+export async function articleBoxLockedByOwnLaw(
+  articleId: string,
+  urlSlug: string,
+  deps: {
+    isSubscriber: boolean;
+    urlOpenIds: ReadonlySet<string> | null;
+    ownLawSlug: (id: string) => Promise<string | null>;
+    openIdsFor: (lawSlug: string) => Promise<ReadonlySet<string> | null>;
+  },
+): Promise<boolean> {
+  if (articleId === LAW_LINKS_ID || deps.isSubscriber) return false;
+  let own: string | null;
+  try {
+    own = await deps.ownLawSlug(articleId);
+  } catch {
+    own = null;
+  }
+  if (!own) return true;
+  let openIds: ReadonlySet<string> | null;
+  try {
+    openIds = own === urlSlug ? deps.urlOpenIds : await deps.openIdsFor(own);
+  } catch {
+    openIds = new Set();
+  }
+  return articleBoxLocked(articleId, openIds);
+}
