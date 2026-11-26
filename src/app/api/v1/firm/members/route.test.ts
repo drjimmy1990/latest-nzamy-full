@@ -66,7 +66,7 @@ test("the service client is created only AFTER the RLS-scoped membership check",
   const ownerCheck = routeSource.indexOf("await resolveManagedFirm(supabase, user.id)");
   const notFound = routeSource.indexOf("if (!firm) {");
   const managerGate = routeSource.indexOf("teamWriteRefusal({ caller: firm, callerUserId: user.id, target: null, newRole: role })");
-  const planGate = routeSource.indexOf('officePlanRefusal(supabase, "team")');
+  const planGate = routeSource.indexOf('officePlanRefusal(supabase, "team", auth.userType)');
   const postServiceCall = routeSource.lastIndexOf("const service = await createServiceClient();");
   assert.ok(ownerCheck > 0, "POST ownership check missing");
   assert.ok(ownerCheck < notFound && notFound < managerGate && managerGate < planGate && planGate < postServiceCall);

@@ -5,7 +5,8 @@ import Link from "next/link";
 import { Info } from "@phosphor-icons/react";
 import { createClient } from "@/lib/supabase/client";
 import { isSupabaseMode } from "@/lib/services/api";
-import { OFFICE_PLAN_LINK_AR, OFFICE_PLAN_NAME_AR, OFFICE_PLAN_PRICING_HREF } from "@/lib/auth/officePlan";
+import { useUser } from "@/hooks/useUser";
+import { OFFICE_PLAN_LINK_AR, OFFICE_PLAN_PRICING_HREF, officeAudienceFor, officePlanPhraseAr } from "@/lib/auth/officePlan";
 
 function toArabicGb(bytes: number): string {
   const v = Math.round((bytes / 1024 ** 3) * 10) / 10;
@@ -20,6 +21,7 @@ function toArabicGb(bytes: number): string {
  * server refuses the paid writes either way (src/lib/auth/assertOfficePlan.ts).
  */
 export default function OfficePlanNotice({ isDark }: { isDark: boolean }) {
+  const user = useUser();
   const [locked, setLocked] = useState(false);
   const [capGb, setCapGb] = useState<string | null>(null);
 
@@ -57,7 +59,7 @@ export default function OfficePlanNotice({ isDark }: { isDark: boolean }) {
       <Info size={16} weight="fill" className="mt-1 flex-shrink-0 text-[#C8A762]" />
       <p className="flex-1">
         حسابك على الباقة المجانية: الملف المهني، واستقبال طلبات السوق، والأدوات بالنقاط{capGb ? `، وسعة ${capGb} جيجابايت للملفات` : ""}.
-        {" "}أما الفريق والمقاعد، والقضايا والموكلون، والمستندات المشتركة، والمهام والجلسات، والفواتير والتقارير فمتاحة في باقة «{OFFICE_PLAN_NAME_AR}».
+        {" "}أما الفريق والمقاعد، والقضايا والموكلون، والمستندات المشتركة، والمهام والجلسات، والفواتير والتقارير فمتاحة في {officePlanPhraseAr(officeAudienceFor(user.userType))}.
         {" "}
         <Link href={OFFICE_PLAN_PRICING_HREF} className="font-bold underline underline-offset-2">
           {OFFICE_PLAN_LINK_AR}

@@ -144,7 +144,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     if (!auth.ok) return auth.response;
     const { user, supabase } = auth;
     // Owner س٢١٢: case management are «إدارة المكتب» — refused on the free side.
-    const locked = await officePlanRefusal(supabase, "cases");
+    const locked = await officePlanRefusal(supabase, "cases", auth.userType);
     if (locked) return locked;
     const { id } = await context.params;
 

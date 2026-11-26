@@ -403,7 +403,7 @@ export async function POST(request: NextRequest) {
     const unverified = await requireVerifiedProvider(user.id, auth.userType);
     if (unverified) return unverified;
     // Owner س٢١٢: invoices are «إدارة المكتب» — refused on the free side.
-    const locked = await officePlanRefusal(auth.supabase, "invoices");
+    const locked = await officePlanRefusal(auth.supabase, "invoices", auth.userType);
     if (locked) return locked;
 
     const body = await request.json();

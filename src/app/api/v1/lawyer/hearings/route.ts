@@ -142,7 +142,7 @@ export async function POST(request: NextRequest) {
     const refused = await assertCourtPractice(supabase, user.id);
     if (refused) return refused;
     // Owner س٢١٢: hearings are «إدارة المكتب» — refused on the free side.
-    const locked = await officePlanRefusal(supabase, "hearings");
+    const locked = await officePlanRefusal(supabase, "hearings", auth.userType);
     if (locked) return locked;
 
     const body = await request.json();

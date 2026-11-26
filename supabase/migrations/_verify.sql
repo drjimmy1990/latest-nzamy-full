@@ -603,6 +603,13 @@ BEGIN
     END IF;
 
     SELECT count(*) INTO n FROM pg_policy WHERE polrelid = ('public.' || t)::regclass;
+    -- l16 (20261206_70, D-53): firm_members also carries the two team-manager arms;
+    -- they are counted only when both are there, so a missing or extra policy still fails.
+    IF t = 'firm_members' THEN
+      n := n - (SELECT CASE WHEN count(*) = 2 THEN 2 ELSE 0 END FROM pg_policy
+                 WHERE polrelid = 'public.firm_members'::regclass
+                   AND polname IN ('firm_members: team manager can insert', 'firm_members: team manager can update'));
+    END IF;
     IF n <> expected THEN
       RAISE EXCEPTION '_verify: public.% carries % policies, expected exactly % (20260921_03''s four + 20260922_02''s invitee arm%)',
         t, n, expected, CASE WHEN delete_dropped THEN ', minus the DELETE policy 20261016_02 drops' ELSE '' END;

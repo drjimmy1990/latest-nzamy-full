@@ -258,7 +258,7 @@ export async function POST(request: NextRequest) {
     const refused = teamWriteRefusal({ caller: firm, callerUserId: user.id, target: null, newRole: role });
     if (refused) return NextResponse.json({ error: refused }, { status: 403 });
     // Owner س٢١٢: the team and its seats are «إدارة المكتب».
-    const locked = await officePlanRefusal(supabase, "team");
+    const locked = await officePlanRefusal(supabase, "team", auth.userType);
     if (locked) return locked;
 
     const service = await createServiceClient();

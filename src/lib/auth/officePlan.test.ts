@@ -15,6 +15,7 @@ import {
   OFFICE_PLAN_REQUIRED_CODE,
   STORAGE_QUOTA_FULL_AR,
   isOfficePlanMessage,
+  officeAudienceFor,
   officeGateDecision,
   officePlanMessageAr,
   officePlanRefusalBody,
@@ -47,18 +48,26 @@ test("the gate decision: locked / allow / not installed / unavailable", () => {
 });
 
 test("the refusal names the plan and links to its price, never a number", () => {
-  const body = officePlanRefusalBody("tasks");
+  const body = officePlanRefusalBody("tasks", "lawyer");
   assert.equal(body.code, OFFICE_PLAN_REQUIRED_CODE);
   assert.equal(body.error, "المهام متاحة في باقة «إدارة المكتب».");
-  assert.equal(body.linkHref, OFFICE_PLAN_PRICING_HREF);
-  assert.match(body.linkLabel, /إدارة المكتب/);
+  // plain /pricing: a signed-in account lands on its own family (a firm never on the lawyers' plan)
+  assert.equal(body.linkHref, "/pricing");
+  assert.equal(OFFICE_PLAN_PRICING_HREF, "/pricing");
+  // a firm and its members are pointed at the firm plans, never at the lawyers' «إدارة المكتب»
+  assert.equal(officePlanRefusalBody("team", "firm").error, "إدارة الفريق والمقاعد متاحة في باقة المكتب («مكتب المحاماة» أو «شركة المحاماة»).");
+  assert.equal(officeAudienceFor("lawyer"), "lawyer");
+  assert.equal(officeAudienceFor("firm"), "firm");
+  assert.equal(officeAudienceFor("individual"), "firm", "a firm's member works under the firm plan");
+  assert.equal(officeAudienceFor(null), "any");
   for (const f of ["team", "cases", "clients", "documents", "tasks", "hearings", "deadlines", "invoices", "reports"] as const) {
-    const m = officePlanMessageAr(f);
-    assert.ok(m.endsWith("متاحة في باقة «إدارة المكتب»."), f);
-    assert.doesNotMatch(m, /[0-9٠-٩]/, f);
-    assert.ok(isOfficePlanMessage(m), f);
+    for (const a of ["lawyer", "firm", "any"] as const) {
+      const m = officePlanMessageAr(f, a);
+      assert.doesNotMatch(m, /[0-9٠-٩]/, f);
+      assert.ok(isOfficePlanMessage(m), `${f} ${a}`);
+    }
   }
-  assert.equal(officePlanMessageAr(), "هذه الميزة متاحة في باقة «إدارة المكتب».");
+  assert.match(officePlanMessageAr(), /^هذه الميزة متاحة في باقة «إدارة المكتب» للمحامي أو باقة المكتب/);
   assert.ok(isOfficePlanMessage(STORAGE_QUOTA_FULL_AR));
   assert.equal(isOfficePlanMessage("تعذّر حفظ الموكّل."), false);
   assert.equal(isOfficePlanMessage(null), false);
@@ -130,7 +139,8 @@ test("س٢١٢: every paid write calls officePlanRefusal in its POST, before any
     const tail = src.slice(post);
     const gate = tail.indexOf(`officePlanRefusal(`);
     assert.ok(gate > 0, `${rel}: POST does not call officePlanRefusal`);
-    assert.ok(tail.includes(`"${feature}")`), `${rel}: feature ${feature}`);
+    assert.ok(tail.includes(`"${feature}", `), `${rel}: feature ${feature}`);
+    assert.match(tail, /officePlanRefusal\([\w.]+, "\w+", (auth|gate)\.userType\)/, `${rel}: the audience comes from the caller's type`);
     const write = tail.search(/\.insert\(|\.update\(|\.upsert\(|createServiceClient\(\)|\.rpc\(|createInvoiceWith\(/);
     assert.ok(write < 0 || gate < write, `${rel}: the gate runs after a write`);
     // GET is never gated: what an account holds stays readable

@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   OFFICE_PLAN_UNAVAILABLE_AR,
   officeGateDecision,
+  officeAudienceFor,
   officePlanRefusalBody,
   type OfficeFeature,
 } from "@/lib/auth/officePlan";
@@ -15,7 +16,7 @@ import {
  * Call it in a WRITE handler after the auth check, before the body is parsed
  * or anything is written:
  *
- *   const locked = await officePlanRefusal(supabase, "tasks");
+ *   const locked = await officePlanRefusal(supabase, "tasks", auth.userType);
  *   if (locked) return locked;
  *
  * Asks the database about the caller only (public.my_office_features_locked,
@@ -30,7 +31,11 @@ import {
 
 let loggedNotInstalled = false;
 
-export async function officePlanRefusal(supabase: SupabaseClient, feature: OfficeFeature): Promise<NextResponse | null> {
+export async function officePlanRefusal(
+  supabase: SupabaseClient,
+  feature: OfficeFeature,
+  userType?: string | null,
+): Promise<NextResponse | null> {
   let read: { data?: unknown; error?: { code?: string | null; message?: string } | null };
   try {
     read = await supabase.rpc("my_office_features_locked");
@@ -48,7 +53,8 @@ export async function officePlanRefusal(supabase: SupabaseClient, feature: Offic
     return null;
   }
   if (decision === "locked") {
-    return NextResponse.json(officePlanRefusalBody(feature), {
+    // a lawyer is pointed at «إدارة المكتب», a firm / its member at the firm plans
+    return NextResponse.json(officePlanRefusalBody(feature, officeAudienceFor(userType)), {
       status: 403,
       headers: { "Cache-Control": "private, no-store" },
     });

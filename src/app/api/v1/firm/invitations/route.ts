@@ -157,7 +157,7 @@ export async function POST(request: NextRequest) {
     const r = await callerFirm(auth);
     if ("response" in r) return r.response;
     // Owner س٢١٢: the team and its seats are «إدارة المكتب» — refused on the free side.
-    const locked = await officePlanRefusal(auth.supabase, "team");
+    const locked = await officePlanRefusal(auth.supabase, "team", auth.userType);
     if (locked) return locked;
 
     const body = (await request.json().catch(() => ({}))) as { email?: unknown; role?: unknown };

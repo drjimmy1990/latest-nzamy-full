@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
     if (!gate.ok) return gate.response;
     const { supabase, user } = gate;
     // Owner س٢١٢: shared documents are «إدارة المكتب» — refused on the free side.
-    const locked = await officePlanRefusal(supabase, "documents");
+    const locked = await officePlanRefusal(supabase, "documents", gate.userType);
     if (locked) return locked;
 
     let body: unknown;

@@ -203,7 +203,7 @@ export async function POST(request: NextRequest) {
     if (!auth.ok) return auth.response;
     const { user, supabase } = auth;
     // Owner س٢١٢: tasks are «إدارة المكتب» — refused on the free side.
-    const locked = await officePlanRefusal(supabase, "tasks");
+    const locked = await officePlanRefusal(supabase, "tasks", auth.userType);
     if (locked) return locked;
 
     const body = await request.json();

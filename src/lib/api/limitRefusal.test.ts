@@ -51,15 +51,16 @@ test("each token 20261126_50 raises maps to its sentence, a 403 and its link", (
 });
 
 test("the owner's words: cases and clients are «إدارة المكتب» (س٢١٢), «اكتملت مقاعد المكتب», «لزيادة المقاعد تواصل معنا»", () => {
-  assert.equal(PLAN_LIMIT_AR.cases, "إضافة القضايا وإدارتها متاحة في باقة «إدارة المكتب».");
-  assert.equal(PLAN_LIMIT_AR.clients, "إضافة الموكلين وإدارتهم متاحة في باقة «إدارة المكتب».");
+  // a database token cannot tell a lawyer from a firm: both plans are named
+  assert.equal(PLAN_LIMIT_AR.cases, "إضافة القضايا وإدارتها متاحة في باقة «إدارة المكتب» للمحامي أو باقة المكتب («مكتب المحاماة» أو «شركة المحاماة»).");
+  assert.equal(PLAN_LIMIT_AR.clients, "إضافة الموكلين وإدارتهم متاحة في باقة «إدارة المكتب» للمحامي أو باقة المكتب («مكتب المحاماة» أو «شركة المحاماة»).");
   // no number is promised: the free allowance is a database constant (0 / 0 by default)
   assert.doesNotMatch(PLAN_LIMIT_AR.cases + PLAN_LIMIT_AR.clients, /[0-9٠-٩]/);
   assert.match(FIRM_SEATS_FULL_AR, /^اكتملت مقاعد المكتب/);
   assert.equal(FIRM_SEATS_LINK_AR, "لزيادة المقاعد تواصل معنا");
   // the seat link reuses the pricing cards' sales link — extra seats are not sold online
   assert.equal(FIRM_SEATS_CONTACT_HREF, "/contact?type=firm-seats");
-  assert.equal(PLAN_LIMIT_UPGRADE_HREF, "/pricing?audience=lawyers");
+  assert.equal(PLAN_LIMIT_UPGRADE_HREF, "/pricing");
 });
 
 test("anything else is not a limit refusal (and the demo tokens stay the demo's)", () => {

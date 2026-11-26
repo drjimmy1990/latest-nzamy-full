@@ -76,6 +76,11 @@
 --   RE-RUN HAZARD: re-running 20261126_50 puts back the 5 / 10 caps and the
 --   lawyer-only solo_lawyer_is_capped; re-running 20261017_31 puts back the
 --   owner-only set_firm_public_reviews — re-run THIS file after either.
+--   Re-running 20260921_03 drops every policy on firm_members (the two
+--   team-manager arms included) — re-run THIS file after it. Re-running
+--   20260922_02 after this file fails its own verify («5 policies per
+--   membership table»: firm_members now carries 2 more) — that file is not
+--   meant to be re-run; _verify.sql's 20260922_02 block counts the two arms.
 --   This file itself is idempotent (safe to run any number of times).
 --
 -- ROLLBACK (one transaction):

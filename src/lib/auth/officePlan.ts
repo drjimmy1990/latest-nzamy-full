@@ -20,12 +20,38 @@
 
 export const OFFICE_PLAN_REQUIRED_CODE = "office_plan_required" as const;
 
-/** The plan the paid features belong to, as the price book names it. */
+/** The lawyer's plan, as the price book names it (lawyer-pro / lawyer-bundle). */
 export const OFFICE_PLAN_NAME_AR = "إدارة المكتب";
+/** A firm's plans (firm-basic «مكتب المحاماة» / firm-enterprise «شركة المحاماة»). */
+export const FIRM_PLANS_AR = "باقة المكتب («مكتب المحاماة» أو «شركة المحاماة»)";
 
-/** Where the plan is sold. */
-export const OFFICE_PLAN_PRICING_HREF = "/pricing?audience=lawyers";
-export const OFFICE_PLAN_LINK_AR = "اطّلع على باقة «إدارة المكتب»";
+/**
+ * Where the plans are sold. Plain /pricing: a signed-in account lands on its
+ * own family there (audienceForUserType — a lawyer on the lawyers' plans, a
+ * firm on the firms'), so neither is sent to a plan it cannot buy.
+ */
+export const OFFICE_PLAN_PRICING_HREF = "/pricing";
+export const OFFICE_PLAN_LINK_AR = "اطّلع على الباقات";
+
+/**
+ * Who the sentence speaks to: a lawyer (his «إدارة المكتب»), a firm or a
+ * firm's member (the firm plans), or unknown (a database refusal that carries
+ * only a token — both are named).
+ */
+export type OfficeAudience = "lawyer" | "firm" | "any";
+
+/** user_type → audience: a lawyer buys «إدارة المكتب»; a firm (and its members) a firm plan. */
+export function officeAudienceFor(userType: string | null | undefined): OfficeAudience {
+  if (userType === "lawyer") return "lawyer";
+  if (typeof userType === "string" && userType !== "") return "firm";
+  return "any";
+}
+
+const PLAN_PHRASE: Readonly<Record<OfficeAudience, string>> = Object.freeze({
+  lawyer: `باقة «${OFFICE_PLAN_NAME_AR}»`,
+  firm: FIRM_PLANS_AR,
+  any: `باقة «${OFFICE_PLAN_NAME_AR}» للمحامي أو ${FIRM_PLANS_AR}`,
+});
 
 export type OfficeFeature =
   | "team"
@@ -50,30 +76,39 @@ const FEATURE_AR: Readonly<Record<OfficeFeature, string>> = Object.freeze({
   reports: "التقارير وكشوف الأتعاب",
 });
 
-/** The general sentence, used where no feature is named. */
-export const OFFICE_PLAN_REQUIRED_AR = "هذه الميزة متاحة في باقة «إدارة المكتب».";
-
-/** «<feature> متاحة في باقة «إدارة المكتب».» — what a refused write says. */
-export function officePlanMessageAr(feature?: OfficeFeature | null): string {
-  const name = feature ? FEATURE_AR[feature] : null;
-  return name ? `${name} متاحة في باقة «${OFFICE_PLAN_NAME_AR}».` : OFFICE_PLAN_REQUIRED_AR;
+/** The plan phrase for an audience: «باقة «إدارة المكتب»» / the firm plans / both. */
+export function officePlanPhraseAr(audience: OfficeAudience = "any"): string {
+  return PLAN_PHRASE[audience] ?? PLAN_PHRASE.any;
 }
 
-/** True when `message` is one of the sentences above (a screen that kept only the text). */
+/** «<feature> متاحة في <plan>.» — what a refused write says. */
+export function officePlanMessageAr(feature?: OfficeFeature | null, audience: OfficeAudience = "any"): string {
+  const name = feature ? FEATURE_AR[feature] : "هذه الميزة";
+  return `${name} متاحة في ${PLAN_PHRASE[audience] ?? PLAN_PHRASE.any}.`;
+}
+
+/** The general sentence, used where no feature is named. */
+export const OFFICE_PLAN_REQUIRED_AR = officePlanMessageAr(null, "any");
+
+/** True when `message` is one of the sentences of this module (a screen that kept only the text). */
 export function isOfficePlanMessage(message: string | null | undefined): boolean {
   if (typeof message !== "string" || message === "") return false;
-  return message.includes(`متاحة في باقة «${OFFICE_PLAN_NAME_AR}»`) || message.includes(`اشترك في باقة «${OFFICE_PLAN_NAME_AR}» لرفع ملفات جديدة`);
+  return (
+    message.includes(`متاحة في باقة «${OFFICE_PLAN_NAME_AR}»`) ||
+    message.includes(`متاحة في ${FIRM_PLANS_AR}`) ||
+    message.includes(STORAGE_UPGRADE_AR)
+  );
 }
 
 /** The JSON body of a refusal: the sentence, the code and the real link. */
-export function officePlanRefusalBody(feature?: OfficeFeature | null): {
+export function officePlanRefusalBody(feature?: OfficeFeature | null, audience: OfficeAudience = "any"): {
   error: string;
   code: typeof OFFICE_PLAN_REQUIRED_CODE;
   linkHref: string;
   linkLabel: string;
 } {
   return {
-    error: officePlanMessageAr(feature),
+    error: officePlanMessageAr(feature, audience),
     code: OFFICE_PLAN_REQUIRED_CODE,
     linkHref: OFFICE_PLAN_PRICING_HREF,
     linkLabel: OFFICE_PLAN_LINK_AR,
@@ -119,16 +154,18 @@ function gbText(bytes: number): string {
   return ar(Number.isInteger(v) ? v : Number(v.toFixed(1)));
 }
 
+const STORAGE_UPGRADE_AR = "أو اشترك في إحدى الباقات المدفوعة لإدارة المكتب لرفع ملفات جديدة";
+
 /** The same without a number — for a refusal that carries only the token. */
 export const STORAGE_QUOTA_FULL_AR =
-  `بلغت ملفاتك المحفوظة سعة الحساب المجاني. احذف ما لا تحتاج إليه من الملفات، أو اشترك في باقة «${OFFICE_PLAN_NAME_AR}» لرفع ملفات جديدة.`;
+  `بلغت ملفاتك المحفوظة سعة الحساب المجاني. احذف ما لا تحتاج إليه من الملفات، ${STORAGE_UPGRADE_AR}.`;
 
 /** The sentence when a free account's stored files reached the cap. */
 export function storageQuotaFullAr(capBytes: number): string {
   const cap = Number.isFinite(capBytes) && capBytes > 0 ? capBytes : GB;
   return (
     `بلغت ملفاتك المحفوظة ${gbText(cap)} جيجابايت، وهي سعة الحساب المجاني. ` +
-    `احذف ما لا تحتاج إليه من الملفات، أو اشترك في باقة «${OFFICE_PLAN_NAME_AR}» لرفع ملفات جديدة.`
+    `احذف ما لا تحتاج إليه من الملفات، ${STORAGE_UPGRADE_AR}.`
   );
 }
 
