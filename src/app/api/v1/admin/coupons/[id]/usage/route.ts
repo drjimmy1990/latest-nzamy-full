@@ -30,8 +30,8 @@ export async function GET(
   try {
     const { id } = await params;
 
-    // l16 (C35): the staff-role gate (least privilege, staffRoles.ts), not admin-only.
-    const gate = await requireStaff("read");
+    // l16 (C35): least privilege — redeemable codes (100 % ones included) are read only by the role that manages them (the coupons page is settings.write).
+    const gate = await requireStaff("settings.write");
     if (!gate.ok) return gate.response;
     if (!isCouponId(id)) {
       return NextResponse.json({ error: "الكوبون غير موجود" }, { status: 404 });

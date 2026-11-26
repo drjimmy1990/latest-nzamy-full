@@ -323,7 +323,9 @@ test("C34/C35: no admin GET is gated on the bare user_type, assertRole([\"admin\
     const src = code(read(`app/api/v1/admin/${rel}/route.ts`));
     const get = src.slice(src.indexOf("export async function GET("));
     const body = get.slice(0, get.indexOf("export async function", 10) > 0 ? get.indexOf("export async function", 10) : undefined);
-    assert.ok(/requireStaff\("(read|payments\.read)"\)/.test(body), `${rel}: GET uses requireStaff`);
+    // Least privilege: coupon codes (100 % ones included) are read only by the role that manages them.
+    const expected = rel.startsWith("coupons") ? /requireStaff\("settings\.write"\)/ : /requireStaff\("(read|payments\.read)"\)/;
+    assert.ok(expected.test(body), `${rel}: GET uses requireStaff with its least-privilege action`);
     assert.equal(/requireAdmin\(|assertRole\(\s*\[\s*"admin"|user_type !== "admin"/.test(body), false, rel);
   }
   for (const rel of ["acceptances", "lawyers", "requests", "settings"]) {

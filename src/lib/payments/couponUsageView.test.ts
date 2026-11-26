@@ -64,8 +64,8 @@ test("S6: the usage route — admin gate first, service role, coupon_usage newes
   const code = ROUTE.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
   assert.match(code, /export async function GET/);
   assert.doesNotMatch(code, /export async function (POST|PUT|PATCH|DELETE)/);
-  // l16 (C35): the staff-role gate (every role may read), not admin-only.
-  assert.ok(code.indexOf("requireStaff(\"read\")") > -1 && code.indexOf("requireStaff(\"read\")") < code.indexOf(".from("), "the gate comes before any query");
+  // l16 (C35): least privilege — coupon codes are read by the role that manages them (settings.write).
+  assert.ok(code.indexOf("requireStaff(\"settings.write\")") > -1 && code.indexOf("requireStaff(\"settings.write\")") < code.indexOf(".from("), "the gate comes before any query");
   assert.match(code, /isCouponId\(id\)/);
   assert.match(code, /createServiceClient\(\)/);
   assert.match(code, /\.from\("coupon_usage"\)\s*\.select\("id, user_id, order_id, discount_applied, created_at"\)\s*\.eq\("coupon_id", id\)\s*\.order\("created_at", \{ ascending: false \}\)\s*\.limit\(COUPON_USAGE_LIMIT\)/);

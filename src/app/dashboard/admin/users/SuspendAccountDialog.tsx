@@ -4,6 +4,7 @@ import { useState } from "react";
 import { createPortal } from "react-dom";
 import { Prohibit, SpinnerGap, X } from "@phosphor-icons/react";
 import { apiErrorText } from "@/lib/services/apiErrorText";
+import { adminToast } from "@/components/admin/adminToast";
 import {
   REASON_MAX,
   SUSPENSION_TEMPLATES,
@@ -63,7 +64,12 @@ export default function SuspendAccountDialog({
           suspension: { template, reason: reason.trim(), ...(template === "custom" ? { ends_at: customIso } : {}) },
         }),
       });
-      if (!res.ok) throw new Error(apiErrorText(res.status, await res.json().catch(() => null), "تعذّر إيقاف الحساب"));
+      const json = (await res.json().catch(() => null)) as { email?: unknown } | null;
+      if (!res.ok) throw new Error(apiErrorText(res.status, json, "تعذّر إيقاف الحساب"));
+      // The e-mail is the account's way to its reason, its end and its appeal.
+      if (json?.email !== "sent") {
+        adminToast("أُوقف الحساب، لكن تعذّر إرسال البريد إليه بالسبب وموعد الانتهاء ورابط الاعتراض — أبلغه بطريقة أخرى.");
+      }
       onDone();
     } catch (err) {
       setError(err instanceof Error ? err.message : "تعذّر إيقاف الحساب");

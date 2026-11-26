@@ -521,6 +521,8 @@ export async function PATCH(
       success: true,
       message: "تم تحديث بيانات المستخدم بنجاح",
       data: updatedProfile,
+      // Owner س٢١٥: whether the account was told (by e-mail) why and until when.
+      ...(body.status === "suspended" || body.status === "active" ? { email: after.email ?? null } : {}),
     });
   } catch (err) {
     console.error("[admin/users/[id]] PATCH error:", err);
