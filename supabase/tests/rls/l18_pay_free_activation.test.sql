@@ -169,6 +169,25 @@ begin
   raise notice 'T5 PASS: a redemption''s library pass and its points are granted exactly once, with no order';
 end $$;
 
+-- T7 the l16 code box path: a FREE-PLAN code naming a LIBRARY pass (coupon_redeem_open, 20261206_30)
+--    then its pass on the redemption (coupon_redeem_grant_library) — one pass, no order
+do $$
+declare r jsonb; g jsonb; n int;
+begin
+  insert into public.coupons (code, discount_type, discount_value, points_granted, plan_granted, eligible_user_types,
+                              max_uses, used_count, valid_from, valid_until, active, max_discount_pct, excluded_kinds, metadata)
+  values ('LIBQ2FREE', 'plan_upgrade', 0, 0, 'lib-q2', '{}', 5, 0, now() - interval '1 day', now() + interval '30 days', true, 25, '{topup}',
+          '{"grant_billing": "once"}');
+  r := public.coupon_redeem_open('00000000-0000-0000-0000-0000000018a4', pg_temp.cid('LIBQ2FREE'), 379000, null, now());
+  if r ->> 'status' <> 'opened' or r ->> 'item_id' <> 'lib-q2' then raise exception 'T7 FAIL: open → %', r; end if;
+  g := public.coupon_redeem_grant_library((r ->> 'id')::uuid, 'lib-q2', 180, 120, now());
+  if g ->> 'status' <> 'granted' then raise exception 'T7 FAIL: grant → %', g; end if;
+  select count(*) into n from public.library_access_grants where user_id = '00000000-0000-0000-0000-0000000018a4' and order_id is null;
+  if n <> 1 then raise exception 'T7 FAIL: % passes', n; end if;
+  if public.coupon_redeem_finish((r ->> 'id')::uuid, true, null) <> 'granted' then raise exception 'T7 FAIL: finish'; end if;
+  raise notice 'T7 PASS: a free LIBRARY code from the code box opens, grants one pass (no order) and closes';
+end $$;
+
 -- T6 billing_company: the three values set, vat_number untouched, idempotent
 do $$
 declare v jsonb;

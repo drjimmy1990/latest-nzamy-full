@@ -9018,8 +9018,7 @@ select 'l18 pay: a redemption''s library pass is granted once (coupon_redemption
        coalesce(exists (select 1 from pg_catalog.pg_attribute
                          where attrelid = to_regclass('public.coupon_redemptions') and attname = 'library_grant_id' and not attisdropped)
                 and not has_column_privilege('authenticated', 'public.coupon_redemptions', 'library_grant_id', 'SELECT'), false) as ok;
-select 'l18 billing: billing_company holds the official legal name, Makkah address and CR 7049168854 (run 20261208_31; vat_number is never changed by it)' as check,
+select 'l18 billing: billing_company holds CR 7049168854 (run 20261208_31 once; a later edit of the name in admin settings does not fail this check)' as check,
        coalesce((select s.value ->> 'cr_number' = '7049168854'
-                        and s.value ->> 'legal_name_ar' = 'شركة نيزامي للمحاماة والاستشارات القانونية'
                    from public.platform_settings s where s.key = 'billing_company'), false) as ok;
 -- <<< verify:l18_pay
