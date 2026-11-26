@@ -20,9 +20,14 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 export const PHONE_UNUSABLE_AR = "تعذّر استعمال هذا الرقم، استعمل رقمًا آخر أو تواصل معنا";
 
-/** The database guard's refusal (20261208_50). */
+/**
+ * The database's refusal (20261208_50): the guard's own message, or — once the
+ * partial unique index exists — a race the guard did not see, refused by the
+ * index profiles_confirmed_phone_unique.
+ */
 export function isConfirmedPhoneDbError(error: { code?: string; message?: string } | null | undefined): boolean {
-  return error?.code === "23505" && typeof error.message === "string" && error.message.startsWith("confirmed_phone_taken");
+  if (error?.code !== "23505" || typeof error.message !== "string") return false;
+  return error.message.startsWith("confirmed_phone_taken") || error.message.includes("profiles_confirmed_phone_unique");
 }
 
 /**

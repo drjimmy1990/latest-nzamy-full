@@ -32,6 +32,7 @@ test("the three stored spellings of one number (as 20261208_20 / _50 compare the
 
 test("the database refusal is recognised only by its own message", () => {
   assert.equal(isConfirmedPhoneDbError({ code: "23505", message: "confirmed_phone_taken: another account…" }), true);
+  assert.equal(isConfirmedPhoneDbError({ code: "23505", message: 'duplicate key value violates unique constraint "profiles_confirmed_phone_unique"' }), true);
   assert.equal(isConfirmedPhoneDbError({ code: "23505", message: "verified_phone_taken: …" }), false);
   assert.equal(isConfirmedPhoneDbError({ code: "23514", message: "confirmed_phone_taken" }), false);
   assert.equal(isConfirmedPhoneDbError(null), false);
