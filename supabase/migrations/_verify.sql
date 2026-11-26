@@ -9016,3 +9016,22 @@ select 'l18 signup: only an e-mail sign-up from the forms is marked (GoTrue''s p
        coalesce(position('''provider'' = ''email''' in pg_catalog.pg_get_functiondef(to_regprocedure('public.profiles_form_signup_onboarded()'))) > 0
                 and position('user_type' in pg_catalog.pg_get_functiondef(to_regprocedure('public.profiles_form_signup_onboarded()'))) > 0, false) as ok;
 -- <<< verify:l18_signup
+-- >>> verify:l18_phone_login — supabase/tests/rls/l18_phone_login.test.sql
+-- Batch l18: a Saudi mobile on /login and /forgot-password finds its account only when exactly one
+-- account has it confirmed. 20261208_20 runs BEFORE the deploy (after 20261207_10). Before it runs
+-- the checks below answer ok = false («run 20261208_20»).
+select 'l18 phone login: phone_sign_in_target / pw_reset_target_by_phone are SECURITY DEFINER with an empty search_path, service_role only (run 20261208_20)' as check,
+       coalesce((select count(*) = 2
+                        and bool_and(p.prosecdef
+                                     and p.proconfig @> array['search_path=""']
+                                     and not has_function_privilege('anon', p.oid, 'EXECUTE')
+                                     and not has_function_privilege('authenticated', p.oid, 'EXECUTE')
+                                     and has_function_privilege('service_role', p.oid, 'EXECUTE'))
+                   from pg_catalog.pg_proc p
+                  where p.oid in (to_regprocedure('public.phone_sign_in_target(text)'),
+                                  to_regprocedure('public.pw_reset_target_by_phone(text)'))), false) as ok;
+select 'l18 phone login: a number confirmed on two accounts finds nobody; the reset by number applies the reset-by-e-mail rules (run 20261208_20)' as check,
+       coalesce(position('''shared''' in pg_catalog.pg_get_functiondef(to_regprocedure('public.phone_sign_in_target(text)'))) > 0
+                and position('phone_verified_at is not null' in pg_catalog.pg_get_functiondef(to_regprocedure('public.phone_sign_in_target(text)'))) > 0
+                and position('public.pw_reset_target(' in pg_catalog.pg_get_functiondef(to_regprocedure('public.pw_reset_target_by_phone(text)'))) > 0, false) as ok;
+-- <<< verify:l18_phone_login

@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import {
   Eye,
   EyeSlash,
@@ -35,7 +35,16 @@ import { firmLandingFor, FIRM_DASHBOARD_PATH } from "@/lib/auth/firmLanding";
 import { postLoginCookieAssignment, stashablePostLoginPath } from "@/lib/auth/postLoginCookie";
 import { createClient } from "@/lib/supabase/client";
 import { isDemoUiEnabled, BACKEND_MODE } from "@/lib/runtimeMode";
-import { saudiMobileOrNull } from "@/lib/services/saudiMobile";
+import {
+  classifyLoginInput,
+  loginInputMessage,
+  looksLikePhoneInput,
+  LOGIN_ID_HINT_AR,
+  LOGIN_ID_HINT_EN,
+  LOGIN_ID_LABEL_AR,
+  LOGIN_ID_LABEL_EN,
+  LOGIN_ID_PLACEHOLDER,
+} from "@/lib/auth/loginIdentifierInput";
 import {
   buildPasswordCredentials,
   canSubmitWithCaptcha,
@@ -58,10 +67,8 @@ const t = {
     title: "تسجيل الدخول",
     welcome: "مرحباً بعودتك",
     subtitle: "سجّل دخولك للوصول إلى خدماتك القانونية",
-    emailLabel: "البريد الإلكتروني",
-    emailPlaceholder: "example@email.com",
-    phoneLabel: "رقم الجوال",
-    phonePlaceholder: "05xxxxxxxx",
+    idLabel: LOGIN_ID_LABEL_AR,
+    idHint: LOGIN_ID_HINT_AR,
     passwordLabel: "كلمة المرور",
     passwordPlaceholder: "أدخل كلمة المرور",
     remember: "تذكرني",
@@ -71,8 +78,6 @@ const t = {
     google: "تسجيل الدخول بـ Google",
     noAccount: "ليس لديك حساب؟",
     signUp: "سجّل مجاناً",
-    switchToPhone: "استخدام رقم الجوال",
-    switchToEmail: "استخدام البريد الإلكتروني",
     backHome: "العودة للرئيسية",
     brandSlogan: "شريكك القانوني الذكي",
     brandDesc: "المنصة القانونية الأولى في المملكة العربية السعودية",
@@ -94,10 +99,8 @@ const t = {
     title: "Sign In",
     welcome: "Welcome Back",
     subtitle: "Sign in to access your legal services",
-    emailLabel: "Email Address",
-    emailPlaceholder: "example@email.com",
-    phoneLabel: "Phone Number",
-    phonePlaceholder: "05xxxxxxxx",
+    idLabel: LOGIN_ID_LABEL_EN,
+    idHint: LOGIN_ID_HINT_EN,
     passwordLabel: "Password",
     passwordPlaceholder: "Enter your password",
     remember: "Remember me",
@@ -107,8 +110,6 @@ const t = {
     google: "Continue with Google",
     noAccount: "Don't have an account?",
     signUp: "Sign up free",
-    switchToPhone: "Use phone number",
-    switchToEmail: "Use email address",
     backHome: "Back to Home",
     brandSlogan: "Your Smart Legal Partner",
     brandDesc: "Saudi Arabia's leading legal platform",
@@ -188,7 +189,6 @@ export default function LoginPage() {
 
   const router = useRouter();
   const user = useUser();
-  const [inputMode, setInputMode] = useState<"email" | "phone">("email");
   const [showPassword, setShowPassword] = useState(false);
   const [remember, setRemember] = useState(false);
   const [identifier, setIdentifier] = useState("");
@@ -211,10 +211,8 @@ export default function LoginPage() {
           prefill = window.sessionStorage.getItem(LOGIN_PREFILL_EMAIL_KEY);
           window.sessionStorage.removeItem(LOGIN_PREFILL_EMAIL_KEY);
         } catch { /* storage blocked: the field starts empty */ }
-        if (prefill) {
-          setInputMode("email");
-          setIdentifier(prefill);
-        }
+        // The address or the mobile typed on /forgot-password: the one field takes either.
+        if (prefill) setIdentifier(prefill);
       }
     } catch { /* no window */ }
   }, []);
@@ -246,16 +244,23 @@ export default function LoginPage() {
     try {
       // ── Supabase Mode: Real authentication ──────────────────────────────────
       if (BACKEND_MODE === "supabase") {
-        const phone = inputMode === "phone" ? saudiMobileOrNull(identifier) : null;
+        // Batch l18 (LIVE-16): ONE field. An «@» makes it an e-mail; anything
+        // else must be a Saudi mobile (E.164 here). Which account a mobile
+        // belongs to is decided by the server (LIVE-05), never here.
+        const typed = classifyLoginInput(identifier);
+        if (!typed.ok) {
+          setError(loginInputMessage(typed, isAr));
+          return;
+        }
         const credentials = buildPasswordCredentials({
-          mode: inputMode,
-          identifier,
-          phoneE164: phone,
+          mode: typed.kind,
+          identifier: typed.value,
+          phoneE164: typed.kind === "phone" ? typed.value : null,
           password,
           captchaToken: captcha.token,
         });
         if (!credentials) {
-          setError(isAr ? "أدخل رقم جوال سعودي صحيح" : "Enter a valid Saudi mobile number");
+          setError(loginInputMessage({ ok: false, reason: "not_saudi_mobile" }, isAr));
           return;
         }
         // No live token, no request. Not the protection itself (GoTrue is),
@@ -657,78 +662,40 @@ export default function LoginPage() {
                   </p>
                 </motion.div>
 
-                {/* Input mode toggle */}
-                <motion.div variants={itemVariants} className="mb-6">
-                  <div className="flex rounded-xl border border-slate-200 dark:border-dark-border bg-slate-50 dark:bg-dark-card p-1">
-                    {(["email", "phone"] as const).map((mode) => (
-                      <button
-                        key={mode}
-                        type="button"
-                        onClick={() => {
-                          setInputMode(mode);
-                          setIdentifier("");
-                        }}
-                        className={`flex-1 flex items-center justify-center gap-2 rounded-lg py-2 text-sm font-medium transition-all duration-200 ${
-                          inputMode === mode
-                            ? "bg-white dark:bg-dark-bg shadow-sm text-royal dark:text-gold border border-slate-200/50 dark:border-dark-border"
-                            : "text-ink-muted dark:text-gray-500 hover:text-ink dark:hover:text-gray-300"
-                        }`}
-                      >
-                        {mode === "email" ? (
-                          <EnvelopeSimple size={16} weight={inputMode === mode ? "fill" : "regular"} />
-                        ) : (
-                          <Phone size={16} weight={inputMode === mode ? "fill" : "regular"} />
-                        )}
-                        <span>
-                          {mode === "email"
-                            ? isAr ? "البريد" : "Email"
-                            : isAr ? "الجوال" : "Phone"}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                </motion.div>
-
-                {/* Identifier field */}
+                {/* Identifier field — batch l18 (LIVE-16): one field, e-mail or Saudi mobile. */}
                 <motion.div variants={itemVariants} className="mb-4">
-                  <label className="block text-sm font-medium text-ink dark:text-gray-300 mb-1.5">
-                    {inputMode === "email" ? txt.emailLabel : txt.phoneLabel}
+                  <label htmlFor="login-identifier" className="block text-sm font-medium text-ink dark:text-gray-300 mb-1.5">
+                    {txt.idLabel}
                   </label>
                   <div className="relative">
                     <div className={`absolute top-1/2 -translate-y-1/2 text-ink-faint dark:text-gray-500 pointer-events-none ${isAr ? "right-3.5" : "left-3.5"}`}>
-                      <AnimatePresence mode="wait">
-                        <motion.span
-                          key={inputMode}
-                          initial={{ opacity: 0, scale: 0.8 }}
-                          animate={{ opacity: 1, scale: 1 }}
-                          exit={{ opacity: 0, scale: 0.8 }}
-                          transition={{ duration: 0.15 }}
-                        >
-                          {inputMode === "email" ? (
-                            <EnvelopeSimple size={18} weight="duotone" />
-                          ) : (
-                            <Phone size={18} weight="duotone" />
-                          )}
-                        </motion.span>
-                      </AnimatePresence>
+                      {looksLikePhoneInput(identifier) ? (
+                        <Phone size={18} weight="duotone" />
+                      ) : (
+                        <EnvelopeSimple size={18} weight="duotone" />
+                      )}
                     </div>
                     <input
-                      type={inputMode === "email" ? "email" : "tel"}
+                      id="login-identifier"
+                      type="text"
                       value={identifier}
                       onChange={(e) => setIdentifier(e.target.value)}
-                      placeholder={inputMode === "email" ? txt.emailPlaceholder : txt.phonePlaceholder}
-                      dir={inputMode === "phone" ? "ltr" : dir}
-                      // Without these the phone tab still opens a full QWERTY
-                      // keyboard on iOS, and password managers cannot see the
-                      // field at all.
-                      autoComplete={inputMode === "email" ? "email" : "tel"}
-                      inputMode={inputMode === "email" ? "email" : "tel"}
+                      placeholder={LOGIN_ID_PLACEHOLDER}
+                      dir="ltr"
+                      // type="text" (not "email"): the browser must not refuse a
+                      // mobile. "username" lets password managers fill either.
+                      autoComplete="username"
+                      inputMode="email"
                       autoCapitalize="none"
                       autoCorrect="off"
                       spellCheck={false}
+                      aria-describedby="login-identifier-hint"
                       className={`w-full rounded-xl border border-slate-200 dark:border-dark-border bg-white dark:bg-dark-card py-3 text-sm text-ink placeholder:text-ink-faint dark:placeholder:text-gray-600 outline-none focus:border-royal dark:focus:border-gold focus:ring-2 focus:ring-royal/10 dark:focus:ring-gold/10 transition-all ${isAr ? "pr-10 pl-4" : "pl-10 pr-4"}`}
                     />
                   </div>
+                  <p id="login-identifier-hint" className="mt-1.5 text-xs text-ink-muted dark:text-gray-400">
+                    {txt.idHint}
+                  </p>
                 </motion.div>
 
                 {/* Password field */}

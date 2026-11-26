@@ -8,6 +8,10 @@
  *                  API: a suspended (isSuspendedUser) or frozen
  *                  (freezeStateFromUser) account gets no code — the same
  *                  rules the proxy and requireApiUser apply.
+ *   lookupByPhone  public.pw_reset_target_by_phone (20261208_20, batch l18:
+ *                  the ONE account that has the mobile confirmed, then the
+ *                  same rules as pw_reset_target), then the same app_metadata
+ *                  check. Until that SQL has run, a mobile finds no account.
  *   issue / verify public.pw_reset_issue / pw_reset_verify (service_role only).
  *   setPassword    auth.admin.updateUserById(id, { password }).
  *   revokeSessions public.admin_revoke_user_sessions (20261124_60): every
@@ -63,6 +67,22 @@ export async function whatsappResetIsAvailable(): Promise<boolean> {
 async function lookup(svc: Svc, email: string): Promise<ResetTarget | null> {
   const { data, error } = await svc.rpc("pw_reset_target", { p_email: email });
   if (error) throw new Error(`pw_reset_target failed: ${error.code ?? "error"}`);
+  return eligibleTarget(svc, data);
+}
+
+const MISSING_FUNCTION = new Set(["42883", "PGRST202"]);
+
+async function lookupByPhone(svc: Svc, e164: string): Promise<ResetTarget | null> {
+  const { data, error } = await svc.rpc("pw_reset_target_by_phone", { p_phone: e164 });
+  // Before 20261208_20 runs, a mobile simply finds no account (start keeps its
+  // uniform answer; verify refuses like a wrong code).
+  if (error && MISSING_FUNCTION.has(error.code ?? "")) return null;
+  if (error) throw new Error(`pw_reset_target_by_phone failed: ${error.code ?? "error"}`);
+  return eligibleTarget(svc, data);
+}
+
+/** The database's yes, then the account's own standing (suspension / freeze); fail closed. */
+async function eligibleTarget(svc: Svc, data: unknown): Promise<ResetTarget | null> {
   const j = (data ?? {}) as { ok?: unknown; user_id?: unknown; phone?: unknown };
   if (j.ok !== true || typeof j.user_id !== "string") return null;
   const stored = typeof j.phone === "string" ? j.phone : "";
@@ -81,6 +101,7 @@ export function serverResetDeps(svc: Svc, captcha: ResetDeps["captcha"]): ResetD
     allow: (key, limit, windowMs) => rateLimit(key, { limit, windowMs }).ok,
     captcha,
     lookup: (email) => lookup(svc, email),
+    lookupByPhone: (e164) => lookupByPhone(svc, e164),
     issue: async ({ userId, targetHash, hint, codeHash }) => {
       const { data, error } = await svc.rpc("pw_reset_issue", {
         p_user: userId,

@@ -18,6 +18,12 @@
  *     expired, used or locked code and for an address with no account, and
  *     every refusal is held to the same minimum time.
  *   - the code, the number and the address are never logged or returned.
+ *   - batch l18 (LIVE-06): the person may type the confirmed Saudi mobile
+ *     instead of the e-mail ({ phone } in place of { email }). The account is
+ *     the ONE account that has that number confirmed (public.
+ *     pw_reset_target_by_phone, 20261208_20, which then applies every rule of
+ *     the e-mail lookup); a number shared by two accounts gets nothing. The
+ *     answers stay the same words, and the limits key on the E.164 number.
  *   - verify sets the password with the auth admin API and ends the account's
  *     sessions; it never signs anyone in.
  */
@@ -30,6 +36,7 @@ import {
   otpPepper,
 } from "../lawyerSignup/otpCode.ts";
 import { maskSaudiMobile } from "../phoneOtp/phoneOtpRules.ts";
+import { normalizeSaudiMobile } from "../services/saudiMobile.ts";
 import { isSuspendedUser } from "../auth/accountSuspension.ts";
 import { freezeStateFromUser } from "../auth/accountFreeze.ts";
 import { validateNewPassword } from "../../app/settings/components/tabs/_securityFields.ts";
@@ -39,6 +46,7 @@ import {
   WHATSAPP_CODE_INVALID_AR,
   WHATSAPP_CODE_INVALID_CODE,
   WHATSAPP_INVALID_EMAIL_AR,
+  WHATSAPP_INVALID_PHONE_AR,
   WHATSAPP_PASSWORD_NOT_SET_AR,
   WHATSAPP_START_SENT_AR,
   WHATSAPP_TOO_MANY_AR,
@@ -64,6 +72,8 @@ export type ResetDeps = {
   captcha: () => Promise<"ok" | "failed" | "misconfigured">;
   /** null for every address that must not receive a code (any reason). */
   lookup: (email: string) => Promise<ResetTarget | null>;
+  /** The same, found by a confirmed Saudi mobile (E.164): null unless exactly one account has it confirmed and may reset. */
+  lookupByPhone: (e164: string) => Promise<ResetTarget | null>;
   issue: (args: { userId: string; targetHash: string; hint: string | null; codeHash: string }) => Promise<{ id: string } | null>;
   send: (e164: string, code: string) => Promise<"sent" | "unavailable" | "failed">;
   markDelivery: (id: string, sent: boolean) => Promise<void>;
@@ -112,13 +122,44 @@ export function authUserMayReset(user: unknown): boolean {
   return !isSuspendedUser(user) && !freezeStateFromUser(user).frozen;
 }
 
+/** What the person typed: an e-mail or a Saudi mobile (E.164). */
+export type ResetIdentifier = { kind: "email"; value: string } | { kind: "phone"; value: string };
+
+/**
+ * The identifier of a start / verify body, or the 400 to answer. A body with
+ * a `phone` string is the mobile path; anything else is the e-mail path as
+ * before (l17).
+ */
+export function resetIdentifierFrom(input: { email?: unknown; phone?: unknown }):
+  | { ok: true; id: ResetIdentifier }
+  | { ok: false; answer: RouteAnswer } {
+  if (typeof input.phone === "string" && input.email === undefined) {
+    const mobile = normalizeSaudiMobile(input.phone);
+    if (!mobile.ok) return { ok: false, answer: { status: 400, body: { ok: false, code: "invalid_phone", error: WHATSAPP_INVALID_PHONE_AR } } };
+    return { ok: true, id: { kind: "phone", value: mobile.e164 } };
+  }
+  const email = normalizeResetEmail(input.email);
+  if (!email) return { ok: false, answer: { status: 400, body: { ok: false, code: "invalid_email", error: WHATSAPP_INVALID_EMAIL_AR } } };
+  return { ok: true, id: { kind: "email", value: email } };
+}
+
+/** The in-process limiter key: the e-mail as before, or the E.164 number. */
+function limitKey(step: "start" | "verify", id: ResetIdentifier): string {
+  return id.kind === "email" ? `pwreset:${step}:${id.value}` : `pwreset:${step}:phone:${id.value}`;
+}
+
+function lookupFor(deps: ResetDeps, id: ResetIdentifier): Promise<ResetTarget | null> {
+  return id.kind === "email" ? deps.lookup(id.value) : deps.lookupByPhone(id.value);
+}
+
 function errorName(err: unknown): string {
   return err instanceof Error ? err.name || "Error" : typeof err;
 }
 
-export async function startWhatsAppReset(deps: ResetDeps, input: { email: unknown }): Promise<StartAnswer> {
-  const email = normalizeResetEmail(input.email);
-  if (!email) return { status: 400, body: { ok: false, code: "invalid_email", error: WHATSAPP_INVALID_EMAIL_AR }, background: null };
+export async function startWhatsAppReset(deps: ResetDeps, input: { email?: unknown; phone?: unknown }): Promise<StartAnswer> {
+  const parsed = resetIdentifierFrom(input);
+  if (!parsed.ok) return { ...parsed.answer, background: null };
+  const id = parsed.id;
 
   const pepper = otpPepper(deps.pepperRaw);
   if (!pepper || !(await deps.available())) return { ...unavailable(), background: null };
@@ -131,12 +172,12 @@ export async function startWhatsAppReset(deps: ResetDeps, input: { email: unknow
   if (check !== "ok") return { status: 403, body: { ok: false, code: "captcha", error: WHATSAPP_CAPTCHA_AR }, background: null };
 
   const uniform: StartAnswer = { status: 200, body: { ...START_UNIFORM_BODY }, background: null };
-  // Over the per-e-mail-address limit: the same answer, and nothing is sent.
-  if (!deps.allow(`pwreset:start:${email}`, START_PER_EMAIL.limit, START_PER_EMAIL.windowMs)) return uniform;
+  // Over the per-address (or per-number) limit: the same answer, and nothing is sent.
+  if (!deps.allow(limitKey("start", id), START_PER_EMAIL.limit, START_PER_EMAIL.windowMs)) return uniform;
 
   uniform.background = async () => {
     try {
-      const target = await deps.lookup(email);
+      const target = await lookupFor(deps, id);
       if (!target) return;
       const code = generateOtpCode();
       const issued = await deps.issue({
@@ -158,7 +199,7 @@ export async function startWhatsAppReset(deps: ResetDeps, input: { email: unknow
 
 export async function verifyWhatsAppReset(
   deps: ResetDeps,
-  input: { email: unknown; code: unknown; password: unknown; confirm: unknown },
+  input: { email?: unknown; phone?: unknown; code: unknown; password: unknown; confirm: unknown },
 ): Promise<VerifyAnswer> {
   const startedAt = deps.now();
   const refuse = async (): Promise<RouteAnswer> => {
@@ -167,8 +208,9 @@ export async function verifyWhatsAppReset(
     return { status: 400, body: { ok: false, code: WHATSAPP_CODE_INVALID_CODE, error: WHATSAPP_CODE_INVALID_AR } };
   };
 
-  const email = normalizeResetEmail(input.email);
-  if (!email) return { status: 400, body: { ok: false, code: "invalid_email", error: WHATSAPP_INVALID_EMAIL_AR } };
+  const parsed = resetIdentifierFrom(input);
+  if (!parsed.ok) return parsed.answer;
+  const id = parsed.id;
 
   const password = typeof input.password === "string" ? input.password : "";
   const confirm = typeof input.confirm === "string" ? input.confirm : "";
@@ -178,7 +220,7 @@ export async function verifyWhatsAppReset(
   const pepper = otpPepper(deps.pepperRaw);
   if (!pepper || !(await deps.available())) return unavailable();
 
-  if (!deps.allow(`pwreset:verify:${email}`, VERIFY_PER_EMAIL.limit, VERIFY_PER_EMAIL.windowMs)) {
+  if (!deps.allow(limitKey("verify", id), VERIFY_PER_EMAIL.limit, VERIFY_PER_EMAIL.windowMs)) {
     return { status: 429, body: { ok: false, code: "rate_limited", error: WHATSAPP_TOO_MANY_AR } };
   }
 
@@ -188,7 +230,7 @@ export async function verifyWhatsAppReset(
   let target: ResetTarget | null;
   let hit: boolean;
   try {
-    target = await deps.lookup(email);
+    target = await lookupFor(deps, id);
     if (!target) return refuse();
     hit = await deps.verify({
       userId: target.userId,

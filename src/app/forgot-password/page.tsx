@@ -22,6 +22,7 @@ import { canSubmitWithCaptcha, captchaMessage, captchaSubmitError } from "@/lib/
 import { useTurnstile } from "@/components/auth/useTurnstile";
 import { TurnstileWidget } from "@/components/auth/TurnstileWidget";
 import { classifyRecoverError, isPlausibleEmail, recoveryRedirectTo, resetPasswordProblem } from "@/lib/auth/passwordRecovery";
+import { classifyLoginInput, loginInputMessage, LOGIN_ID_LABEL_AR, LOGIN_ID_LABEL_EN, LOGIN_ID_PLACEHOLDER } from "@/lib/auth/loginIdentifierInput";
 import {
   LOGIN_AFTER_RESET_PATH,
   LOGIN_PREFILL_EMAIL_KEY,
@@ -51,6 +52,13 @@ import {
  * password on this page; the server sets it, and the person signs in on
  * /login with the address prefilled (src/lib/passwordReset/).
  * While the status is unknown or off, the page is the e-mail page.
+ *
+ * Batch l18 (LIVE-06): while the WhatsApp choice is on, the same field also
+ * takes the Saudi mobile confirmed on the account. The server finds the ONE
+ * account that has it confirmed (a number shared by two accounts gets no
+ * code) and answers with the same words as for an e-mail. The e-mail link
+ * needs an e-mail; with a mobile typed, the page says so and points to the
+ * WhatsApp button.
  */
 
 const inputCls =
@@ -77,7 +85,9 @@ const TEXT = {
     brandTitle: "الأمان أولويتنا",
     brandBody: "رابط الاستعادة يصل إلى بريدك المسجّل وحده، ويصلح لمرة واحدة ولمدة محدودة.",
     recovery: "استعادة كلمة المرور",
-    introChoice: "أدخل بريدك الإلكتروني المسجّل، ثم اختر طريقة الاستعادة.",
+    introChoice: "أدخل بريدك الإلكتروني المسجّل أو رقم جوالك المؤكَّد في حسابك، ثم اختر طريقة الاستعادة.",
+    idLabel: LOGIN_ID_LABEL_AR,
+    linkNeedsEmail: "رابط الاستعادة يُرسل إلى البريد الإلكتروني فقط. لاستعمال رقم الجوال اضغط «أرسل رمزًا إلى واتساب».",
     submitEmail: "أرسل رابطًا إلى بريدي",
     submitWhatsApp: "أرسل رمزًا إلى واتساب",
     waOr: "أو",
@@ -120,7 +130,9 @@ const TEXT = {
     brandTitle: "Your Security First",
     brandBody: "The reset link goes to your registered email only, and works once for a limited time.",
     recovery: "Password Recovery",
-    introChoice: "Enter your registered email, then choose how to reset your password.",
+    introChoice: "Enter your registered email or the mobile confirmed on your account, then choose how to reset your password.",
+    idLabel: LOGIN_ID_LABEL_EN,
+    linkNeedsEmail: "The reset link is sent to an email address only. To use your mobile, press «Send a code to WhatsApp».",
     submitEmail: "Send a link to my email",
     submitWhatsApp: "Send a code to WhatsApp",
     waOr: "or",
@@ -172,6 +184,9 @@ export default function ForgotPasswordPage() {
   const [waConfirm, setWaConfirm] = useState("");
   const [waShowPass, setWaShowPass] = useState(false);
   const [waError, setWaError] = useState("");
+  // Batch l18: what «start» was asked for — the e-mail or the mobile (E.164);
+  // verify sends the very same identifier.
+  const [waTarget, setWaTarget] = useState<{ email: string } | { phone: string } | null>(null);
 
   useEffect(() => {
     if (!realBackend) return;
@@ -196,7 +211,9 @@ export default function ForgotPasswordPage() {
       return;
     }
     if (!isPlausibleEmail(email)) {
-      setError(t.invalidEmail);
+      // Batch l18: a mobile typed while the WhatsApp choice is on — the link needs an e-mail.
+      const typed = classifyLoginInput(email);
+      setError(waOn && typed.ok && typed.kind === "phone" ? t.linkNeedsEmail : t.invalidEmail);
       return;
     }
     if (!canSubmitWithCaptcha(captcha.state)) {
@@ -247,10 +264,13 @@ export default function ForgotPasswordPage() {
     setError("");
     setWaError("");
     if (!realBackend || !waOn) return;
-    if (!isPlausibleEmail(email)) {
-      setError(t.invalidEmail);
+    // Batch l18 (LIVE-06): the e-mail or the Saudi mobile, in the same field.
+    const typed = classifyLoginInput(email);
+    if (!typed.ok) {
+      setError(loginInputMessage(typed, isAr));
       return;
     }
+    const target = typed.kind === "email" ? { email: typed.value } : { phone: typed.value };
     if (!canSubmitWithCaptcha(captcha.state)) {
       setError(captchaSubmitError(captcha.state, isAr));
       return;
@@ -262,13 +282,14 @@ export default function ForgotPasswordPage() {
         res = await fetch(`${PASSWORD_RESET_WHATSAPP_API}/start`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email: email.trim(), turnstileToken: captcha.token ?? null }),
+          body: JSON.stringify({ ...target, turnstileToken: captcha.token ?? null }),
         });
       } finally {
         captcha.spend();
       }
       const body = (await res.json().catch(() => null)) as { code?: unknown } | null;
       if (res.ok) {
+        setWaTarget(target);
         setWaCode("");
         setWaPassword("");
         setWaConfirm("");
@@ -278,6 +299,7 @@ export default function ForgotPasswordPage() {
       const code = body?.code;
       if (code === "captcha") setError(captchaMessage("captchaRejected", isAr));
       else if (code === "invalid_email") setError(t.invalidEmail);
+      else if (code === "invalid_phone") setError(loginInputMessage({ ok: false, reason: "not_saudi_mobile" }, isAr));
       else if (res.status === 429) setError(t.waTooMany);
       else setError(t.waUnavailable);
     } catch {
@@ -290,6 +312,10 @@ export default function ForgotPasswordPage() {
   /** The code and the new password: the server sets it; the person signs in on /login. */
   async function handleWhatsAppVerify() {
     setWaError("");
+    if (!waTarget) {
+      setWaStage("request");
+      return;
+    }
     if (!/^[\s0-9٠-٩۰-۹-]{6,9}$/.test(waCode.trim())) {
       setWaError(t.waCodeMissing);
       return;
@@ -304,7 +330,7 @@ export default function ForgotPasswordPage() {
       const res = await fetch(`${PASSWORD_RESET_WHATSAPP_API}/verify`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email.trim(), code: waCode, password: waPassword, confirm: waConfirm }),
+        body: JSON.stringify({ ...waTarget, code: waCode, password: waPassword, confirm: waConfirm }),
       });
       const body = (await res.json().catch(() => null)) as { ok?: unknown; code?: unknown; error?: unknown } | null;
       if (res.ok && body?.ok === true) {
@@ -551,7 +577,7 @@ export default function ForgotPasswordPage() {
                   <p className="mt-2 text-sm text-ink-muted dark:text-gray-400">{waOn ? t.introChoice : t.intro}</p>
 
                   <label htmlFor="reset-email" className="mt-7 mb-1.5 block text-sm font-medium text-ink dark:text-gray-300">
-                    {t.emailLabel}
+                    {waOn ? t.idLabel : t.emailLabel}
                   </label>
                   <div className="relative mb-5">
                     <div className={`absolute top-1/2 -translate-y-1/2 text-ink-faint dark:text-gray-500 pointer-events-none ${isAr ? "right-3.5" : "left-3.5"}`}>
@@ -559,13 +585,14 @@ export default function ForgotPasswordPage() {
                     </div>
                     <input
                       id="reset-email"
-                      type="email"
+                      type={waOn ? "text" : "email"}
+                      inputMode="email"
                       dir="ltr"
-                      autoComplete="email"
+                      autoComplete={waOn ? "username" : "email"}
                       autoCapitalize="none"
                       autoCorrect="off"
                       spellCheck={false}
-                      placeholder="example@email.com"
+                      placeholder={waOn ? LOGIN_ID_PLACEHOLDER : "example@email.com"}
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       className={`${inputCls} ${isAr ? "pr-10 pl-4" : "pl-10 pr-4"}`}

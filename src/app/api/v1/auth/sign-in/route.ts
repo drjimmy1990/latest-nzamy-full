@@ -12,6 +12,12 @@ import {
   type LoginIdentifier,
 } from "@/lib/auth/loginLockout";
 import { loginLockKey } from "@/lib/auth/loginLockoutKey";
+import {
+  phoneSignInSinkAddress,
+  phoneSignInVerdict,
+  phoneTargetFromRpc,
+  type PhoneSignInTarget,
+} from "@/lib/auth/phoneSignIn";
 
 /**
  * POST /api/v1/auth/sign-in — the password sign-in with a per-account lockout
@@ -38,6 +44,17 @@ import { loginLockKey } from "@/lib/auth/loginLockoutKey";
  * signs in exactly as before — fail open, logged. The service client itself
  * missing is different (l16 D-31): then nothing can be counted at all, so the
  * sign-in is refused — 503 { error }.
+ *
+ * A Saudi mobile (batch l18, LIVE-05): GoTrue holds no phone for anyone (every
+ * account signs up by e-mail), so the number is looked up here —
+ * public.phone_sign_in_target (20261208_20) names the account only when
+ * EXACTLY ONE account has it confirmed — and the e-mail + password sign-in
+ * runs for that account's address. An unknown or shared number signs in a
+ * throw-away address instead, and every refusal on this path is the one
+ * wrong-password answer (src/lib/auth/phoneSignIn.ts). The counter stays
+ * keyed on the typed number; when the number names an account, the account's
+ * address is what the lock functions are told, so its lock e-mail reaches
+ * the owner.
  *
  * A script that calls GoTrue directly skips this route (Turnstile still
  * applies there). The GoTrue hook in the same migration would close that,
@@ -113,6 +130,28 @@ async function notifyOnce(service: Rpc, key: string, id: LoginIdentifier, until:
   }
 }
 
+let warnedResolverMissing = false;
+
+/** The one account that has this mobile confirmed, or null (none, shared, or the lookup failed — fail closed). */
+async function phoneTarget(service: Rpc, e164: string): Promise<PhoneSignInTarget | null> {
+  try {
+    const { data, error } = await service.rpc("phone_sign_in_target", { p_phone: e164 });
+    if (error) {
+      if (MISSING.has(error.code ?? "")) {
+        if (!warnedResolverMissing) console.warn("[auth/sign-in] 20261208_20 has not run — a mobile cannot sign in yet");
+        warnedResolverMissing = true;
+      } else {
+        console.error("[auth/sign-in] phone lookup failed:", error.code);
+      }
+      return null;
+    }
+    return phoneTargetFromRpc(data);
+  } catch {
+    console.error("[auth/sign-in] phone lookup failed");
+    return null;
+  }
+}
+
 const locked = () =>
   NextResponse.json({ error: LOGIN_LOCKED_AR, code: LOGIN_LOCKED_CODE }, { status: 423, headers: NO_STORE });
 
@@ -141,31 +180,56 @@ export async function POST(request: Request) {
     );
   }
 
-  const before = await lockStatus(service, key, body.id);
+  // LIVE-05: a mobile names its account here, or nobody. The lock functions
+  // are told the account's address (so a lock reaches its owner by e-mail);
+  // the counter key stays the typed identifier.
+  const target = body.id.kind === "phone" ? await phoneTarget(service, body.id.value) : null;
+  const lockId: LoginIdentifier = target ? { kind: "email", value: target.email } : body.id;
+
+  const before = await lockStatus(service, key, lockId);
   if (before.locked) {
-    await notifyOnce(service, key, body.id, before.until);
+    await notifyOnce(service, key, lockId, before.until);
     return locked();
   }
 
   const supabase = await createClient();
   const options = body.captchaToken ? { options: { captchaToken: body.captchaToken } } : {};
+  // A mobile always signs in by an address: its account's, or — for a number
+  // with no single account — a throw-away one, so GoTrue still checks the
+  // security token and takes its usual time (src/lib/auth/phoneSignIn.ts).
   const credentials =
     body.id.kind === "email"
       ? { email: body.id.value, password: body.password, ...options }
-      : { phone: body.id.value, password: body.password, ...options };
-  const { data, error } = await supabase.auth.signInWithPassword(credentials);
+      : { email: target?.email ?? phoneSignInSinkAddress(crypto.randomUUID()), password: body.password, ...options };
+  const { data, error: gotrueError } = await supabase.auth.signInWithPassword(credentials);
+  let error: unknown = gotrueError;
+  let user = data?.user ?? null;
+  if (body.id.kind === "phone") {
+    const verdict = phoneSignInVerdict({ target, error: gotrueError, signedInUserId: user?.id ?? null });
+    if (!verdict.ok) {
+      if (verdict.undo) {
+        try {
+          await supabase.auth.signOut({ scope: "local" });
+        } catch {
+          console.error("[auth/sign-in] undoing a phone sign-in failed");
+        }
+      }
+      error = verdict.error;
+      user = null;
+    }
+  }
 
-  if (error || !data?.user) {
+  if (error || !user) {
     if (isHookLockRefusal(error)) {
-      const now = await lockStatus(service, key, body.id);
-      await notifyOnce(service, key, body.id, now.until);
+      const now = await lockStatus(service, key, lockId);
+      await notifyOnce(service, key, lockId, now.until);
       return locked();
     }
     if (isCredentialFailure(error)) {
-      const after = await record(service, key, body.id, false);
+      const after = await record(service, key, lockId, false);
       if (after.locked) {
         // The attempt that reached the maximum is answered with the lock itself.
-        await notifyOnce(service, key, body.id, after.until);
+        await notifyOnce(service, key, lockId, after.until);
         return locked();
       }
     }
@@ -182,6 +246,6 @@ export async function POST(request: Request) {
     );
   }
 
-  await record(service, key, body.id, true);
+  await record(service, key, lockId, true);
   return NextResponse.json({ ok: true }, { headers: NO_STORE });
 }
