@@ -8754,7 +8754,7 @@ select 'l16 suspension terms: account_suspension_freezes has ends_at / template 
                       where conrelid = to_regclass('public.account_suspension_freezes')
                         and conname in ('account_suspension_freezes_template_check', 'account_suspension_freezes_ends_check',
                                         'account_suspension_freezes_reason_len')), false) as ok;
-select 'l16 suspension terms: the appeals table is server-only (RLS on, no policy, no anon/authenticated privilege) with one waiting appeal per suspension (run 20261206_20)' as check,
+select 'l16 suspension terms: the appeals table is server-only (RLS on, no policy, no anon/authenticated privilege) with at most three waiting appeals per suspension — cap trigger, no one-new unique index (run 20261206_20)' as check,
        coalesce((select c.relrowsecurity
                         and not exists (select 1 from pg_catalog.pg_policy p where p.polrelid = c.oid)
                         and not has_table_privilege('anon', c.oid, 'SELECT')
@@ -8763,7 +8763,10 @@ select 'l16 suspension terms: the appeals table is server-only (RLS on, no polic
                         and not has_table_privilege('authenticated', c.oid, 'INSERT')
                         and not has_table_privilege('authenticated', c.oid, 'UPDATE')
                    from pg_catalog.pg_class c where c.oid = to_regclass('public.account_suspension_appeals')), false)
-       and to_regclass('public.account_suspension_appeals_one_new') is not null as ok;
+       and to_regclass('public.account_suspension_appeals_one_new') is null
+       and coalesce((select count(*) = 1 from pg_catalog.pg_trigger
+                      where tgrelid = to_regclass('public.account_suspension_appeals')
+                        and tgname = 'trg_account_suspension_appeals_cap' and tgenabled <> 'D' and not tgisinternal), false) as ok;
 -- <<< verify:l16_suspension_terms
 -- >>> verify:l16_priority
 -- 2026-12-06 — l16 owner س٢٣: the Nezamy priority window (nzamy_priority_minutes, default 30,
@@ -8827,14 +8830,14 @@ select 'l16 roles: office gate — office_features_locked / office_plan_entitled
                                   to_regprocedure('public.office_plan_entitled(uuid)'),
                                   to_regprocedure('public.solo_lawyer_is_capped(uuid)'))), false)
        and coalesce(pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.solo_lawyer_is_capped(uuid)')), 'office_features_locked') > 0, false)
-       and coalesce(has_function_privilege('authenticated', 'public.my_office_features_locked()', 'EXECUTE')
-                    and not has_function_privilege('anon', 'public.my_office_features_locked()', 'EXECUTE'), false) as ok;
+       and coalesce(has_function_privilege('authenticated', to_regprocedure('public.my_office_features_locked()'), 'EXECUTE')
+                    and not has_function_privilege('anon', to_regprocedure('public.my_office_features_locked()'), 'EXECUTE'), false) as ok;
 select 'l16 roles: cases & clients — free allowance set (0/0 by default), only self-filed cases count (market intake free), both caps wired (run 20261206_70)' as check,
        coalesce((select l.cases >= 0 and l.clients >= 0 from public.solo_lawyer_limits() l), false)
        and coalesce(public.solo_lawyer_case_counts('{"assigned_to":"00000000-0000-0000-0000-000000000001","requester_user_id":"00000000-0000-0000-0000-000000000001","status":"assigned","receiver":"lawyer"}'::jsonb)
                     and not public.solo_lawyer_case_counts('{"assigned_to":"00000000-0000-0000-0000-000000000001","requester_user_id":"00000000-0000-0000-0000-000000000002","status":"assigned","receiver":"lawyer"}'::jsonb), false)
        and coalesce((select count(*) = 1 from pg_catalog.pg_trigger
-                       where tgrelid = 'public.service_requests'::regclass and tgname = 'trg_solo_lawyer_case_cap' and not tgisinternal
+                       where tgrelid = to_regclass('public.service_requests') and tgname = 'trg_solo_lawyer_case_cap' and not tgisinternal
                          and pg_catalog.pg_get_triggerdef(oid) like '%requester_user_id%'), false)
        and (to_regclass('public.lawyer_clients') is null
             or coalesce((select count(*) = 1 from pg_catalog.pg_trigger
@@ -8843,18 +8846,18 @@ select 'l16 roles: 1 GB free storage — setting row, quota trigger on storage.o
        coalesce((select pg_catalog.jsonb_typeof(s.value -> 'gb') = 'number' from public.platform_settings s where s.key = 'free_storage_quota'), false)
        and (to_regclass('storage.objects') is null
             or (coalesce((select count(*) = 1 from pg_catalog.pg_trigger
-                            where tgrelid = 'storage.objects'::regclass and tgname = 'trg_storage_quota_guard' and not tgisinternal), false)
-                and coalesce(has_function_privilege('authenticated', 'public.my_storage_quota()', 'EXECUTE')
-                             and not has_function_privilege('anon', 'public.my_storage_quota()', 'EXECUTE')
-                             and not has_function_privilege('authenticated', 'public.storage_used_bytes(uuid)', 'EXECUTE'), false))) as ok;
+                            where tgrelid = to_regclass('storage.objects') and tgname = 'trg_storage_quota_guard' and not tgisinternal), false)
+                and coalesce(has_function_privilege('authenticated', to_regprocedure('public.my_storage_quota()'), 'EXECUTE')
+                             and not has_function_privilege('anon', to_regprocedure('public.my_storage_quota()'), 'EXECUTE')
+                             and not has_function_privilege('authenticated', to_regprocedure('public.storage_used_bytes(uuid)'), 'EXECUTE'), false))) as ok;
 select 'l16 roles: firm team managers (managing_partner / hr_manager) — 2 policies + guard trigger on firm_members; review switch admits the managing partner (run 20261206_70)' as check,
        coalesce((select count(*) = 2 from pg_catalog.pg_policy
-                  where polrelid = 'public.firm_members'::regclass
+                  where polrelid = to_regclass('public.firm_members')
                     and polname in ('firm_members: team manager can insert', 'firm_members: team manager can update')), false)
        and coalesce((select count(*) = 1 from pg_catalog.pg_trigger
-                       where tgrelid = 'public.firm_members'::regclass and tgname = 'trg_firm_members_manager_guard' and not tgisinternal), false)
-       and coalesce(not has_function_privilege('anon', 'public.firm_team_manager(uuid)', 'EXECUTE')
-                    and not has_function_privilege('authenticated', 'public.firm_members_manager_guard()', 'EXECUTE'), false)
+                       where tgrelid = to_regclass('public.firm_members') and tgname = 'trg_firm_members_manager_guard' and not tgisinternal), false)
+       and coalesce(not has_function_privilege('anon', to_regprocedure('public.firm_team_manager(uuid)'), 'EXECUTE')
+                    and not has_function_privilege('authenticated', to_regprocedure('public.firm_members_manager_guard()'), 'EXECUTE'), false)
        and (to_regprocedure('public.set_firm_public_reviews(boolean)') is null
             or coalesce(pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.set_firm_public_reviews(boolean)')), 'managing_partner') > 0, false)) as ok;
 -- <<< verify:l16_roles
@@ -8922,3 +8925,40 @@ select 'l16 pay: coupon_redeem_open / coupon_redeem_finish are SECURITY DEFINER 
        and coalesce(position('for update' in lower(pg_catalog.pg_get_functiondef(
                       to_regprocedure('public.coupon_redeem_open(uuid,uuid,integer,timestamptz,timestamptz)')))) > 0, false) as ok;
 -- <<< verify:l16_pay
+-- >>> verify:l16_review — the independent review of batch l16
+-- 20261206_95 (new, any time) + the in-place fixes of 20261206_11 / _20 / _70 / _80 (all before the
+-- deploy). Before a file runs, its checks answer ok = false («run …»).
+select 'l16 review: platform_settings is read-only for every session — no write policy, no INSERT/UPDATE/DELETE for anon / authenticated (run 20261206_95)' as check,
+       coalesce(not exists (select 1 from pg_catalog.pg_policy
+                             where polrelid = to_regclass('public.platform_settings') and polcmd <> 'r')
+                and not has_table_privilege('authenticated', to_regclass('public.platform_settings'), 'INSERT')
+                and not has_table_privilege('authenticated', to_regclass('public.platform_settings'), 'UPDATE')
+                and not has_table_privilege('authenticated', to_regclass('public.platform_settings'), 'DELETE')
+                and not has_table_privilege('anon', to_regclass('public.platform_settings'), 'INSERT')
+                and not has_table_privilege('anon', to_regclass('public.platform_settings'), 'UPDATE')
+                and not has_table_privilege('anon', to_regclass('public.platform_settings'), 'DELETE')
+                and has_table_privilege('service_role', to_regclass('public.platform_settings'), 'UPDATE'), false) as ok;
+select 'l16 review: «طلب رفع الحجز» and the file manager test are NULL-safe (a request with no assignee, a file with no owner) (run 20261206_11)' as check,
+       coalesce(position('not coalesce(v_sr.requester_user_id = v_uid or v_sr.assigned_to = v_uid, false)'
+                         in pg_catalog.pg_get_functiondef(to_regprocedure('public.request_attachment_hold_lift(bigint, text)'))) > 0
+                and position('select coalesce(auth.uid() is not null'
+                             in pg_catalog.pg_get_functiondef(to_regprocedure('public.can_manage_attachment(text, uuid)'))) > 0
+                and position('coalesce(public.can_manage_attachment('
+                             in pg_catalog.pg_get_functiondef(to_regprocedure('public.guard_attachment_hold_owner()'))) > 0, false) as ok;
+select 'l16 review: «إدارة المكتب» is matched by plan id (office_plan_ids), never by tier (run 20261206_70)' as check,
+       coalesce(position('''lawyer-pro''' in pg_catalog.pg_get_functiondef(to_regprocedure('public.office_plan_ids()'))) > 0
+                and position('''firm-basic''' in pg_catalog.pg_get_functiondef(to_regprocedure('public.office_plan_ids()'))) > 0
+                and position('consultant-independent' in pg_catalog.pg_get_functiondef(to_regprocedure('public.office_plan_ids()'))) = 0
+                and position('office_plan_ids' in pg_catalog.pg_get_functiondef(to_regprocedure('public.office_plan_entitled(uuid)'))) > 0
+                and position('s.tier' in pg_catalog.pg_get_functiondef(to_regprocedure('public.office_plan_entitled(uuid)'))) = 0, false) as ok;
+select 'l16 review: a team manager''s insert is an invitation; partner / finance / HR roles only by the owner or the managing partner (run 20261206_70)' as check,
+       coalesce(position('v_senior' in pg_catalog.pg_get_functiondef(to_regprocedure('public.firm_members_manager_guard()'))) > 0
+                and position('new.status := ''invited''' in pg_catalog.pg_get_functiondef(to_regprocedure('public.firm_members_manager_guard()'))) > 0, false) as ok;
+select 'l16 review: the automatic suspension lift counts its failed tries (lift_attempts, lift_last_error) (run 20261206_20)' as check,
+       coalesce((select count(*) = 2 from information_schema.columns
+                  where table_schema = 'public' and table_name = 'account_suspension_freezes'
+                    and column_name in ('lift_attempts', 'lift_last_error')), false) as ok;
+select 'l16 review: an account-type conversion puts the licence verification back to pending (run 20261206_80)' as check,
+       coalesce(position('set verification_status = ''pending'''
+                         in pg_catalog.pg_get_functiondef(to_regprocedure('public.admin_change_account_type(uuid,text,text,uuid)'))) > 0, false) as ok;
+-- <<< verify:l16_review
