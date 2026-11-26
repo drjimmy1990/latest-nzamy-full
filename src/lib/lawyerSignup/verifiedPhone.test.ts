@@ -86,7 +86,8 @@ test("R6: the database refusal is recognised only by its own message", () => {
   assert.equal(isVerifiedPhoneDbError({ code: "23514", message: "verified_phone_taken" }), false);
   assert.equal(isVerifiedPhoneDbError(null), false);
   assert.match(VERIFIED_PHONE_APPROVAL_REFUSAL_AR, /الجوال/);
-  assert.match(VERIFIED_PHONE_PROFILE_REFUSAL_AR, /الجوال/);
+  // Owner ٢٣٥ (batch l18): the user's refusal is the one neutral sentence.
+  assert.equal(VERIFIED_PHONE_PROFILE_REFUSAL_AR, "تعذّر استعمال هذا الرقم، استعمل رقمًا آخر أو تواصل معنا");
 });
 
 test("R6: the approval checks before writing and maps the refusal on both profile tables; PATCH /profile maps it", () => {

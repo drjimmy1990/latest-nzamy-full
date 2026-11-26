@@ -19,8 +19,13 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 export const VERIFIED_PHONE_APPROVAL_REFUSAL_AR =
   "لا يمكن الاعتماد: رقم الجوال نفسه مسجّل لحساب آخر موثّق. راجع الحسابين قبل الاعتماد.";
 
-export const VERIFIED_PHONE_PROFILE_REFUSAL_AR =
-  "رقم الجوال هذا مسجّل لحساب آخر موثّق، فلا يمكن استعماله لحسابك. اكتب رقمًا آخر أو تواصل معنا.";
+/**
+ * Owner answer ٢٣٥ (batch l18): the user-facing refusal of a taken number is
+ * one neutral sentence that says nothing about the other account — the same
+ * words as src/lib/phoneOtp/confirmedPhone.ts PHONE_UNUSABLE_AR. (The admin
+ * approval text above stays: an admin may know.)
+ */
+export const VERIFIED_PHONE_PROFILE_REFUSAL_AR = "تعذّر استعمال هذا الرقم، استعمل رقمًا آخر أو تواصل معنا";
 
 /** The database trigger's refusal (20261201_10). */
 export function isVerifiedPhoneDbError(error: { code?: string; message?: string } | null | undefined): boolean {

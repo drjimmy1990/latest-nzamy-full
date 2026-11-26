@@ -34,6 +34,7 @@ import { normalizeCrNumber, isLegalRepCapacity } from "@/app/register/client/com
 import { isAuthUnavailable, authUnavailableResponse, frozenAccountResponse } from "@/lib/auth/apiAuth";
 import { profilePhoneDecision } from "./_phone";
 import { isVerifiedPhoneDbError, VERIFIED_PHONE_PROFILE_REFUSAL_AR } from "@/lib/lawyerSignup/verifiedPhone";
+import { confirmedPhoneTakenElsewhere, PHONE_UNUSABLE_AR } from "@/lib/phoneOtp/confirmedPhone";
 import { licenceFormatIssue, normaliseLicence } from "@/lib/lawyerSignup/licenceFormat";
 import {
   resolveBusinessProfileScope,
@@ -574,6 +575,17 @@ export async function PATCH(request: Request) {
   }
   if (phoneDecision.action === "store") {
     body.phone = phoneDecision.e164;
+    // Owner ٢٣٥ (batch l18): a mobile confirmed on another account is not
+    // taken by this one. Only a CHANGE of number is checked (a form that
+    // re-sends the stored number with other fields saves as before). Service
+    // client: a session cannot see other accounts. An unreadable answer goes
+    // on — the database refuses a second confirmation anyway (20261208_50).
+    const svc = await createServiceClient();
+    const { data: own } = await svc.from("profiles").select("phone").eq("id", user.id).maybeSingle();
+    const ownPhone = (own as { phone?: unknown } | null)?.phone;
+    if (ownPhone !== phoneDecision.e164 && (await confirmedPhoneTakenElsewhere(svc, user.id, phoneDecision.e164)) === true) {
+      return NextResponse.json({ error: PHONE_UNUSABLE_AR, field: "phone" }, { status: 409 });
+    }
   }
 
   if ("show_hourly_rate" in body && typeof body.show_hourly_rate !== "boolean") {

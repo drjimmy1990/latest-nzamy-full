@@ -8,7 +8,8 @@ import { cleanOtpInput } from "@/lib/lawyerSignup/otpCode";
  * Body: { code } — six digits, Arabic-Indic digits accepted.
  * 200 { ok: true, home } · 409 { code: "phone_otp_not_required" } (switch
  * off, an older / staff / test / already-confirmed account) · 400 { reason: "wrong" | "expired" | "locked" |
- * "phone_changed" | "no_phone", error, attemptsLeft? } · 503 unavailable.
+ * "phone_changed" | "no_phone", error, attemptsLeft? } · 409 { reason: "phone_taken" } (owner ٢٣٥: the
+ * number is confirmed on another account — the neutral «تعذّر استعمال هذا الرقم…») · 503 unavailable.
  * A hit stamps profiles.phone_verified_at in the database (phone_otp_verify).
  */
 export const dynamic = "force-dynamic";
@@ -34,7 +35,7 @@ export async function POST(request: NextRequest) {
     }
     const out = await verifyPhoneOtp(gate.svc, gate.user, code);
     if (out.ok) return NextResponse.json(out, { headers: NO_STORE });
-    return NextResponse.json(out, { status: out.reason === "unavailable" ? 503 : 400, headers: NO_STORE });
+    return NextResponse.json(out, { status: out.reason === "unavailable" ? 503 : out.reason === "phone_taken" ? 409 : 400, headers: NO_STORE });
   } catch (err) {
     return phoneOtpFailure("verify", err);
   }
