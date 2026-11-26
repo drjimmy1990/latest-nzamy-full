@@ -102,7 +102,9 @@ stable
 security definer
 set search_path = ''
 as $$
-  select auth.uid() is not null and (
+  -- coalesce: a file with no owner (p_owner NULL) must answer false, never
+  -- NULL — the guard below tests `not v_manage`, and NOT NULL raises nothing.
+  select coalesce(auth.uid() is not null and (
     p_owner = auth.uid()
     or (p_request is not null
         and exists (select 1 from public.service_requests sr
@@ -122,7 +124,7 @@ as $$
                                                 and m.status = 'active')))
                        ))
         and public.can_supervise_case_records(p_request))
-  );
+  ), false);
 $$;
 
 comment on function public.can_manage_attachment(text, uuid) is
@@ -142,7 +144,7 @@ begin
     return new;
   end if;
 
-  v_manage := public.can_manage_attachment(old.request_id, old.owner_user_id);
+  v_manage := coalesce(public.can_manage_attachment(old.request_id, old.owner_user_id), false);
 
   if (new.deleted_at is distinct from old.deleted_at or new.deleted_by is distinct from old.deleted_by)
      and not v_manage then
@@ -288,7 +290,10 @@ begin
   select sr.id, sr.title, sr.requester_user_id, sr.assigned_to
     into v_sr
     from public.service_requests sr where sr.id = v_doc.request_id;
-  if not found or not (v_sr.requester_user_id = v_uid or v_sr.assigned_to = v_uid) then
+  -- coalesce: on a request with no assignee `assigned_to = v_uid` is NULL and
+  -- NOT (false OR NULL) is NULL, which would let a stranger through. A
+  -- non-party gets exactly the answer a missing file gets, before any other check.
+  if not found or not coalesce(v_sr.requester_user_id = v_uid or v_sr.assigned_to = v_uid, false) then
     -- not a party: answered as "no such file", never "exists but not yours"
     raise exception 'request_attachment_hold_lift: no such file' using errcode = 'P0002';
   end if;
@@ -413,6 +418,13 @@ begin
      or not coalesce((select prosecdef and proconfig @> array['search_path=""'] from pg_catalog.pg_proc
                     where oid = 'public.can_manage_attachment(text, uuid)'::regprocedure), false) then
     missing := missing || ' the hold-lift request / can_manage_attachment functions are not SECURITY DEFINER with an empty search_path;';
+  end if;
+  -- l16 review: the NULL-safe party test and the NULL-safe manage answer
+  if coalesce(pg_catalog.pg_get_functiondef('public.request_attachment_hold_lift(bigint, text)'::regprocedure), '')
+       !~ 'not coalesce\(v_sr\.requester_user_id = v_uid or v_sr\.assigned_to = v_uid, false\)'
+     or coalesce(pg_catalog.pg_get_functiondef('public.can_manage_attachment(text, uuid)'::regprocedure), '')
+       !~ 'select coalesce\(auth\.uid\(\) is not null' then
+    missing := missing || ' the party / manage tests are not NULL-safe (a request with no assignee lets a stranger in);';
   end if;
   if exists (select 1 from pg_roles where rolname = 'authenticated')
      and (has_table_privilege('authenticated', 'public.attachment_hold_lift_requests', 'INSERT')

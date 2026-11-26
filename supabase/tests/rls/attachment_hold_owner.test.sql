@@ -24,6 +24,9 @@
 -- NEGATIVE CONTROL: the chain without the two 20261206_11 lines →
 --   "T0 FAIL: trg_03_attachments_hold_owner is missing"; with the T0 block
 --   removed → "T2 FAIL: the lawyer lifted the client's hold".
+--   l16 review: with the pre-review 20261206_11 (no coalesce) → "T9 FAIL: a
+--   stranger filed a hold-lift request on a request with no assignee"; with T9
+--   removed → "T9b FAIL: the client binned a file with no owner".
 --
 -- People:
 --   C  client, filer of req-c (solo, assigned to L) and of case-k (firm F, lead L2)
@@ -380,6 +383,63 @@ begin
   get diagnostics n = row_count;
   if n <> 0 then raise exception 'T8 FAIL: a stranger changed % rows', n; end if;
   raise notice 'T8 PASS: a stranger updates no row (RLS unchanged)';
+end $$;
+reset role;
+
+-- ── T9 (l16 review) NULL-safe: a request with no assignee, a file with no owner
+-- Fixtures as postgres: req-u is C's request nobody holds yet; 910 is C's file
+-- on it, on hold; 909 (on hold) and 911 (not held) are owner-less files on req-c.
+insert into public.service_requests (id, requester_user_id, assigned_to, title, receiver, firm_id) values
+  ('req-u', 'c0000000-0000-0000-0000-00000000000c', null, 'طلب C بلا محامٍ', 'lawyer', null);
+insert into public.attachments (id, request_id, owner_user_id, file_name, storage_path, mime_type, size_bytes, legal_hold, hold_reason) values
+  (909, 'req-c', null, 'ملف بلا مالك.pdf', 'orphan/9-x.pdf', 'application/pdf', 900, true, 'حفظ'),
+  (911, 'req-c', null, 'ملف آخر بلا مالك.pdf', 'orphan/11-x.pdf', 'application/pdf', 1100, false, null),
+  (910, 'req-u', 'c0000000-0000-0000-0000-00000000000c', 'ملف C.pdf', 'c0000000-0000-0000-0000-00000000000c/10-u.pdf', 'application/pdf', 1000, true, 'حفظ');
+set role authenticated;
+select set_config('test.uid', '80000000-0000-0000-0000-00000000008a', false);
+do $$
+declare
+  st_unassigned text;
+  st_missing    text;
+begin
+  begin
+    perform public.request_attachment_hold_lift(910, 'افتحوه');
+    raise exception 'T9 FAIL: a stranger filed a hold-lift request on a request with no assignee';
+  exception when others then
+    if sqlerrm like 'T9 FAIL%' then raise; end if;
+    st_unassigned := sqlstate || ' ' || sqlerrm;
+  end;
+  begin
+    perform public.request_attachment_hold_lift(999999, 'افتحوه');
+  exception when others then
+    st_missing := sqlstate || ' ' || sqlerrm;
+  end;
+  if st_unassigned is distinct from st_missing then
+    raise exception 'T9 FAIL: a stranger can tell a real file from a missing one (% / %)', st_unassigned, st_missing;
+  end if;
+  if exists (select 1 from public.attachment_hold_lift_requests where attachment_id = 910) then
+    raise exception 'T9 FAIL: a request row was written';
+  end if;
+  raise notice 'T9 PASS: a stranger on an unassigned request gets the «no such file» answer (%)', st_missing;
+end $$;
+-- the client (a party, not a supervisor) cannot bin or lift the owner-less file
+select set_config('test.uid', 'c0000000-0000-0000-0000-00000000000c', false);
+do $$
+begin
+  begin
+    update public.attachments set deleted_at = now(), deleted_by = auth.uid() where id = 911;
+    raise exception 'T9b FAIL: the client binned a file with no owner';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    update public.attachments set legal_hold = false, hold_reason = null where id = 909;
+    raise exception 'T9b FAIL: the client lifted the hold on a file with no owner';
+  exception when insufficient_privilege then null;
+  end;
+  if public.can_manage_attachment('req-c', null) is null then
+    raise exception 'T9b FAIL: can_manage_attachment answers NULL';
+  end if;
+  raise notice 'T9b PASS: a party that does not supervise neither bins nor lifts an owner-less file; can_manage_attachment never answers NULL';
 end $$;
 reset role;
 
