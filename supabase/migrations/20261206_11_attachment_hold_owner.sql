@@ -15,13 +15,15 @@
 -- "attachments owner update"; this file narrows WHAT each of them may change)
 --   1. public.can_manage_attachment(p_request text, p_owner uuid) → boolean,
 --      SECURITY DEFINER, authenticated: the caller manages the file when he
---      owns it (owner_user_id = auth.uid()), or — a team file only — when its
---      owner is NEITHER party of its request (not requester_user_id, not
---      assigned_to) and the caller supervises the case
---      (public.can_supervise_case_records, 20261025_51: the firm owner / the
---      active-member lead of a firm case; the assignee of a solo case). So a
---      case lead keeps managing what a trainee uploaded, and nobody manages
---      the other PARTY's file.
+--      owns it (owner_user_id = auth.uid()), or when the caller supervises
+--      the case (public.can_supervise_case_records, 20261025_51: the firm
+--      owner / the active-member lead of a firm case; the assignee of a solo
+--      case) AND the file is not the other side's: its owner is neither party
+--      of the request (a team member's upload), or — on a firm case — its
+--      owner is the firm's owner or an ACTIVE member of that firm (the lead's
+--      own files, a colleague who filed the case). So firm supervision of the
+--      firm's own files is unchanged, and nobody manages the client's (or
+--      another firm's) file.
 --   2. trg_03_attachments_hold_owner — BEFORE UPDATE, SECURITY INVOKER (the
 --      20261026_65 / 20261203_80 pattern: postgres / service_role /
 --      supabase_admin pass), sorted after trg_02_ and before
@@ -105,14 +107,26 @@ as $$
     or (p_request is not null
         and exists (select 1 from public.service_requests sr
                      where sr.id = p_request
-                       and p_owner is distinct from sr.requester_user_id
-                       and p_owner is distinct from sr.assigned_to)
+                       and (
+                         -- a third person's file (neither party of the request)
+                         (p_owner is distinct from sr.requester_user_id
+                          and p_owner is distinct from sr.assigned_to)
+                         -- or, on a FIRM case, a file of the firm's own side:
+                         -- its owner or an active member of THAT firm (the
+                         -- client, or a lawyer of another firm, is neither)
+                         or (sr.firm_id is not null and p_owner is not null
+                             and (exists (select 1 from public.firm_profiles fp
+                                           where fp.id = sr.firm_id and fp.owner_user_id = p_owner)
+                                  or exists (select 1 from public.firm_members m
+                                              where m.firm_id = sr.firm_id and m.user_id = p_owner
+                                                and m.status = 'active')))
+                       ))
         and public.can_supervise_case_records(p_request))
   );
 $$;
 
 comment on function public.can_manage_attachment(text, uuid) is
-  'س٢٠٣ (20261206_11): the caller may lift a hold on, bin or restore this file — its owner, or (a team file whose owner is neither party of the request) a supervisor of the case. Never the other party.';
+  'س٢٠٣ (20261206_11): the caller may lift a hold on, bin or restore this file — its owner, or a supervisor of the case when the file is not the other side''s (owner neither party, or on a firm case the firm owner / an active member of that firm). Never the client''s or another firm''s file.';
 
 -- ── 2. the hold / bin guard ──────────────────────────────────────────────────
 create or replace function public.guard_attachment_hold_owner()

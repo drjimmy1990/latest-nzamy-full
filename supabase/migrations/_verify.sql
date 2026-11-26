@@ -8705,9 +8705,20 @@ select 'l16 س٢١٦: the break-glass grant table is closed to sessions, guarded
                                       to_regprocedure('public.restricted_case_access_revoke(uuid)'),
                                       to_regprocedure('public.restricted_case_break_glass_read(text)'))), false)
        and not coalesce(has_function_privilege('authenticated', to_regprocedure('public.restricted_case_grant_active(text)'), 'EXECUTE'), true) as ok;
-select 'l16 س٢١٦ (OPS): two super admins exist, so a break-glass request can get its second approval (C54 — WARN-level: false only means nobody can approve yet)' as check,
-       coalesce((select count(*) >= 2 from public.platform_staff ps join public.profiles p on p.id = ps.user_id
-                  where ps.staff_role = 'super_admin' and p.user_type = 'admin'), false) as ok;
+-- OPS (C54), a WARNING only: with fewer than two super admins nobody can give
+-- the second approval yet.
+do $$
+declare n bigint;
+begin
+  if to_regclass('public.platform_staff') is null then
+    return;
+  end if;
+  execute 'select count(*) from public.platform_staff ps join public.profiles p on p.id = ps.user_id
+            where ps.staff_role = ''super_admin'' and p.user_type = ''admin''' into n;
+  if n < 2 then
+    raise warning '_verify: l16 س٢١٦ — fewer than two super_admin staff rows: a break-glass request cannot get its second approval until a second super admin is named (C54)';
+  end if;
+end $$;
 -- <<< verify:l16_breakglass
 -- >>> verify:l16_d54 — supabase/tests/rls/activity_events_firm_insert.test.sql
 -- l16 D-54: a session writes an activity row naming a firm only as its owner or

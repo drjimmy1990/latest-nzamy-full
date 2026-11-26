@@ -57,14 +57,18 @@ insert into public.firm_members (firm_id, user_id, role, status, accepted_at) va
 insert into public.service_requests (id, requester_user_id, assigned_to, title, receiver, firm_id) values
   ('req-c',  'c0000000-0000-0000-0000-00000000000c', '10000000-0000-0000-0000-00000000001a', 'طلب C', 'lawyer', null),
   ('case-k', 'c0000000-0000-0000-0000-00000000000c', '20000000-0000-0000-0000-00000000002b', 'قضية C لدى المكتب', 'lawyer', 'ffffffff-0000-0000-0000-0000000000f1'),
-  ('req-ai', 'c0000000-0000-0000-0000-00000000000c', 'ad000000-0000-0000-0000-0000000000ad', 'طلب ذكاء', 'ai_workspace', null);
+  ('req-ai', 'c0000000-0000-0000-0000-00000000000c', 'ad000000-0000-0000-0000-0000000000ad', 'طلب ذكاء', 'ai_workspace', null),
+  -- self-filed firm case: T (member) filed it, L2 leads it
+  ('case-s', '70000000-0000-0000-0000-00000000007e', '20000000-0000-0000-0000-00000000002b', 'قضية المكتب الذاتية', 'lawyer', 'ffffffff-0000-0000-0000-0000000000f1');
 -- Fixtures written as postgres.
 insert into public.attachments (id, request_id, owner_user_id, file_name, storage_path, mime_type, size_bytes) values
   (902, 'req-c',  'c0000000-0000-0000-0000-00000000000c', 'دليل C.pdf',  'c0000000-0000-0000-0000-00000000000c/2-case.pdf', 'application/pdf', 200),
   (903, 'req-c',  '10000000-0000-0000-0000-00000000001a', 'مذكرة L.pdf', '10000000-0000-0000-0000-00000000001a/3-memo.pdf', 'application/pdf', 300),
   (904, 'case-k', '70000000-0000-0000-0000-00000000007e', 'مسودة T.pdf', '70000000-0000-0000-0000-00000000007e/4-draft.pdf', 'application/pdf', 400),
   (905, 'case-k', 'c0000000-0000-0000-0000-00000000000c', 'عقد C.pdf',   'c0000000-0000-0000-0000-00000000000c/5-k.pdf', 'application/pdf', 500),
-  (906, 'req-ai', 'c0000000-0000-0000-0000-00000000000c', 'ملف C.pdf',   'c0000000-0000-0000-0000-00000000000c/6-ai.pdf', 'application/pdf', 600);
+  (906, 'req-ai', 'c0000000-0000-0000-0000-00000000000c', 'ملف C.pdf',   'c0000000-0000-0000-0000-00000000000c/6-ai.pdf', 'application/pdf', 600),
+  (907, 'case-k', '20000000-0000-0000-0000-00000000002b', 'مذكرة L2.pdf', '20000000-0000-0000-0000-00000000002b/7-l2.pdf', 'application/pdf', 700),
+  (908, 'case-s', '70000000-0000-0000-0000-00000000007e', 'لائحة T.pdf', '70000000-0000-0000-0000-00000000007e/8-t.pdf', 'application/pdf', 800);
 
 -- ── T0 the trigger ───────────────────────────────────────────────────────────
 do $$
@@ -302,6 +306,38 @@ begin
     raise exception 'T6c FAIL: the client could not place a hold on the firm''s file';
   end if;
   raise notice 'T6c PASS: the client places a hold on, but cannot bin, the firm''s file';
+end $$;
+
+-- ── T6d firm access to the firm's OWN files is unchanged ─────────────────────
+-- (the lead's own file on a client case; a colleague-filer's file on a
+-- self-filed firm case)
+reset role;
+update public.attachments set deleted_at = now(), deleted_by = '20000000-0000-0000-0000-00000000002b' where id = 907;
+update public.attachments set legal_hold = true, hold_reason = 'حجز المتدرب' where id = 908;
+set role authenticated;
+select set_config('test.uid', '0f000000-0000-0000-0000-0000000000f0', false);
+do $$
+declare ok boolean;
+begin
+  select public.restore_case_document(907) into ok;
+  if not ok then raise exception 'T6d FAIL: the firm owner could not restore the lead''s archived file'; end if;
+  raise notice 'T6d PASS: the firm owner restores the lead''s own archived file';
+end $$;
+select set_config('test.uid', '20000000-0000-0000-0000-00000000002b', false);
+do $$
+begin
+  update public.attachments set legal_hold = false, hold_reason = null where id = 908;
+  if (select legal_hold from public.attachments where id = 908) then
+    raise exception 'T6e FAIL: the lead could not lift the hold on the filer-colleague''s file';
+  end if;
+  begin
+    update public.attachments set legal_hold = false, hold_reason = null where id = 905;
+    if (select legal_hold from public.attachments where id = 905) = false then
+      raise exception 'T6e FAIL: the lead lifted the client''s hold';
+    end if;
+  exception when insufficient_privilege then null;
+  end;
+  raise notice 'T6e PASS: on a self-filed firm case the lead manages the filer-colleague''s file; still never the client''s';
 end $$;
 
 -- ── T7 admin: lifts (session as a party, or service role), never bins ───────
