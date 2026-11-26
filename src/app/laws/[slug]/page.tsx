@@ -12,6 +12,7 @@ import Footer from "@/components/Footer";
 import { useTheme } from "@/components/ThemeProvider";
 import Link from "next/link";
 import { useUser } from "@/hooks/useUser";
+import { useToolUsable } from "@/hooks/useToolUsable";
 import { isSupabaseMode } from "@/lib/services/api";
 import { getPreferences, patchPreferences, type RecentSession } from "@/lib/services/preferencesService";
 import { recordLawOpened, type ReadingActivity } from "@/lib/services/readingActivityStats";
@@ -171,6 +172,9 @@ function LawSystemPageContent() {
   const [showIndexSheet, setShowIndexSheet] = useState(false);
   const [activeId,    setActiveId]    = useState<string>("art-1");
   const [explainArticle, setExplainArticle] = useState<LawArticle | null>(null);
+  // l16 review: may this reader run «اشرح لي» (asked once for the whole page; a
+  // card shows the price only when the answer is yes)
+  const explainUsable = useToolUsable("library-assistant");
   // Starts empty. This used to default to a bundled COMPANIES_LAW (deleted, q390), which meant
   // every law page — whichever one you opened — briefly rendered نظام الشركات
   // while its own data loaded. The `if (!law)` guard below the loading/error
@@ -1670,6 +1674,7 @@ function LawSystemPageContent() {
                       isActive={activeId === article.id}
                       showPaywall={openPaywall}
                       onExplain={setExplainArticle}
+                      explainUsable={explainUsable === true}
                       isRTL={isRTL}
                       fontClass={fontClass}
                       isReadingMode={isReadingMode}
@@ -1699,6 +1704,7 @@ function LawSystemPageContent() {
                     isActive={activeId === article.id}
                     showPaywall={openPaywall}
                     onExplain={setExplainArticle}
+                    explainUsable={explainUsable === true}
                     isRTL={isRTL}
                     fontClass={fontClass}
                     isReadingMode={isReadingMode}

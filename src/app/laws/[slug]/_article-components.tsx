@@ -791,7 +791,7 @@ export function RightPanel({ article, isDark, cart, onTogglePrinciple, onToggleP
 }
 
 // ─── Article Block ─────────────────────────────────────────────────────────────
-export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddArticle, onRemoveArticle, onAddExecReg, onRemoveExecReg, onActive, isActive, showPaywall, onExplain, isRTL = true, fontClass = "text-[13px]", isReadingMode = false, viewMode = "all", viewerHasFullAccess, showAmendmentSource = false }: {
+export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddArticle, onRemoveArticle, onAddExecReg, onRemoveExecReg, onActive, isActive, showPaywall, onExplain, explainUsable = false, isRTL = true, fontClass = "text-[13px]", isReadingMode = false, viewMode = "all", viewerHasFullAccess, showAmendmentSource = false }: {
   article: LawArticle; lawName: string;
   /** The document's own kind, straight from `library.laws.type`. */
   lawType?: string;
@@ -805,6 +805,12 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
   isActive: boolean;
   showPaywall: () => void;
   onExplain: (a: LawArticle) => void;
+  /**
+   * l16 review: may this reader run «اشرح لي» now (the page asks the server
+   * once — useToolUsable — and hands every card the answer). The price is
+   * shown on the button only when true.
+   */
+  explainUsable?: boolean;
   isRTL?: boolean;
   fontClass?: string; // حجم الخط: text-[13px] | text-[15px] | text-[17px]
   isReadingMode?: boolean;
@@ -969,6 +975,10 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
 
   const showExplainBtn = !isRepealed && (viewMode !== "regulation" || !!mergedReg);
   const explainPrice = aiToolPriceText("library-assistant", isRTL ? "ar" : "en");
+  // l16 review: a locked article opens the paywall, not a paid explanation of
+  // text the reader may not read; the price only where the tool can run.
+  const showExplainPrice = explainUsable && !isLocked;
+  const onExplainClick = () => (isLocked ? showPaywall() : onExplain(article));
   const mainInCart = viewMode === "regulation" ? regInCart : inCart;
   const mainOnToggleCart = () => {
     if (viewMode === "regulation") {
@@ -1096,14 +1106,14 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
             {/* E-20 (batch l16): the window explains at once and that costs points — the price is on the button. */}
             {showExplainBtn && (
               <button
-                onClick={() => onExplain(article)}
-                aria-label={isRTL ? `اشرح لي — ${explainPrice}` : `Explain — ${explainPrice}`}
-                title={isRTL ? `يبدأ الشرح فور الضغط، ${explainPrice}` : `Starts at once, ${explainPrice}`}
+                onClick={onExplainClick}
+                aria-label={showExplainPrice ? (isRTL ? `اشرح لي — ${explainPrice}` : `Explain — ${explainPrice}`) : (isRTL ? "اشرح لي" : "Explain")}
+                title={showExplainPrice ? (isRTL ? `يبدأ الشرح فور الضغط، ${explainPrice}` : `Starts at once, ${explainPrice}`) : (isRTL ? "اشرح لي" : "Explain")}
                 className={`flex items-center gap-1.5 min-h-11 sm:min-h-0 px-2.5 py-1 rounded-lg transition text-[10px] font-bold flex-shrink-0 ${isDark ? "bg-[#C8A762]/10 text-[#C8A762] hover:bg-[#C8A762]/20" : "bg-amber-50 text-amber-700 hover:bg-amber-100"}`}
               >
                 <Sparkle size={12} weight="duotone" />
                 {isRTL ? "اشرح لي" : "Explain"}
-                <span className="font-semibold opacity-80">· {explainPrice}</span>
+                {showExplainPrice && <span className="font-semibold opacity-80">· {explainPrice}</span>}
               </button>
             )}
 

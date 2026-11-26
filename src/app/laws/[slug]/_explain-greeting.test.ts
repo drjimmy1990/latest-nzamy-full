@@ -88,5 +88,49 @@ test("B-16 / E-20 (batch l16): sent once per opening, never for a guest or a swi
   // …and on the button that opens it.
   const reader = readFileSync(join(import.meta.dirname, "_article-components.tsx"), "utf8");
   assert.match(reader, /aiToolPriceText\("library-assistant", isRTL \? "ar" : "en"\)/);
-  assert.match(reader, /\{isRTL \? "اشرح لي" : "Explain"\}\s*<span className="font-semibold opacity-80">· \{explainPrice\}<\/span>/);
+  // l16 review: the price only where the tool can run, never on a locked article; a locked one opens the paywall
+  assert.match(reader, /\{isRTL \? "اشرح لي" : "Explain"\}\s*\{showExplainPrice && <span className="font-semibold opacity-80">· \{explainPrice\}<\/span>\}/);
+  assert.match(reader, /const showExplainPrice = explainUsable && !isLocked;/);
+  assert.match(reader, /const onExplainClick = \(\) => \(isLocked \? showPaywall\(\) : onExplain\(article\)\);/);
+  assert.match(reader, /onClick=\{onExplainClick\}/);
+  const page = readFileSync(join(import.meta.dirname, "page.tsx"), "utf8");
+  assert.match(page, /const explainUsable = useToolUsable\("library-assistant"\);/);
+  assert.equal((page.match(/explainUsable=\{explainUsable === true\}/g) ?? []).length, 2, "both card lists get the one answer");
+  assert.match(body, /\{usable === true && \(/, "the window's header names the price only when the tool runs");
+});
+
+test("l16 review: «اشرح لي» keeps the last answer per article — re-opening shows it, a closed window keeps its paid answer", () => {
+  const modal = readFileSync(join(import.meta.dirname, "_ai-components.tsx"), "utf8").replace(/\r\n/g, "\n");
+  const start = modal.indexOf("export function ArticleExplainModal");
+  const body = modal.slice(start, modal.indexOf("// ─── Community Question Modal", start));
+  const effect = body.slice(body.indexOf("useEffect(() => {\n    if (autoSentRef.current"), body.indexOf("}, [user.loading, user.isLoggedIn, usable]);"));
+  // the kept session is read before anything is sent, and then nothing is sent
+  const keptAt = effect.indexOf("const kept = sessionKey ? explainSession<AIMessage>(sessionKey) : null;");
+  const sendAt = effect.indexOf("void handleSend(");
+  assert.ok(keptAt > -1 && keptAt < sendAt);
+  const restore = effect.slice(keptAt, effect.indexOf("if (usable === null) return;"));
+  assert.match(restore, /autoSentRef\.current = true;/);
+  assert.doesNotMatch(restore, /handleSend\(/);
+  // the answer is written to the session whether or not the window is still open; setMsgs only while mounted
+  assert.match(body, /if \(session && sessionKey && !answer\.refused\) \{\n\s*session\.msgs = \[\.\.\.session\.msgs, \{ role: "ai", text: reply, action, cites \}\];/);
+  assert.match(body, /saveExplainSession\(sessionKey, session\);/);
+  assert.match(body, /if \(mountedRef\.current\) setMsgs\(m => \[\.\.\.m, \{ role: "ai", text: reply, action, cites \}\]\);/);
+  // keyed by the signed-in user and the article
+  assert.match(body, /const sessionKey = signedIn \? explainSessionKey\(user\.userId, article\.id\) : null;/);
+});
+
+test("l16 review: the explain session store", async () => {
+  const { explainSession, explainSessionKey, saveExplainSession, resetExplainSessionsForTest } = await import("./_explain-session.ts");
+  assert.equal(explainSessionKey(null, "a-1"), null, "a guest keeps nothing");
+  assert.equal(explainSessionKey("u-1", ""), null);
+  const key = explainSessionKey("u-1", "a-1")!;
+  assert.notEqual(key, explainSessionKey("u-2", "a-1"), "another account never sees it");
+  const s = explainSession<{ role: string; text: string }>(key);
+  assert.deepEqual([s.msgs, s.conversationId, s.pending], [[], null, null]);
+  s.msgs = [{ role: "user", text: "q" }, { role: "ai", text: "a" }];
+  s.conversationId = "c-1";
+  saveExplainSession(key, s); // no sessionStorage under node: memory only, never throws
+  assert.equal(explainSession(key), s, "the same session comes back");
+  resetExplainSessionsForTest();
+  assert.deepEqual(explainSession(key).msgs, []);
 });

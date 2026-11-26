@@ -15,6 +15,7 @@ import { useToolUsable } from "@/hooks/useToolUsable";
 import { aiToolPriceText } from "@/lib/ai/toolPointsDisplay";
 import LibraryPointsLowNotice from "@/components/library/LibraryPointsLowNotice";
 import { explainRequest, explainSubtitle, spokenArticle } from "./_explain-greeting";
+import { explainSession, explainSessionKey, saveExplainSession, type ExplainSession } from "./_explain-session";
 import { asCitations, CitedText, SourceList, type Citation } from "@/components/ai/CitedAnswer";
 import { useUser } from "@/hooks/useUser";
 import { createCommunityPost } from "@/lib/services/communityService";
@@ -354,6 +355,15 @@ export function ArticleExplainModal({ article, isDark, onClose, isRTL = true, la
   const [usable, setUsable] = useState<boolean | null>(null);
   const onGate = useCallback((answer: boolean) => setUsable(answer), []);
   const signedIn = !user.loading && user.isLoggedIn;
+  // l16 review: the last answer per article is kept for the session
+  // (_explain-session.ts) — a re-opening shows it, and a window closed while a
+  // question runs gets its answer on the next opening. No new charge.
+  const sessionKey = signedIn ? explainSessionKey(user.userId, article.id) : null;
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
 
   const [isRecording, setIsRecording] = useState(false);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
@@ -388,6 +398,14 @@ export function ArticleExplainModal({ article, isDark, onClose, isRTL = true, la
     if (!query || sendingRef.current) return;
     sendingRef.current = true;
     setInput("");
+    const session: ExplainSession<AIMessage> | null = sessionKey ? explainSession<AIMessage>(sessionKey) : null;
+    let settle: () => void = () => {};
+    const kept = session ? session.msgs : [];
+    let answered = false;
+    if (session) {
+      session.msgs = [...session.msgs, { role: "user", text: query }];
+      session.pending = new Promise<void>((resolve) => { settle = resolve; });
+    }
     setMsgs(m => [...m, { role: "user", text: query }]);
     setLoading(true);
     try {
@@ -403,11 +421,31 @@ export function ArticleExplainModal({ article, isDark, onClose, isRTL = true, la
       const reply = answer.text;
       const action = answer.action;
       const cites = asCitations(answer.citations);
-      setMsgs(m => [...m, { role: "ai", text: reply, action, cites }]);
+      // kept even if the window was closed meanwhile: the answer is paid for.
+      // A refusal (no points, tool off, an error) is not kept — the next
+      // opening asks again.
+      if (session && sessionKey && !answer.refused) {
+        session.msgs = [...session.msgs, { role: "ai", text: reply, action, cites }];
+        session.conversationId = conversationRef.current;
+        session.refusal = null;
+        saveExplainSession(sessionKey, session);
+        answered = true;
+      } else if (session) {
+        // shown once to a window re-opened while this question ran
+        session.refusal = { role: "ai", text: reply, action };
+      }
+      if (mountedRef.current) setMsgs(m => [...m, { role: "ai", text: reply, action, cites }]);
     } finally {
       sendingRef.current = false;
-      setLoading(false);
-      setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
+      if (session) {
+        if (!answered) session.msgs = kept;
+        session.pending = null;
+      }
+      settle();
+      if (mountedRef.current) {
+        setLoading(false);
+        setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
+      }
     }
   };
 
@@ -418,6 +456,25 @@ export function ArticleExplainModal({ article, isDark, onClose, isRTL = true, la
       autoSentRef.current = true;
       const refusal = libraryAiRefusal(401, window.location.pathname + window.location.search);
       setMsgs([{ role: "ai", text: refusal?.text ?? "", action: refusal?.action }]);
+      return;
+    }
+    // l16 review: this article was already explained in this session — show
+    // it (or wait for the answer still in flight); nothing is sent again
+    const kept = sessionKey ? explainSession<AIMessage>(sessionKey) : null;
+    if (kept && (kept.msgs.length > 0 || kept.pending)) {
+      autoSentRef.current = true;
+      conversationRef.current = kept.conversationId;
+      setMsgs(kept.msgs);
+      if (kept.pending) {
+        sendingRef.current = true;
+        setLoading(true);
+        void kept.pending.then(() => {
+          sendingRef.current = false;
+          if (!mountedRef.current) return;
+          setMsgs(kept.msgs.length > 0 ? kept.msgs : kept.refusal ? [kept.refusal] : []);
+          setLoading(false);
+        });
+      }
       return;
     }
     if (usable === null) return;
@@ -444,9 +501,11 @@ export function ArticleExplainModal({ article, isDark, onClose, isRTL = true, la
           <div className="flex-1 mt-0.5 min-w-0">
             <p className={`text-[14px] font-bold ${isDark ? "text-zinc-100" : "text-zinc-800"}`}>{isRTL ? "اشرح لي" : "Explain"} — {isRTL ? spokenArticle(article.num) : article.num}</p>
             {subtitle && <p className={`text-[11px] mt-0.5 line-clamp-1 ${isDark ? "text-zinc-500" : "text-slate-500"}`}>{subtitle}</p>}
-            <p className={`text-[10.5px] mt-0.5 ${isDark ? "text-zinc-500" : "text-slate-500"}`}>
-              {isRTL ? `${aiToolPriceText(EXPLAIN_TOOL, "ar")} لكل سؤال، ويبدأ الشرح فور فتح النافذة` : `${aiToolPriceText(EXPLAIN_TOOL, "en")} a question; the explanation starts as the window opens`}
-            </p>
+            {usable === true && (
+              <p className={`text-[10.5px] mt-0.5 ${isDark ? "text-zinc-500" : "text-slate-500"}`}>
+                {isRTL ? `${aiToolPriceText(EXPLAIN_TOOL, "ar")} لكل سؤال، ويبدأ الشرح فور فتح النافذة` : `${aiToolPriceText(EXPLAIN_TOOL, "en")} a question; the explanation starts as the window opens`}
+              </p>
+            )}
           </div>
           <button onClick={onClose} className={`flex-shrink-0 p-2 rounded-xl transition ${isDark ? "hover:bg-white/[0.06] text-zinc-400" : "hover:bg-slate-100 text-slate-500"}`}>
             <X size={16} />
