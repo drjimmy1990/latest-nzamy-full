@@ -788,7 +788,15 @@ export default function LoginPage() {
                     className="mb-4 flex items-center gap-2 rounded-xl border border-red-200 dark:border-red-900/40 bg-red-50 dark:bg-red-900/20 px-4 py-3 text-[13px] font-medium text-red-600 dark:text-red-400"
                   >
                     <Warning size={16} weight="fill" className="flex-shrink-0" />
-                    {error}
+                    <span>
+                      {error}
+                      {/* Owner س٢١٥ (l16): a suspended account's way to its end time and its appeal. */}
+                      {error === translateAuthError({ code: "user_banned", status: 403, message: "User is banned" }, { context: "login", isAr }) && (
+                        <a href="/account-suspended" className="ms-1 font-bold underline">
+                          {isAr ? "تقديم اعتراض على الإيقاف" : "Appeal the suspension"}
+                        </a>
+                      )}
+                    </span>
                   </motion.div>
                 )}
 

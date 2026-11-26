@@ -59,7 +59,8 @@ test("the new columns are not named in the lawyer select (deploy-order rule)", (
 });
 
 test("the admin gate still runs before the queue is read", () => {
-  const gate = src.indexOf('profile.user_type !== "admin"');
+  // l16 (C34): the staff-role gate (every staff role may read), not the bare user_type.
+  const gate = src.indexOf('requireStaff("read")');
   assert.ok(gate > -1);
   assert.ok(gate < src.indexOf("createServiceClient()"));
   assert.ok(gate < src.indexOf("createSignedUrl("));

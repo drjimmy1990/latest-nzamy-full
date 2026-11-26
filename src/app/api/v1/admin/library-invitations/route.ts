@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { assertRole } from "@/lib/auth/assertRole";
 import { requireStaff } from "@/lib/access-control";
 import { logAdminAction } from "@/lib/auth/adminAudit";
 import { createServiceClient } from "@/lib/supabase/server";
@@ -32,7 +31,8 @@ const GRANT_DAYS_MIGRATION_MISSING_AR = "شغّل ملف الترحيل 20261103
  * code then shows 30 days, which is what it gives).
  */
 export async function GET() {
-  const auth = await assertRole(["admin"]);
+  // l16 (C35): the staff-role gate (every role may read), not admin-only.
+  const auth = await requireStaff("read");
   if (!auth.ok) return auth.response;
 
   const admin = await createServiceClient();

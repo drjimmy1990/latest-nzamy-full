@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { dbErrorJson } from "@/lib/api/dbError";
-import { createClient, createServiceClient } from "@/lib/supabase/server";
+import { requireStaff } from "@/lib/access-control";
+import { createServiceClient } from "@/lib/supabase/server";
 import type { VerificationStatus } from "@/types/database";
-import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
 import { toPracticeKind } from "@/lib/auth/practiceKind";
 import { isOwnLicencePath } from "@/lib/storagePathOwnership";
 import { registryMatchesByUser, type RegistryMatch } from "@/lib/registry/registryMatch";
@@ -17,7 +17,7 @@ import { readSignupViews } from "@/lib/lawyerSignup/adminViewServer";
  *   - limit (default: 50)
  *   - offset (default: 0)
  *
- * Requires: authenticated admin user
+ * Requires: a staff role that may read (requireStaff("read"), l16 C34)
  *
  * Each lawyer row also carries (owner answer ٢١٩):
  *   - licenceImageUrl — a 10-minute signed link to the licence image the lawyer
@@ -27,28 +27,9 @@ import { readSignupViews } from "@/lib/lawyerSignup/adminViewServer";
  * Firm and provider rows carry licenceImageUrl: null.
  */
 export async function GET(request: NextRequest) {
-  // ── Auth check: ensure the caller is an admin ──────────────────────────────
-  const supabase = await createClient();
-  const {
-    data: { user },
-    error: authError,
-  } = await supabase.auth.getUser();
-
-  if (isAuthUnavailable(user, authError)) return authUnavailableResponse();
-  if (!user) {
-    return NextResponse.json({ error: "غير مصرح — يرجى تسجيل الدخول" }, { status: 401 });
-  }
-
-  // Check if user is admin
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("user_type")
-    .eq("id", user.id)
-    .single();
-
-  if (!profile || profile.user_type !== "admin") {
-    return NextResponse.json({ error: "غير مصرح — صلاحيات المسؤول مطلوبة" }, { status: 403 });
-  }
+  // ── Staff gate (l16 C34): every staff role may read; writes keep their own action ──
+  const gate = await requireStaff("read");
+  if (!gate.ok) return gate.response;
 
   // ── Parse query params ─────────────────────────────────────────────────────
   const { searchParams } = new URL(request.url);

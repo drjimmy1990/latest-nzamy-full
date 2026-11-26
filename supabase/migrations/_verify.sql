@@ -8732,3 +8732,26 @@ select 'l16 D-54: the activity_events INSERT policy checks the firm, and it is t
        and coalesce((select count(*) = 1 from pg_catalog.pg_policy p
                       where p.polrelid = to_regclass('public.activity_events') and p.polcmd in ('a', '*')), false) as ok;
 -- <<< verify:l16_d54
+-- >>> verify:l16_suspension_terms
+-- Batch l16 (owner س٢١٥): every admin suspension has an end, a template and a reason; appeals are
+-- server-only. 20261206_20 runs BEFORE the deploy. Before it runs the checks below answer ok = false
+-- («run 20261206_20»).
+select 'l16 suspension terms: account_suspension_freezes has ends_at / template / suspend_reason with their checks (run 20261206_20)' as check,
+       coalesce((select count(*) = 3 from information_schema.columns
+                  where table_schema = 'public' and table_name = 'account_suspension_freezes'
+                    and column_name in ('ends_at', 'template', 'suspend_reason')), false)
+       and coalesce((select count(*) = 3 from pg_catalog.pg_constraint
+                      where conrelid = to_regclass('public.account_suspension_freezes')
+                        and conname in ('account_suspension_freezes_template_check', 'account_suspension_freezes_ends_check',
+                                        'account_suspension_freezes_reason_len')), false) as ok;
+select 'l16 suspension terms: the appeals table is server-only (RLS on, no policy, no anon/authenticated privilege) with one waiting appeal per suspension (run 20261206_20)' as check,
+       coalesce((select c.relrowsecurity
+                        and not exists (select 1 from pg_catalog.pg_policy p where p.polrelid = c.oid)
+                        and not has_table_privilege('anon', c.oid, 'SELECT')
+                        and not has_table_privilege('anon', c.oid, 'INSERT')
+                        and not has_table_privilege('authenticated', c.oid, 'SELECT')
+                        and not has_table_privilege('authenticated', c.oid, 'INSERT')
+                        and not has_table_privilege('authenticated', c.oid, 'UPDATE')
+                   from pg_catalog.pg_class c where c.oid = to_regclass('public.account_suspension_appeals')), false)
+       and to_regclass('public.account_suspension_appeals_one_new') is not null as ok;
+-- <<< verify:l16_suspension_terms

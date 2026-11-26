@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { DB_ERROR_AR } from "@/lib/api/dbError";
 import { createServiceClient } from "@/lib/supabase/server";
-import { requireAdmin, requireStaff } from "@/lib/access-control";
+import { requireStaff } from "@/lib/access-control";
 import { logAdminAction } from "@/lib/auth/adminAudit";
 import { parseTicketsQuery } from "@/lib/admin/ticketsQuery";
 
@@ -20,10 +20,9 @@ import { parseTicketsQuery } from "@/lib/admin/ticketsQuery";
  * so nothing depends on the 200.
  */
 export async function GET(request: NextRequest) {
-  const gate = await requireAdmin();
-  if (!gate.isAdmin) {
-    return NextResponse.json({ error: gate.error }, { status: gate.status ?? 403 });
-  }
+  // l16 (C35): the staff-role gate (least privilege, staffRoles.ts), not admin-only.
+  const gate = await requireStaff("read");
+  if (!gate.ok) return gate.response;
 
   try {
     // status / user_id / limit are checked before the query (ticketsQuery.ts);

@@ -13,7 +13,7 @@ import { toOpenRequestItem } from "@/lib/services/openRequestsView";
  */
 export async function GET() {
   try {
-    const gate = await requireStaff("orders.manage");
+    const gate = await requireStaff("read");
     if (!gate.ok) return gate.response;
     const admin = await createServiceClient();
     const { data, error } = await admin.rpc("marketplace_open_requests_admin", { p_limit: 200, p_offset: 0 });

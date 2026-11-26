@@ -33,7 +33,7 @@ let missingEmailColumnLogged = false;
 export async function logAdminAction(input: AdminActionInput): Promise<void> {
   try {
     const admin = await createServiceClient();
-    const actorEmail = await lookupActorEmail(admin, input.actorId);
+    const actorEmail = input.actorId ? await lookupActorEmail(admin, input.actorId) : null;
 
     let { error } = await admin
       .from("admin_audit_events")

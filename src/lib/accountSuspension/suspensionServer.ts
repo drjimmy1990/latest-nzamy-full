@@ -13,17 +13,23 @@
  *                        the suspended days back. Nothing is cancelled.
  *   readSuspendedIds     which of a page of ids are banned now
  *                        (public.admin_suspended_user_ids), for the admin list.
+ *   owner س٢١٥ (20261206_20): every suspension has an end. The ban lasts
+ *   exactly until it, the copy carries it as `until`, and the terms (end,
+ *   template, reason) are written on the open freeze row
+ *   (recordSuspensionTermsWith), where the automatic lift finds them
+ *   (readDueSuspensionsWith). Appeals: insertAppealWith / readAppealsWith /
+ *   closeAppealsWith.
  *
  * No `next/*` or `@/` imports, so `node --test` loads it with a fake client.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
-  SUSPENSION_BAN_DURATION,
   LIFT_BAN_DURATION,
   suspendedAppMetadata,
   activeSuspensionAppMetadata,
   isMissingSuspensionSchema,
 } from "../auth/accountSuspension.ts";
+import { banDurationUntil, type SuspensionTemplate } from "../auth/suspensionTerms.ts";
 
 /** How the open sessions fared after the ban. */
 export type SessionsOutcome =
@@ -58,17 +64,23 @@ async function readAuthUser(
  * there is a failure of the whole suspension (nothing was written); a
  * failure to end the sessions is NOT — the account is suspended, and the
  * outcome says what happened to the sessions.
+ *
+ * Owner س٢١٥: `endsAt` is required — the GoTrue ban lasts exactly until then
+ * and the copy carries it as `until`, so no suspension is open-ended.
  */
 export async function suspendAccountWith(
   admin: Admin,
-  args: { userId: string; actorId: string; nowIso: string },
+  args: { userId: string; actorId: string; nowIso: string; endsAt: string },
 ): Promise<SuspendResult> {
+  if (!Number.isFinite(Date.parse(args.endsAt))) {
+    return { ok: false, status: 500, error: "suspension end is not a time" };
+  }
   const current = await readAuthUser(admin, args.userId);
   if (!current.ok) return current;
 
   const { error: banError } = await admin.auth.admin.updateUserById(args.userId, {
-    ban_duration: SUSPENSION_BAN_DURATION,
-    app_metadata: suspendedAppMetadata(current.appMetadata, args.actorId, args.nowIso),
+    ban_duration: banDurationUntil(args.endsAt, Date.parse(args.nowIso)),
+    app_metadata: suspendedAppMetadata(current.appMetadata, args.actorId, args.nowIso, args.endsAt),
   });
   if (banError) return { ok: false, status: 500, error: banError.message };
 
@@ -230,5 +242,272 @@ export async function thawEntitlementsWith(
     return parseFreezeLift(data);
   } catch (err) {
     return { state: "failed", error: err instanceof Error ? err.message : "error" };
+  }
+}
+
+// ── owner س٢١٥ (20261206_20): the terms of a suspension and its appeals ────
+
+/** PostgREST / Postgres codes for "the 20261206_20 columns or table do not exist yet". */
+export function isMissingTermsSchema(code: unknown): boolean {
+  return code === "42703" || code === "42P01" || code === "PGRST204" || code === "PGRST205" || code === "PGRST200";
+}
+
+type Db = Pick<SupabaseClient, "from">;
+
+/** What writing the terms on the open freeze did. */
+export type TermsOutcome =
+  | { state: "recorded"; freezeId: string }
+  /** No open freeze row (its write failed or 20261127_60 is missing): the ban still ends on time. */
+  | { state: "no_open_freeze" }
+  | { state: "migration_missing" }
+  | { state: "failed"; error: string };
+
+/**
+ * Writes the end, template and reason on the account's OPEN freeze (the row
+ * account_freeze_open just made or found). Never throws.
+ */
+export async function recordSuspensionTermsWith(
+  db: Db,
+  args: { userId: string; endsAt: string; template: SuspensionTemplate; reason: string },
+): Promise<TermsOutcome> {
+  try {
+    const { data, error } = await db
+      .from("account_suspension_freezes")
+      .update({ ends_at: args.endsAt, template: args.template, suspend_reason: args.reason })
+      .eq("user_id", args.userId)
+      .is("lifted_at", null)
+      .select("id");
+    if (error) {
+      return isMissingTermsSchema(error.code)
+        ? { state: "migration_missing" }
+        : { state: "failed", error: error.code ?? error.message ?? "error" };
+    }
+    const id = Array.isArray(data) && data.length > 0 ? (data[0] as { id?: unknown }).id : null;
+    return typeof id === "string" ? { state: "recorded", freezeId: id } : { state: "no_open_freeze" };
+  } catch (err) {
+    return { state: "failed", error: err instanceof Error ? err.message : "error" };
+  }
+}
+
+/** The open suspension of one account, as the admin page shows it. */
+export interface OpenSuspension {
+  freezeId: string;
+  reasonKind: string | null;
+  frozenAt: string | null;
+  frozenBy: string | null;
+  endsAt: string | null;
+  template: string | null;
+  reason: string | null;
+}
+
+/**
+ * The account's open freeze with its terms, or null (none, or unreadable —
+ * logged). Before 20261206_20 runs the terms are read as null.
+ */
+export async function readOpenSuspensionWith(db: Db, userId: string): Promise<OpenSuspension | null> {
+  const pick = (row: Record<string, unknown>): OpenSuspension => ({
+    freezeId: String(row.id),
+    reasonKind: typeof row.reason === "string" ? row.reason : null,
+    frozenAt: typeof row.frozen_at === "string" ? row.frozen_at : null,
+    frozenBy: typeof row.frozen_by === "string" ? row.frozen_by : null,
+    endsAt: typeof row.ends_at === "string" ? row.ends_at : null,
+    template: typeof row.template === "string" ? row.template : null,
+    reason: typeof row.suspend_reason === "string" ? row.suspend_reason : null,
+  });
+  try {
+    const full = await db
+      .from("account_suspension_freezes")
+      .select("id, reason, frozen_at, frozen_by, ends_at, template, suspend_reason")
+      .eq("user_id", userId)
+      .is("lifted_at", null)
+      .maybeSingle();
+    if (!full.error) return full.data ? pick(full.data as Record<string, unknown>) : null;
+    if (full.error.code !== "42703" && full.error.code !== "PGRST204") {
+      if (full.error.code !== "42P01" && full.error.code !== "PGRST205") {
+        console.error("[suspension] reading the open suspension failed:", full.error.code, full.error.message);
+      }
+      return null;
+    }
+    // 20261206_20 has not run: the freeze without its terms.
+    const bare = await db
+      .from("account_suspension_freezes")
+      .select("id, reason, frozen_at, frozen_by")
+      .eq("user_id", userId)
+      .is("lifted_at", null)
+      .maybeSingle();
+    return !bare.error && bare.data ? pick(bare.data as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
+}
+
+export interface DueSuspension {
+  freezeId: string;
+  userId: string;
+  endsAt: string;
+}
+
+export type DueRead =
+  | { state: "ok"; rows: DueSuspension[] }
+  | { state: "migration_missing" }
+  | { state: "failed"; error: string };
+
+/** The open suspensions whose end has passed, oldest end first (at most `limit`). */
+export async function readDueSuspensionsWith(db: Db, nowIso: string, limit: number): Promise<DueRead> {
+  try {
+    const { data, error } = await db
+      .from("account_suspension_freezes")
+      .select("id, user_id, ends_at")
+      .is("lifted_at", null)
+      .not("ends_at", "is", null)
+      .lte("ends_at", nowIso)
+      .order("ends_at", { ascending: true })
+      .limit(limit);
+    if (error) {
+      return isMissingTermsSchema(error.code)
+        ? { state: "migration_missing" }
+        : { state: "failed", error: error.code ?? error.message ?? "error" };
+    }
+    const rows = (Array.isArray(data) ? data : [])
+      .map((r) => r as { id?: unknown; user_id?: unknown; ends_at?: unknown })
+      .filter((r) => typeof r.id === "string" && typeof r.user_id === "string" && typeof r.ends_at === "string")
+      .map((r) => ({ freezeId: r.id as string, userId: r.user_id as string, endsAt: r.ends_at as string }));
+    return { state: "ok", rows };
+  } catch (err) {
+    return { state: "failed", error: err instanceof Error ? err.message : "error" };
+  }
+}
+
+/** What sending an appeal did. The route never tells the sender which one. */
+export type AppealInsertOutcome =
+  | { state: "recorded" }
+  /** A new appeal for this suspension is already waiting. */
+  | { state: "already_pending" }
+  /** The e-mail is not an account, or the account has no open suspension. */
+  | { state: "no_suspension" }
+  | { state: "migration_missing" }
+  | { state: "failed"; error: string };
+
+/**
+ * Records an appeal for the account with this (lower-cased) e-mail when it has
+ * an open suspension. Never throws.
+ */
+export async function insertAppealWith(db: Db, args: { email: string; message: string }): Promise<AppealInsertOutcome> {
+  try {
+    const { data: profile, error: profileError } = await db
+      .from("profiles")
+      .select("id")
+      .eq("email", args.email)
+      .limit(1)
+      .maybeSingle();
+    if (profileError) return { state: "failed", error: profileError.code ?? profileError.message ?? "error" };
+    const userId = (profile as { id?: unknown } | null)?.id;
+    if (typeof userId !== "string") return { state: "no_suspension" };
+
+    const { data: freeze, error: freezeError } = await db
+      .from("account_suspension_freezes")
+      .select("id")
+      .eq("user_id", userId)
+      .is("lifted_at", null)
+      .maybeSingle();
+    if (freezeError) {
+      return isMissingTermsSchema(freezeError.code)
+        ? { state: "migration_missing" }
+        : { state: "failed", error: freezeError.code ?? freezeError.message ?? "error" };
+    }
+    const freezeId = (freeze as { id?: unknown } | null)?.id;
+    if (typeof freezeId !== "string") return { state: "no_suspension" };
+
+    const { error } = await db
+      .from("account_suspension_appeals")
+      .insert({ freeze_id: freezeId, user_id: userId, message: args.message });
+    if (error) {
+      if (error.code === "23505") return { state: "already_pending" };
+      return isMissingTermsSchema(error.code)
+        ? { state: "migration_missing" }
+        : { state: "failed", error: error.code ?? error.message ?? "error" };
+    }
+    return { state: "recorded" };
+  } catch (err) {
+    return { state: "failed", error: err instanceof Error ? err.message : "error" };
+  }
+}
+
+export interface AppealRow {
+  id: string;
+  freezeId: string;
+  message: string;
+  status: string;
+  createdAt: string;
+  decidedAt: string | null;
+  decisionNote: string | null;
+}
+
+/** The account's latest appeals (at most 10), newest first; [] when unreadable. */
+export async function readAppealsWith(db: Db, userId: string): Promise<AppealRow[]> {
+  try {
+    const { data, error } = await db
+      .from("account_suspension_appeals")
+      .select("id, freeze_id, message, status, created_at, decided_at, decision_note")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(10);
+    if (error || !Array.isArray(data)) return [];
+    return data.map((r) => {
+      const row = r as Record<string, unknown>;
+      return {
+        id: String(row.id),
+        freezeId: String(row.freeze_id),
+        message: typeof row.message === "string" ? row.message : "",
+        status: typeof row.status === "string" ? row.status : "new",
+        createdAt: typeof row.created_at === "string" ? row.created_at : "",
+        decidedAt: typeof row.decided_at === "string" ? row.decided_at : null,
+        decisionNote: typeof row.decision_note === "string" ? row.decision_note : null,
+      };
+    });
+  } catch {
+    return [];
+  }
+}
+
+/** The ids (of those given) with an appeal waiting; empty when unreadable. */
+export async function readPendingAppealIds(db: Db, ids: string[]): Promise<Set<string>> {
+  const unique = [...new Set(ids.filter((id) => typeof id === "string" && id.length > 0))].slice(0, 500);
+  if (unique.length === 0) return new Set();
+  try {
+    const { data, error } = await db
+      .from("account_suspension_appeals")
+      .select("user_id")
+      .in("user_id", unique)
+      .eq("status", "new");
+    if (error || !Array.isArray(data)) return new Set();
+    return new Set(
+      data.map((r) => (r as { user_id?: unknown }).user_id).filter((v): v is string => typeof v === "string"),
+    );
+  } catch {
+    return new Set();
+  }
+}
+
+/**
+ * Closes the account's waiting appeals when its suspension ends: «lifted»
+ * (an admin lifted it) or «ended» (it ran out). Returns how many; null when
+ * the write failed. Never throws.
+ */
+export async function closeAppealsWith(
+  db: Db,
+  args: { userId: string; status: "lifted" | "ended"; actorId: string | null; nowIso: string },
+): Promise<number | null> {
+  try {
+    const { data, error } = await db
+      .from("account_suspension_appeals")
+      .update({ status: args.status, decided_at: args.nowIso, decided_by: args.actorId })
+      .eq("user_id", args.userId)
+      .eq("status", "new")
+      .select("id");
+    if (error) return isMissingTermsSchema(error.code) ? 0 : null;
+    return Array.isArray(data) ? data.length : 0;
+  } catch {
+    return null;
   }
 }

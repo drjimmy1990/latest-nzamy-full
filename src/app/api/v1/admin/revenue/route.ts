@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
-import { requireAdmin } from "@/lib/access-control";
+import { requireStaff } from "@/lib/access-control";
 import { buildMonthlyBuckets, type LedgerRow } from "@/lib/services/revenueMath";
 import { isTestAccountId, readTestAccountIds } from "@/lib/testAccounts/testAccountIds";
 
@@ -51,10 +51,9 @@ import { isTestAccountId, readTestAccountIds } from "@/lib/testAccounts/testAcco
 const MONTHS = 6;
 
 export async function GET() {
-  const gate = await requireAdmin();
-  if (!gate.isAdmin) {
-    return NextResponse.json({ error: gate.error ?? "غير مصرح" }, { status: gate.status ?? 403 });
-  }
+  // l16 (C35): the staff-role gate (least privilege, staffRoles.ts), not admin-only.
+  const gate = await requireStaff("read");
+  if (!gate.ok) return gate.response;
 
   try {
     const admin = await createServiceClient();

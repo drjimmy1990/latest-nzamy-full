@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { DB_ERROR_AR } from "@/lib/api/dbError";
 import { createServiceClient } from "@/lib/supabase/server";
-import { requireAdmin, requireStaff } from "@/lib/access-control";
+import { requireStaff } from "@/lib/access-control";
 import { logAdminAction } from "@/lib/auth/adminAudit";
 
 /**
@@ -22,10 +22,9 @@ import { logAdminAction } from "@/lib/auth/adminAudit";
  * never look inside the body.
  */
 export async function GET() {
-  const gate = await requireAdmin();
-  if (!gate.isAdmin) {
-    return NextResponse.json({ error: gate.error }, { status: gate.status ?? 403 });
-  }
+  // l16 (C35): the staff-role gate (least privilege, staffRoles.ts), not admin-only.
+  const gate = await requireStaff("read");
+  if (!gate.ok) return gate.response;
 
   try {
     const supabase = await createServiceClient();

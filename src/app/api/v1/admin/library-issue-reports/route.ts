@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { assertRole } from "@/lib/auth/assertRole";
-import { createServiceClient } from "@/lib/supabase/server";
+import { requireStaff } from "@/lib/access-control";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { parseStatusFilter, LIBRARY_ISSUE_STATUSES } from "@/lib/services/feedbackInput";
 import { LIBRARY_ISSUE_REPORT_SELECT, toLibraryIssueReportDto, type LibraryIssueReportRow } from "@/app/api/v1/library/issue-reports/_shared";
 
@@ -14,9 +14,10 @@ import { LIBRARY_ISSUE_REPORT_SELECT, toLibraryIssueReportDto, type LibraryIssue
  */
 export async function GET(request: NextRequest) {
   try {
-    const auth = await assertRole(["admin"]);
+    // l16 (C35): the staff-role gate (every role may read), not admin-only.
+    const auth = await requireStaff("read");
     if (!auth.ok) return auth.response;
-    const { supabase } = auth;
+    const supabase = await createClient();
 
     const { searchParams } = new URL(request.url);
     const filter = parseStatusFilter(searchParams.get("status"), LIBRARY_ISSUE_STATUSES);
