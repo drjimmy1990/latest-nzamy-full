@@ -8,7 +8,11 @@
  *
  * To add or correct a model: copy the provider's published price here, with the
  * page and the date you read it, and keep the id exactly as the workflows
- * report it in `usage.model` (n8n/ai/workflows.mjs MODEL_ID, without "models/").
+ * report it in `usage.model` (n8n/ai/workflows.mjs modelOf, without "models/").
+ *
+ * Owner س٢١٩ (batch l16): this table is also the allow-list of the admin
+ * setting `ai_model` (aiModel.ts): a model with a row here can be chosen, and
+ * the workflows report the chosen model, so its runs are priced at its row.
  *
  * Token meaning (n8n/ai/workflows.mjs USAGE_OF, from Gemini's usageMetadata):
  *   input_tokens       = promptTokenCount (it INCLUDES the cached part)

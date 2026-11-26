@@ -49,7 +49,22 @@ export const MODEL = {
   credentialKey: "googlePalmApi",
   credential: CREDENTIALS.gemini,
 };
-const MODEL_ID = MODEL.modelName.replace(/^models\//, "");
+/**
+ * Owner س٢١٩ (batch l16): the model is an ADMIN SETTING, not this file.
+ * platform_settings 'ai_model' = {"model": "models/…"} (allow-listed in
+ * src/lib/ai/aiModel.ts: only a model with a price row in modelPrices.ts); the
+ * app sends it as `model` in every package (the run's and the search
+ * writer's). Every Gemini node reads it with this expression and the parse
+ * steps report the same name in `usage.model`, so the admin AI usage page
+ * prices the run at the chosen model. A package without it (an older app, an
+ * internal caller) or with anything that is not a Gemini model name runs on
+ * MODEL.modelName as before. No braces in the pattern: n8n's expression
+ * parser reads `{{ … }}`.
+ */
+export const MODEL_PATTERN = String.raw`/^models\/gemini-[0-9a-z.-]+$/`;
+const MODEL_NAME_MAX = 80;
+const SENT_MODEL = "$('Webhook').first().json.body.model";
+export const MODEL_EXPR = `={{ (${MODEL_PATTERN}.test(String(${SENT_MODEL} || '')) && String(${SENT_MODEL}).length <= ${MODEL_NAME_MAX}) ? ${SENT_MODEL} : '${MODEL.modelName}' }}`;
 
 /**
  * One model call: the system text and the user's content from the item
@@ -64,7 +79,7 @@ export function geminiCall(id, name, position, { maxOutputTokens, temperature = 
     parameters: {
       resource: "text",
       operation: "message",
-      modelId: { __rl: true, mode: "id", value: MODEL.modelName },
+      modelId: { __rl: true, mode: "id", value: MODEL_EXPR },
       messages: { values: [{ content: "={{ $json.content }}" }] },
       simplify: false,
       options: { systemMessage: "={{ $json.system }}", maxOutputTokens, temperature },
@@ -93,6 +108,18 @@ const usageOf = (j) => {
   const m = j && j.usageMetadata && typeof j.usageMetadata === 'object' ? j.usageMetadata : {};
   const n = (v) => (typeof v === 'number' && v > 0 ? Math.round(v) : 0);
   return { input_tokens: n(m.promptTokenCount) + n(m.toolUsePromptTokenCount), output_tokens: n(m.candidatesTokenCount) + n(m.thoughtsTokenCount), cache_read_tokens: n(m.cachedContentTokenCount) };
+};
+const modelOf = () => {
+  let m = '';
+  try { const w = $('Webhook').first().json.body; m = w && typeof w.model === 'string' ? w.model : ''; } catch (e) { m = ''; }
+  return (${MODEL_PATTERN}.test(m) && m.length <= ${MODEL_NAME_MAX} ? m : '${MODEL.modelName}').replace(/^models\//, '');
+};
+const whyEmpty = (j) => {
+  const c = j && Array.isArray(j.candidates) ? j.candidates[0] : null;
+  const finish = c && typeof c.finishReason === 'string' ? c.finishReason : '';
+  const m = j && j.usageMetadata && typeof j.usageMetadata === 'object' ? j.usageMetadata : {};
+  const thought = typeof m.thoughtsTokenCount === 'number' ? m.thoughtsTokenCount : 0;
+  return finish ? ' (finish: ' + finish + ', thinking tokens: ' + thought + ')' : '';
 };`;
 
 /**
@@ -108,13 +135,16 @@ export const PROMPT_CANARY = "NZQ7K4LIBGUARD";
 // tool's output shape. `output` is the Agent's field. `before` is extra code
 // run on the text `t` (it may return a failure), `citations` the expression
 // sent as the result's citations.
+// l16: a refused reply still carries the tokens the model spent (the provider
+// bills them), and an empty one says why (Gemini's finishReason: a thinking
+// model can spend a small budget on thoughts alone, which is MAX_TOKENS).
 const parse = (shape, { before = "", citations = "[]" } = {}) => String.raw`const b = $('Webhook').first().json.body;
-const fail = (code, message) => [{ json: { run_id: b.run_id, status: 'failed', output: null, citations: [], usage: null, error: { code, message } } }];
 ${REPLY}
+const fail = (code, message) => [{ json: { run_id: b.run_id, status: 'failed', output: null, citations: [], usage: { model: modelOf(), ...usageOf($json) }, error: { code, message } } }];
 let t = textOf($json);
 t = t.trim().replace(/^${"```"}[A-Za-z]*[ \t]*\n?/, '').replace(/\n?${"```"}\s*$/, '').trim();
-if (!t) return fail('schema_invalid', 'the model returned no text');
-${before ? `${before}\n` : ""}return [{ json: { run_id: b.run_id, status: 'succeeded', output: ${shape}, citations: ${citations}, usage: { model: '${MODEL_ID}', ...usageOf($json) }, error: null } }];`;
+if (!t) return fail(/MAX_TOKENS/.test(whyEmpty($json)) ? 'output_truncated' : 'schema_invalid', 'the model returned no text' + whyEmpty($json));
+${before ? `${before}\n` : ""}return [{ json: { run_id: b.run_id, status: 'succeeded', output: ${shape}, citations: ${citations}, usage: { model: modelOf(), ...usageOf($json) }, error: null } }];`;
 
 // The AI Agent's error output carries the error as a string (Gemini's
 // «Service unavailable…»); other nodes carry an object with a message.
@@ -419,7 +449,7 @@ const end = t.lastIndexOf('}');
 if (start < 0 || end <= start) return fail('schema_invalid', 'no JSON object in the reply');
 let output;
 try { output = JSON.parse(t.slice(start, end + 1)); } catch (e) { return fail('schema_invalid', 'the reply is not valid JSON'); }
-return [{ json: { run_id: b.run_id, status: 'succeeded', output, citations: [], usage: { model: '${MODEL_ID}', ...usageOf($json) }, error: null } }];`;
+return [{ json: { run_id: b.run_id, status: 'succeeded', output, citations: [], usage: { model: modelOf(), ...usageOf($json) }, error: null } }];`;
 
 // ── L7 عصارة المرفقات (its only name, owner ٤٤١) ─────────────────────────────
 // The lawyer's role note and the files → a BriefResult. The app rebuilds the
@@ -658,7 +688,7 @@ const end = t.lastIndexOf('}');
 if (start < 0 || end <= start) return fail('schema_invalid', 'no JSON object in the reply');
 let output;
 try { output = JSON.parse(t.slice(start, end + 1)); } catch (e) { return fail('schema_invalid', 'the reply is not valid JSON'); }
-return [{ json: { run_id: b.run_id, status: 'succeeded', output, citations: [], usage: { model: '${MODEL_ID}', ...usageOf($json) }, error: null } }];`;
+return [{ json: { run_id: b.run_id, status: 'succeeded', output, citations: [], usage: { model: modelOf(), ...usageOf($json) }, error: null } }];`;
 
 // ── L13 محترف العقود ─────────────────────────────────────────────────────────
 // Drafted the way a lawyer drafts: first the outline (title, preamble, the
@@ -808,10 +838,26 @@ for (let k = 0; k < plan.length; k++) {
 }
 const output = { title: outline.title, preamble: outline.preamble, sections, cited: cited.slice(0, 40) };
 if (alt) { output.title_alt = outline.title_alt; output.preamble_alt = outline.preamble_alt; }
-return [{ json: { run_id: b.run_id, status: 'succeeded', output, citations: [], usage: { model: '${MODEL_ID}', ...total }, error: null } }];`;
+return [{ json: { run_id: b.run_id, status: 'succeeded', output, citations: [], usage: { model: modelOf(), ...total }, error: null } }];`;
 
-/** The [S1] markers in the text, in order, each once. */
-const CITED_IDS = String.raw`const cited = [...new Set([...t.matchAll(/\[(S\d{1,3})\]/g)].map((m) => m[1]))];`;
+/**
+ * l16 (422 «ungrounded»): the model's variants of a source marker become the
+ * one the app reads, [S1]: several ids in one pair of brackets ([S1, S2],
+ * [S1، S2], [S1 و S2]), Arabic-Indic digits ([S١]), a lower-case s, a leading
+ * zero, full-width brackets (【S1】). A reply that cited its sources in such a
+ * form was refunded as citing none. The same rule is
+ * src/lib/ai/citationMarkers.ts normalizeCitationMarkers (tested equal).
+ */
+export const MARKERS_FN = String.raw`const normMarkers = (s) => String(s)
+  .replace(/[［【]([^［【］】\[\]\n]{1,40})[］】]/g, (m, inner) => (/^\s*[Ss]\s*[0-9٠-٩]/.test(inner) ? '[' + inner + ']' : m))
+  .replace(/\[\s*[Ss]\s*[0-9٠-٩]{1,3}(?:\s*(?:[,،;؛]|و)\s*[Ss]?\s*[0-9٠-٩]{1,3})*\s*\]/g, (m) => m.slice(1, -1).split(/[,،;؛]|و/)
+    .map((x) => '[S' + String(Number(x.replace(/[^0-9٠-٩]/g, '').replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 1632)))) + ']').join(''));`;
+/** The [S1] markers in the text (variants read as [S1]), in order, each once; `t` itself is not changed. */
+const CITED_IDS = String.raw`${MARKERS_FN}
+const cited = [...new Set([...normMarkers(t).matchAll(/\[(S\d{1,3})\]/g)].map((m) => m[1]))];`;
+/** A plain-text answer: its markers rewritten as [S1] (the page reads only that form), then collected. */
+const CITED_TEXT = String.raw`${CITED_IDS}
+t = normMarkers(t);`;
 /** The case parse, but the [S…] markers anywhere in the reply become the result's citations (L12 consultation). */
 const CONSULT_PARSE = (() => {
   const withIds = CASE_PARSE.replace("let output;", `${CITED_IDS}\nlet output;`).replace("output, citations: [], usage", "output, citations: cited, usage");
@@ -905,7 +951,7 @@ if (start < 0 || end <= start) return fail('schema_invalid', 'no JSON object in 
 let output;
 try { output = JSON.parse(t.slice(start, end + 1)); } catch (e) { return fail('schema_invalid', 'the reply is not valid JSON'); }
 ${CITED_IDS}
-return [{ json: { run_id: b.run_id, status: 'succeeded', output, citations: cited, usage: { model: '${MODEL_ID}', ...usageOf($json) }, error: null } }];`;
+return [{ json: { run_id: b.run_id, status: 'succeeded', output, citations: cited, usage: { model: modelOf(), ...usageOf($json) }, error: null } }];`;
 
 // ── request-summary: the public line of an open request (owner ١٩, batch 3) ─
 // App-internal, no points: src/lib/services/requestPublicSummaryModel.ts calls it
@@ -937,7 +983,7 @@ let t = textOf($json);
 t = t.trim().replace(/^${"```"}[A-Za-z]*[ \t]*\n?/, '').replace(/\n?${"```"}\s*$/, '').trim();
 const line = (t.split(/[\r\n]+/).map((s) => s.trim()).find((s) => s.length > 0) || '').replace(/^[-*•\s«"']+|[»"'\s]+$/g, '').trim();
 if (!line) return [{ json: { summary: null, status: 'failed', error: { code: 'schema_invalid', message: 'the model returned no text' } } }];
-return [{ json: { summary: line, status: 'succeeded', usage: { model: '${MODEL_ID}', ...usageOf($json) } } }];`;
+return [{ json: { summary: line, status: 'succeeded', usage: { model: modelOf(), ...usageOf($json) } } }];`;
 
 // ── community-review: the AI pre-publish review of the community (l12 Q131a) ─
 // App-internal, no points: src/lib/community/aiReviewServer.ts calls it after a
@@ -979,7 +1025,7 @@ const c = o && typeof o.category === 'string' ? o.category.trim().toLowerCase() 
 let decision = 'hold';
 if (d === 'approve') decision = 'approve';
 else if (d === 'reject' && CATS.includes(c)) decision = 'reject';
-return [{ json: { decision, category: decision === 'approve' ? null : (CATS.includes(c) ? c : null), status: 'succeeded', usage: { model: '${MODEL_ID}', ...usageOf($json) } } }];`;
+return [{ json: { decision, category: decision === 'approve' ? null : (CATS.includes(c) ? c : null), status: 'succeeded', usage: { model: modelOf(), ...usageOf($json) } } }];`;
 
 export const AI_WORKFLOWS = [
   {
@@ -1010,7 +1056,9 @@ export const AI_WORKFLOWS = [
     webhookId: "7c2e9a40-3b1d-4f6a-9e85-2d4c6b8a1f03",
     build: LIB_QUERIES_BUILD,
     parse: parse("{ queries }", { before: LIB_QUERIES_LINES }),
-    maxOutputTokens: 200,
+    // l16: room for a thinking model's thoughts (they count against this cap);
+    // the reply itself stays a few short lines (LIB_QUERIES_LINES keeps 4).
+    maxOutputTokens: 1024,
     temperature: 0,
   },
   {
@@ -1019,7 +1067,7 @@ export const AI_WORKFLOWS = [
     path: "nzamy-ai/quick-answer",
     webhookId: "b41f6d27-8e3a-4c95-a0d2-6f1e7b3c9a58",
     build: QUICK_ANSWER_BUILD,
-    parse: parse("{ answer: t }", { before: CITED_IDS, citations: "cited" }),
+    parse: parse("{ answer: t }", { before: CITED_TEXT, citations: "cited" }),
     maxOutputTokens: 1500,
   },
   {
@@ -1028,7 +1076,7 @@ export const AI_WORKFLOWS = [
     path: "nzamy-ai/library-assistant",
     webhookId: "3d9b5e71-0c24-4a8f-b6e3-9a1f2c7d4e86",
     build: LIBRARY_ASSISTANT_BUILD,
-    parse: parse("{ reply: t }", { before: CITED_IDS, citations: "cited" }),
+    parse: parse("{ reply: t }", { before: CITED_TEXT, citations: "cited" }),
     maxOutputTokens: 1800,
   },
   {
@@ -1037,7 +1085,7 @@ export const AI_WORKFLOWS = [
     path: "nzamy-ai/assistant",
     webhookId: "9e1c4a72-5b8d-4f30-a6e2-1d7b3c9f8a45",
     build: ASSISTANT_BUILD,
-    parse: parse("{ reply: t }", { before: CITED_IDS, citations: "cited" }),
+    parse: parse("{ reply: t }", { before: CITED_TEXT, citations: "cited" }),
     maxOutputTokens: 2500,
   },
   {
@@ -1276,7 +1324,7 @@ return (Array.isArray(b.files) ? b.files : []).map((f) => ({ json: { url: f.url,
         parameters: {
           resource: "document",
           operation: "analyze",
-          modelId: { __rl: true, mode: "id", value: MODEL.modelName },
+          modelId: { __rl: true, mode: "id", value: MODEL_EXPR },
           text: "={{ $json.prompt }}",
           inputType: "binary",
           binaryPropertyName: "={{ $json.fields }}",
