@@ -58,7 +58,8 @@ export async function InvoiceDocument({ view, refundedHalalas, creditNoteHref }:
     <p className="mt-8 text-lg font-bold">{view.item}</p>
     {view.billing ? <p className={`mt-1 text-sm ${MUTED}`}>مدة الاشتراك: {view.billing}</p> : null}
     <div className="mb-8" />
-    <Amounts rows={[["المبلغ قبل الضريبة", view.net], [view.vatLabel, view.vat], ["الإجمالي شاملاً الضريبة", view.total]]} />
+    {/* l16 (A-01): no VAT row on a document of an order charged with no VAT */}
+    <Amounts rows={view.amountRows} />
     {refundedHalalas > 0 ? <p className="mt-5 text-sm font-semibold">المبلغ المسترد: {view.refunded}{view.creditNoteNumber ? <> — بموجب الإشعار الدائن <bdi dir="ltr" className="font-mono">{view.creditNoteNumber}</bdi></> : null}</p> : null}
     {creditNoteHref ? <p className="mt-2 text-sm print:hidden"><Link href={creditNoteHref} className="font-semibold text-[#0B3D2E] underline dark:text-[#C8A762] print:hidden">عرض الإشعار الدائن</Link></p> : null}
     <p className="mt-8 text-sm">طريقة الدفع: {view.lastFour ? `بطاقة تنتهي بـ ${view.lastFour}` : "تفاصيل البطاقة غير متاحة"}</p>
@@ -82,7 +83,7 @@ export function CreditNoteDocument({ view, invoiceHref }: { view: NoteView; invo
     {view.billing ? <p className={`mt-1 text-sm ${MUTED}`}>مدة الاشتراك: {view.billing}</p> : null}
     <p className="mt-2 text-sm">السبب: {view.reason}</p>
     <div className="mb-8" />
-    <Amounts rows={[["المبلغ المسترد قبل الضريبة", view.net], [view.vatLabel, view.vat], ["الإجمالي المسترد شاملاً الضريبة", view.total]]} />
+    <Amounts rows={view.amountRows} />
     <p className={`mt-8 border-t border-zinc-200 pt-5 text-sm dark:border-zinc-800 print:border-zinc-300! ${MUTED}`}>{view.feeNote}</p>
   </article>;
 }

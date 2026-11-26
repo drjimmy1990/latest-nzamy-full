@@ -17,9 +17,12 @@ import { buyClickGate } from "@/lib/pricing/buyClickGate";
 import { requestEntitlement } from "@/lib/services/entitlementService";
 import { referencePriceFor } from "@/lib/pricing/priceDisplay";
 import { planEntitlementRequest } from "@/lib/pricing/planRequest";
-import { vatNoticeFor } from "@/lib/pricing/vatNotice";
+import { vatNoticeFor, VAT_UNREGISTERED_NOTICE } from "@/lib/pricing/vatNotice";
+import { useVatRegistered } from "@/hooks/useVatRegistered";
 import { cardLaunch, cardPrice, cardTotalWithVat, shownCards, type LaunchPriceMap } from "@/lib/pricing/cardPrice";
 import { signedInCta } from "@/lib/pricing/cardCta";
+import { readRequestCoupon, requestFiledAr } from "@/lib/payments/manualRequest";
+import { TOPUP_PACKS_ANCHOR } from "@/lib/payments/topUpLinks";
 import { useLaunchPrices } from "@/hooks/useLaunchPrices";
 
 /**
@@ -27,7 +30,11 @@ import { useLaunchPrices } from "@/hooks/useLaunchPrices";
  * null until GET /api/v1/pricing/launch answers, so a server-rendered card
  * never carries one) and whether the viewer is signed in (UX14).
  */
-const CardContext = createContext<{ launch: LaunchPriceMap | null; signedIn: boolean }>({ launch: null, signedIn: false });
+const CardContext = createContext<{ launch: LaunchPriceMap | null; signedIn: boolean; vatRegistered: boolean | null }>({
+  launch: null,
+  signedIn: false,
+  vatRegistered: null,
+});
 
 interface PricingCardsProps {
   planList: Plan[];
@@ -78,7 +85,7 @@ function SpotlightCard({
   // A price-book card reads the book (src/lib/pricing/cardPrice.ts); other
   // cards keep their display strings. null = not sold in this cycle.
   const shown = cardPrice(plan, billing, isAr ? "ar" : "en");
-  const { launch, signedIn } = useContext(CardContext);
+  const { launch, signedIn, vatRegistered } = useContext(CardContext);
   // Owner ٣٠٣: while the SERVER says a launch price runs, the listed price is
   // struck through beside it (cardLaunch); otherwise the listed price alone.
   const launchView = cardLaunch(plan, billing, launch, isAr ? "ar" : "en");
@@ -88,8 +95,15 @@ function SpotlightCard({
   // A running launch price is the one struck-through figure on the card.
   const referencePrice = launchView ? null : referencePriceFor(plan, billing);
   // UX14: what the buyer pays with VAT, and for which cycle, beside the button.
-  const vatTotal = cardTotalWithVat(plan, billing, launch, isAr ? "ar" : "en");
+  // l16 (A-01): no VAT line before the platform's VAT number is saved (useVatRegistered)
+  const vatTotal = cardTotalWithVat(plan, billing, launch, isAr ? "ar" : "en", vatRegistered);
   const cta = signedInCta(plan, signedIn, isAr);
+  const memberBuy = signedIn && cta.ctaHref === plan.ctaHref && isSubscribeCta(plan.ctaHref);
+  const buyClass = `${vatTotal ? "mt-2" : "mt-7"} flex w-full items-center justify-center gap-2 rounded-xl px-6 py-3.5 text-sm font-bold tracking-wide transition-all ${
+    plan.highlighted
+      ? "bg-white text-[#0B3D2E] shadow-[0_4px_20px_-4px_rgba(255,255,255,0.3)] hover:shadow-[0_8px_28px_-4px_rgba(255,255,255,0.4)]"
+      : "bg-royal text-white shadow-[0_4px_20px_-4px_rgba(11,61,46,0.35)] hover:shadow-[0_8px_28px_-4px_rgba(11,61,46,0.5)]"
+  }`;
   const { bonusLabel, comingSoon } = plan;
   // Owner ٤٢٠: a card shown before it is sold says «قريباً» where the badge,
   // the price and the button would be.
@@ -338,6 +352,22 @@ function SpotlightCard({
           >
             {soonText}
           </button>
+        ) : memberBuy ? (
+          // l16 (A-56, owner 25 Nov §7.7.1): a signed-in member's buy button is
+          // a real button — no sign-up link on hover or on a middle click; it
+          // goes to /checkout (gateway on) or files the request (handleSubscribe)
+          <motion.button
+            type="button"
+            onClick={() => {
+              onSubscribe?.(plan);
+            }}
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.97, y: 1 }}
+            className={buyClass}
+          >
+            {cta.cta}
+            <ArrowLeft size={15} weight="bold" />
+          </motion.button>
         ) : (
         <motion.a
           href={cta.ctaHref}
@@ -348,11 +378,7 @@ function SpotlightCard({
           }}
           whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.97, y: 1 }}
-          className={`${vatTotal ? "mt-2" : "mt-7"} flex w-full items-center justify-center gap-2 rounded-xl px-6 py-3.5 text-sm font-bold tracking-wide transition-all ${
-            isHighlighted
-              ? "bg-white text-[#0B3D2E] shadow-[0_4px_20px_-4px_rgba(255,255,255,0.3)] hover:shadow-[0_8px_28px_-4px_rgba(255,255,255,0.4)]"
-              : "bg-royal text-white shadow-[0_4px_20px_-4px_rgba(11,61,46,0.35)] hover:shadow-[0_8px_28px_-4px_rgba(11,61,46,0.5)]"
-          }`}
+          className={buyClass}
         >
           {cta.cta}
           <ArrowLeft size={15} weight="bold" />
@@ -383,7 +409,7 @@ function LawyerCreditsLayout({ planList, billing, isAr, onSubscribe }: { planLis
       </div>
 
       {topups.length > 0 && (
-        <div>
+        <div id={TOPUP_PACKS_ANCHOR} className="scroll-mt-32">
           <h3 className="mb-4 text-center font-brand text-lg font-bold text-ink">
             {isAr ? "حزم الشحن الإضافية" : "Extra point top-ups"}
           </h3>
@@ -534,16 +560,36 @@ function LawyerServicesTable({ isAr }: { isAr: boolean }) {
 
 /* ─── Default layout: flexible grid ─────────────────────────────────────── */
 function DefaultLayout({ planList, billing, isAr, onSubscribe }: { planList: Plan[]; billing: Billing; isAr: boolean; onSubscribe?: (plan: Plan) => boolean }) {
+  // l16 (A-57 / A-58): the point top-ups get their own titled row (#topup-packs),
+  // as on the lawyers' tab — the firms' packs and the individuals' alike
+  const plans = planList.filter((p) => !p.id.startsWith("topup-"));
+  const topups = planList.filter((p) => p.id.startsWith("topup-"));
   const cols =
-    planList.length <= 3 ? "md:grid-cols-3" :
-    planList.length === 4 ? "md:grid-cols-2 lg:grid-cols-4" :
+    plans.length <= 3 ? "md:grid-cols-3" :
+    plans.length === 4 ? "md:grid-cols-2 lg:grid-cols-4" :
     "md:grid-cols-3";
 
   return (
-    <div className={`grid gap-4 ${cols} lg:gap-5`}>
-      {planList.map((plan, i) => (
-        <SpotlightCard key={plan.id} plan={plan} billing={billing} index={i} isLawyer={false} isAr={isAr} onSubscribe={onSubscribe} />
-      ))}
+    <div className="space-y-6 lg:space-y-8">
+      {plans.length > 0 && (
+        <div className={`grid gap-4 ${cols} lg:gap-5`}>
+          {plans.map((plan, i) => (
+            <SpotlightCard key={plan.id} plan={plan} billing={billing} index={i} isLawyer={false} isAr={isAr} onSubscribe={onSubscribe} />
+          ))}
+        </div>
+      )}
+      {topups.length > 0 && (
+        <div id={TOPUP_PACKS_ANCHOR} className="scroll-mt-32">
+          <h3 className="mb-4 text-center font-brand text-lg font-bold text-ink">
+            {isAr ? "حزم شحن النقاط" : "Point top-ups"}
+          </h3>
+          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 lg:gap-4">
+            {topups.map((plan, i) => (
+              <SpotlightCard key={plan.id} plan={plan} billing={billing} index={i + plans.length} isLawyer={false} isAr={isAr} compact onSubscribe={onSubscribe} />
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -562,6 +608,7 @@ export function PricingCards({ planList, billing, isAr, audience, libraryMode }:
   const { isLoggedIn, loading: sessionLoading } = useUser();
   const payments = usePaymentsStatus();
   const launch = useLaunchPrices();
+  const vatRegistered = useVatRegistered();
   const router = useRouter();
   const [toast, setToast] = useState<{ ok: boolean; msg: string } | null>(null);
 
@@ -591,13 +638,22 @@ export function PricingCards({ planList, billing, isAr, audience, libraryMode }:
       return true;
     }
     // requested_ref = Plan.id (the name rides in `note`) — see planEntitlementRequest.
-    void requestEntitlement(planEntitlementRequest(plan, { libraryMode })).then((res) => {
+    // l16 (A-59): a discount code the «تفعيل كود» box recognised rides on the request
+    let storage: Storage | null = null;
+    try {
+      storage = window.sessionStorage;
+    } catch {
+      storage = null;
+    }
+    const couponCode = readRequestCoupon(storage);
+    void requestEntitlement({ ...planEntitlementRequest(plan, { libraryMode }), ...(couponCode ? { coupon_code: couponCode } : {}) }).then((res) => {
+      // l16 (A-56): the request's reference and that online payment is paused
       setToast(
         res.ok
-          ? { ok: true, msg: "تم إرسال طلبك للمراجعة" }
+          ? { ok: true, msg: requestFiledAr(res.id) }
           : { ok: false, msg: res.error ?? "تعذّر إرسال الطلب" },
       );
-      window.setTimeout(() => setToast(null), 4000);
+      window.setTimeout(() => setToast(null), 8000);
     });
     return true;
   }
@@ -608,7 +664,7 @@ export function PricingCards({ planList, billing, isAr, audience, libraryMode }:
     !sessionLoading && saleGatewayPaused(payments) && shownPlans.some((p) => checkoutHref(p.id, billing, true, true) !== null);
 
   return (
-    <CardContext.Provider value={{ launch, signedIn: !sessionLoading && isLoggedIn }}>
+    <CardContext.Provider value={{ launch, signedIn: !sessionLoading && isLoggedIn, vatRegistered }}>
     <section className="pb-16 md:pb-24">
       <div className="mx-auto max-w-[1200px] px-4">
 
@@ -626,9 +682,17 @@ export function PricingCards({ planList, billing, isAr, audience, libraryMode }:
           <DefaultLayout planList={shownPlans} billing={billing} isAr={isAr} onSubscribe={handleSubscribe} />
         )}
 
-        <p className="mt-6 text-center text-xs font-medium text-ink-muted dark:text-gray-400">
-          {isAr ? vatNotice.ar : vatNotice.en}
-        </p>
+        {/* l16 (A-01): the VAT sentence follows the server's answer — none until it arrives */}
+        {vatRegistered === true && (
+          <p className="mt-6 text-center text-xs font-medium text-ink-muted dark:text-gray-400">
+            {isAr ? vatNotice.ar : vatNotice.en}
+          </p>
+        )}
+        {vatRegistered === false && (
+          <p className="mt-6 text-center text-xs font-medium text-ink-muted dark:text-gray-400">
+            {isAr ? VAT_UNREGISTERED_NOTICE.ar : VAT_UNREGISTERED_NOTICE.en}
+          </p>
+        )}
 
         {isLawyer && !libraryMode && <LawyerServicesTable isAr={isAr} />}
 

@@ -193,11 +193,22 @@ export function cardTotalWithVat(
   cycle: Cycle,
   launch: LaunchPriceMap | null,
   lang: "ar" | "en",
+  /**
+   * l16 (A-01): the server's answer (GET /api/v1/pricing/vat). true → the
+   * VAT total as before; false (no VAT number saved) → the price with no VAT
+   * line; null (not answered yet) → nothing, so no figure flips on screen.
+   */
+  vatRegistered: boolean | null = true,
 ): string | null {
   const billing = cardBilling(card.id, cycle);
-  if (!billing) return null;
+  if (!billing || vatRegistered === null) return null;
   const netSar = launchSarFor(card.id, billing, launch)?.sar ?? offeredSar(bookEntry(card.id)!, billing)!;
   const net = netSar * 100;
+  if (vatRegistered === false) {
+    return lang === "en"
+      ? `Total: SAR ${halalasText(net, "en")} · ${BILLING_LABEL_EN[billing]}`
+      : `الإجمالي ${halalasText(net, "ar")} ر.س · ${BILLING_LABEL_AR[billing]}`;
+  }
   const total = net + Math.round((net * VAT_PERCENT) / 100);
   return lang === "en"
     ? `Total incl. VAT: SAR ${halalasText(total, "en")} · ${BILLING_LABEL_EN[billing]}`

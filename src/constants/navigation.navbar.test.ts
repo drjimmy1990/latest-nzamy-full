@@ -362,3 +362,23 @@ test("categoryFromSearch opens only a category the page shows", () => {
   assert.equal(categoryFromSearch("", ["contracts"]), null);
   assert.equal(categoryFromSearch("?cat=", ["contracts"]), null);
 });
+
+test("l16 A-14: the independent consultant's top bar holds only allowlisted links; others keep theirs", async () => {
+  const { CONSULTANT_NAV, getNavForSession, LAWYER_NAV, FIRM_NAV } = await import("./navigation.navbar.ts");
+  const { isConsultantAllowedPath } = await import("../lib/auth/consultantScope.ts");
+  const hrefs: string[] = [];
+  const walk = (items: readonly { href: string; children?: readonly { href: string }[] }[]) => {
+    for (const it of items) {
+      if (!it.href.startsWith("#")) hrefs.push(it.href);
+      if (it.children) walk(it.children);
+    }
+  };
+  walk(CONSULTANT_NAV);
+  assert.ok(hrefs.length > 0);
+  for (const h of hrefs) assert.ok(isConsultantAllowedPath(h), `${h} is not on the consultant allowlist`);
+  assert.equal(getNavForSession("lawyer", true), CONSULTANT_NAV);
+  assert.equal(getNavForSession("lawyer", false), LAWYER_NAV);
+  assert.equal(getNavForSession("firm", true), FIRM_NAV, "only a lawyer session");
+  const src = (await import("node:fs")).readFileSync(new URL("../components/Navbar.tsx", import.meta.url), "utf8");
+  assert.match(src, /getNavForSession\(isLoggedIn \? navUserType : null, independentConsultant\)/);
+});

@@ -9,6 +9,12 @@
  * VAT is 15 %, always on top (pricing doc §2 rule 5, answer ٢٥٨ — it replaces
  * the inclusive individuals' plans and the buyer-dependent library of ٢٤٨):
  * the listed price is the net, VAT is added at checkout and on the receipt.
+ * Batch l16 (A-01, owner 25 Nov §1.1): only once platform_settings
+ * .billing_company holds a valid Saudi VAT number (moyasarConfig
+ * .isVatRegistered). Before that the VAT rate is 0 — no VAT is added, quoted
+ * or printed (vatPercentFor). Live payments already need the number, so a
+ * live charge is unchanged; every server quote passes the rate explicitly
+ * (vatCallSites in catalog.test.ts).
  * `VatMode` keeps "inclusive" only because orders paid before ٢٥٨ carry it in
  * payment_orders.vat_mode; nothing sold today is quoted inclusive.
  *
@@ -80,6 +86,14 @@ export type PayableItem = Readonly<{
 }>;
 
 export const VAT_PERCENT = 15;
+
+/**
+ * l16 (A-01): the VAT rate a quote uses — 15 once the VAT number is saved,
+ * 0 before it (never «0 % VAT» on a document: a rate of 0 means no VAT line).
+ */
+export function vatPercentFor(vatRegistered: boolean): number {
+  return vatRegistered === true ? VAT_PERCENT : 0;
+}
 
 const SAR = 100;
 
@@ -208,6 +222,8 @@ export function quote(
   billing: Billing,
   catalog: Readonly<Record<string, PayableItem>> = PAYABLE_ITEMS,
   now?: Date,
+  /** l16 (A-01): vatPercentFor(registered) — 15 or 0; anything else is 15. */
+  vatPercent: number = VAT_PERCENT,
 ): QuoteResult {
   const item = resolveItem(itemId, catalog);
   if (!item) return { ok: false, error: "unknown_item" };
@@ -219,7 +235,7 @@ export function quote(
   }
   const lp = now ? launchPriceOn(item.launchPrices, netHalalas / SAR, billing, now) : null;
   const charged = lp ? lp.sar * SAR : netHalalas;
-  const vatHalalas = Math.round((charged * VAT_PERCENT) / 100);
+  const vatHalalas = Math.round((charged * (vatPercent === 0 ? 0 : VAT_PERCENT)) / 100);
   return {
     ok: true,
     item,

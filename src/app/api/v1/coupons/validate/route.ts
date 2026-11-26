@@ -4,6 +4,8 @@ import { frozenAccountResponse } from "@/lib/auth/apiAuth";
 import { getMoyasarConfig, TIER_RANK } from "@/lib/access-control";
 import { parseCheckoutBody } from "@/lib/payments/checkoutRules";
 import { validateCouponWith } from "@/lib/payments/couponServer";
+import { readVatRegistered } from "@/lib/payments/vatStatus";
+import { vatPercentFor } from "@/lib/payments/catalog";
 import { COUPON_INVALID_AR, COUPONS_UNAVAILABLE_AR, normalizeCouponCode } from "@/lib/payments/couponRules";
 
 /**
@@ -73,11 +75,15 @@ export async function POST(request: NextRequest) {
     gatewayMode = undefined;
   }
 
+  // l16 (A-01): the VAT rate checkout would use (live always; else the saved VAT number)
+  const vatRegistered = gatewayMode === "live" ? true : await readVatRegistered(admin);
+  if (vatRegistered === null) return reply({ error: COUPONS_UNAVAILABLE_AR }, 503);
+
   try {
     const result = await validateCouponWith(
       // l6-pay (Q511): the tier ranking, so a plan's preview refuses exactly as checkout does
       { admin, ranks: TIER_RANK },
-      { userId: user.id, code, itemId: parsed.itemId, billing: parsed.billing, gatewayMode },
+      { userId: user.id, code, itemId: parsed.itemId, billing: parsed.billing, gatewayMode, vatPercent: vatPercentFor(vatRegistered) },
     );
     return reply(result.body, result.status);
   } catch (err) {

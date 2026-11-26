@@ -73,3 +73,16 @@ test("withExtraPlans appends the extra plans once, in source order, keeping the 
   );
   assert.deepEqual(withExtraPlans(family, ["nope"], source).map((p) => p.id), ["lawyer-pro", "topup-100"]);
 });
+
+test("l16 A-15: an independent consultant's cards lose «إدارة المكتب» and the bundle; nobody else's change", async () => {
+  const { withoutConsultantRefusedPlans, CONSULTANT_REFUSED_PLAN_ID_LIST } = await import("./audienceForUserType.ts");
+  const list = [{ id: "lawyer-pro" }, { id: "lawyer-bundle" }, { id: "lib-q1" }, { id: "consultant-independent" }];
+  assert.deepEqual(withoutConsultantRefusedPlans(list, true).map((p) => p.id), ["lib-q1", "consultant-independent"]);
+  assert.equal(withoutConsultantRefusedPlans(list, false), list);
+  const { CONSULTANT_REFUSED_PLAN_IDS } = await import("../payments/checkoutCore.ts");
+  assert.deepEqual([...CONSULTANT_REFUSED_PLAN_IDS].sort(), [...CONSULTANT_REFUSED_PLAN_ID_LIST].sort(), "checkout refuses exactly what the cards hide");
+  const { readFileSync } = await import("node:fs");
+  const read = (rel: string) => readFileSync(new URL(rel, import.meta.url), "utf8");
+  assert.match(read("../../app/pricing/page.tsx"), /withoutConsultantRefusedPlans\(/);
+  assert.match(read("../../app/settings/components/tabs/SubscriptionTab.tsx"), /withoutConsultantRefusedPlans\(/);
+});

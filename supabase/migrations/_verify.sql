@@ -8889,3 +8889,36 @@ select 'l16 admin account type: the converter refuses open commitments, writes t
                         and position('delete from' in lower(d)) = 0
                    from (select pg_catalog.pg_get_functiondef(to_regprocedure('public.admin_change_account_type(uuid,text,text,uuid)')) as d) f), false) as ok;
 -- <<< verify:l16_admin_account_type
+
+-- >>> verify:l16_pay
+-- Batch l16-pay (owner س٢١٣, gap A-08 / A-59 / E-12): free-plan / points code redemptions, recorded
+-- as full price → 100 % discount → net 0 with a free-activation receipt. 20261206_30 runs BEFORE the
+-- deploy. Before it runs the checks below answer ok = false («run 20261206_30»).
+select 'l16 pay: coupon_redemptions has RLS on, a full-discount CHECK, the once-per-user key, and no session write (run 20261206_30)' as check,
+       coalesce((select c.relrowsecurity
+                        and exists (select 1 from pg_catalog.pg_constraint k where k.conrelid = c.oid and k.conname = 'coupon_redemptions_full_discount_check')
+                        and to_regclass('public.coupon_redemptions_once_key') is not null
+                        and not has_table_privilege('anon', c.oid, 'SELECT')
+                        and not has_table_privilege('anon', c.oid, 'INSERT')
+                        and not has_table_privilege('authenticated', c.oid, 'INSERT')
+                        and not has_table_privilege('authenticated', c.oid, 'UPDATE')
+                        and not has_table_privilege('authenticated', c.oid, 'DELETE')
+                        and not has_column_privilege('authenticated', c.oid, 'user_id', 'SELECT')
+                   from pg_catalog.pg_class c where c.oid = to_regclass('public.coupon_redemptions')), false) as ok;
+select 'l16 pay: a signed-in user reads only his own redemptions (policy "own coupon redemptions") (run 20261206_30)' as check,
+       coalesce((select count(*) = 1 from pg_catalog.pg_policy p
+                  where p.polrelid = to_regclass('public.coupon_redemptions') and p.polname = 'own coupon redemptions'
+                    and p.polcmd = 'r' and pg_catalog.pg_get_expr(p.polqual, p.polrelid) like '%user_id = %auth.uid()%'), false) as ok;
+select 'l16 pay: coupon_redeem_open / coupon_redeem_finish are SECURITY DEFINER with an empty search_path, service_role only, and the open locks the coupon row (run 20261206_30)' as check,
+       coalesce((select count(*) = 2
+                        and bool_and(p.prosecdef
+                                     and p.proconfig @> array['search_path=""']
+                                     and not has_function_privilege('anon', p.oid, 'EXECUTE')
+                                     and not has_function_privilege('authenticated', p.oid, 'EXECUTE')
+                                     and has_function_privilege('service_role', p.oid, 'EXECUTE'))
+                   from pg_catalog.pg_proc p
+                  where p.oid in (to_regprocedure('public.coupon_redeem_open(uuid,uuid,integer,timestamptz,timestamptz)'),
+                                  to_regprocedure('public.coupon_redeem_finish(uuid,boolean,uuid)'))), false)
+       and coalesce(position('for update' in lower(pg_catalog.pg_get_functiondef(
+                      to_regprocedure('public.coupon_redeem_open(uuid,uuid,integer,timestamptz,timestamptz)')))) > 0, false) as ok;
+-- <<< verify:l16_pay

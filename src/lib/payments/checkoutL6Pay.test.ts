@@ -106,6 +106,7 @@ function db(
 }
 
 const input = (over: Partial<CheckoutInput> = {}): CheckoutInput => ({
+  vatPercent: 15,
   user: { id: USER, email: "buyer@example.test" },
   itemId: "firm-enterprise",
   billing: "quarterly",
@@ -223,13 +224,13 @@ test("Q511: the coupon preview refuses exactly as checkout does (credit → no c
   const a = db("firm", { subs: [HELD], orders: [HELD_ORDER] });
   const r = await validateCouponWith(
     { admin: a.client, now: () => NOW, ranks: RANKS, attempts: createCouponAttemptBudget() },
-    { userId: USER, code: "PLAN50", itemId: "firm-enterprise", billing: "quarterly" },
+    { userId: USER, code: "PLAN50", itemId: "firm-enterprise", billing: "quarterly", vatPercent: 15 },
   );
   assert.deepEqual(r, { status: 400, body: { error: UPGRADE_NO_COUPON_AR } });
   const b = db("firm", { subs: [{ ...HELD, tier: "enterprise" }], orders: [HELD_ORDER] });
   const r2 = await validateCouponWith(
     { admin: b.client, now: () => NOW, ranks: RANKS, attempts: createCouponAttemptBudget() },
-    { userId: USER, code: "PLAN50", itemId: "firm-basic", billing: "quarterly" },
+    { userId: USER, code: "PLAN50", itemId: "firm-basic", billing: "quarterly", vatPercent: 15 },
   );
   assert.deepEqual(r2, { status: 400, body: { error: UPGRADE_DOWNGRADE_AR } });
 });

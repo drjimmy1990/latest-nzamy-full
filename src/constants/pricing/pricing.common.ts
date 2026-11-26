@@ -105,7 +105,7 @@ export function getPlanList(
   const map: Record<string, Plan[]> = {
     individuals: isAr ? plansIndividuals.ar : plansIndividuals.en,
     lawyers:     isAr ? plansLawyers.ar     : plansLawyers.en,
-    firms:       isAr ? plansFirms.ar       : plansFirms.en,
+    firms:       [...(isAr ? plansFirms.ar : plansFirms.en), ...firmTopupCards(isAr)],
     micro:       isAr ? plansMicro.ar       : plansMicro.en,
     ngo:         isAr ? plansNgo.ar         : plansNgo.en,
     government:  isAr ? plansGovernment.ar   : plansGovernment.en,
@@ -118,6 +118,18 @@ export function getPlanList(
   // soon) is dropped too: no card, no comparison column, and no `?plan=` on
   // /register/client or /onboarding resolves to it (Wave 1 task 5).
   return (map[audience] ?? map.individuals).filter((plan) => !plan.isBetaHidden && bookCardOnSale(plan.id));
+}
+
+/**
+ * l16 (A-58, owner 25 Nov §7.7.2): an office buys the same point top-ups as
+ * a lawyer (topup-500 … topup-10000 — the price book sells them to "firm"),
+ * so the firms' tab shows those cards too. A guest's button registers an
+ * office (/register/provider?type=firm), never a lawyer.
+ */
+function firmTopupCards(isAr: boolean): Plan[] {
+  return (isAr ? plansLawyers.ar : plansLawyers.en)
+    .filter((p) => p.id.startsWith("topup-"))
+    .map((p) => ({ ...p, ctaHref: `/register/provider?type=firm&plan=${p.id}`, target: isAr ? "شحن نقاط للمكتب" : "Points for the office" }));
 }
 
 export function getComparisonList(audience: AudienceTab, isAr: boolean): ComparisonCategory[] {

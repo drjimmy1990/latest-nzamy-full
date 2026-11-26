@@ -29,6 +29,13 @@
  * The checkout and the coupon preview answer the same refusal (one rule,
  * here), so the buyer is told before he presses pay.
  *
+ * Batch l16 (owner س٢١٣ ب): the zero-amount record now exists for FREE-PLAN
+ * and POINTS codes — coupon_redemptions (20261206_30, couponRedeemCore.ts):
+ * full price → 100 % discount → net 0 with a free-activation receipt, never
+ * a payment_orders row. A percentage code that reaches 100 % AT CHECKOUT
+ * still stops here: saving a card without a purchase (Moyasar tokenization)
+ * is not built, and dropping the saved-card rule is the owner's call.
+ *
  * Pure: a type-only import, so `node --test` loads it.
  */
 

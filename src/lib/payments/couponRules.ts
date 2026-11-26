@@ -204,11 +204,15 @@ export interface DiscountedQuote {
   totalHalalas: number;
 }
 
-/** The quote after a discount: VAT on the discounted net (owner, §13أ; same rounding as catalog.quote). */
-export function applyDiscount(listNetHalalas: number, discountHalalas: number): DiscountedQuote {
+/**
+ * The quote after a discount: VAT on the discounted net (owner, §13أ; same
+ * rounding as catalog.quote). l16 (A-01): `vatPercent` is the quote's own
+ * rate — 0 while no VAT number is saved (catalog.vatPercentFor).
+ */
+export function applyDiscount(listNetHalalas: number, discountHalalas: number, vatPercent: number = VAT_PERCENT): DiscountedQuote {
   const d = Math.max(0, Math.min(discountHalalas, listNetHalalas));
   const netHalalas = listNetHalalas - d;
-  const vatHalalas = Math.round((netHalalas * VAT_PERCENT) / 100);
+  const vatHalalas = Math.round((netHalalas * (vatPercent === 0 ? 0 : VAT_PERCENT)) / 100);
   return { listNetHalalas, discountHalalas: d, netHalalas, vatHalalas, totalHalalas: netHalalas + vatHalalas };
 }
 

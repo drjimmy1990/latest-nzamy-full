@@ -6,6 +6,10 @@ import {
   isBillingCompanyComplete,
   paymentsGatewaySettingIssue,
   resolveMoyasarConfig,
+  liveGatewayActorIssue,
+  LIVE_NEEDS_AAL2_AR,
+  LIVE_NEEDS_MFA_AR,
+  LIVE_NEEDS_SUPER_ADMIN_AR,
 } from "./moyasarConfig.ts";
 
 // Placeholder test values only; they are never real keys.
@@ -138,7 +142,7 @@ test("billing_company admin validator: exactly four keys, string|null each, VAT 
 
 test("payments_gateway admin validator: moyasar test/live, stub unchanged, live needs billing", () => {
   const off = { stubAllowed: false, billingCompanyComplete: false };
-  const on = { stubAllowed: true, billingCompanyComplete: true };
+  const on = { stubAllowed: true, billingCompanyComplete: true, liveActor: { superAdmin: true, verifiedFactor: true, aal2: true } };
 
   assert.equal(paymentsGatewaySettingIssue({ status: "disabled", provider: null }, off), null);
   assert.equal(paymentsGatewaySettingIssue({ status: "disabled" }, off), null);
@@ -181,7 +185,7 @@ test("source contract: the admin route, the status route and access-control are 
   assert.match(settings, /points_enforcement:/);
   assert.match(settings, /return paymentsGatewaySettingIssue\(value,/);
   // P3 Task 8: the value validated is `toStore` (founder_campaign merges into the stored value first).
-  assert.match(settings, /await validate\(toStore, \{ billingCompanyComplete: readBillingCompanyComplete \}\)/);
+  assert.match(settings, /await validate\(toStore, \{\s*billingCompanyComplete: readBillingCompanyComplete,/);
   assert.doesNotMatch(settings, /live غير مدعوم بعد/);
 
   const status = read("../../app/api/v1/payments/status/route.ts");
@@ -291,4 +295,35 @@ test("N1.1: key bodies of the lengths Moyasar's own docs show (21, 24, 40) are v
   }
   // The 14 visible characters of a masked key, stars dropped, are still too short.
   assert.equal(resolveMoyasarConfig(T, { ...TEST_ENV, secretKey: "sk_test_XzYQHba5GfKfNP" }, false).enabled, false);
+});
+
+test("l16 A-22: live only for a super admin with a verified factor and an aal2 session; off / test never ask", () => {
+  const base = { stubAllowed: false, billingCompanyComplete: true };
+  const live = { status: "live", provider: "moyasar" };
+  const full = { superAdmin: true, verifiedFactor: true, aal2: true };
+  assert.equal(paymentsGatewaySettingIssue(live, { ...base, liveActor: full }), null);
+  assert.equal(paymentsGatewaySettingIssue(live, base), LIVE_NEEDS_SUPER_ADMIN_AR, "no actor → refused");
+  assert.equal(paymentsGatewaySettingIssue(live, { ...base, liveActor: { ...full, superAdmin: false } }), LIVE_NEEDS_SUPER_ADMIN_AR);
+  assert.equal(paymentsGatewaySettingIssue(live, { ...base, liveActor: { ...full, verifiedFactor: false } }), LIVE_NEEDS_MFA_AR);
+  assert.equal(paymentsGatewaySettingIssue(live, { ...base, liveActor: { ...full, aal2: false } }), LIVE_NEEDS_AAL2_AR);
+  // the billing rule still comes first
+  assert.match(String(paymentsGatewaySettingIssue(live, { ...base, billingCompanyComplete: false, liveActor: full })), /billing_company/);
+  // switching off or to test never needs the factor
+  const nobody = { superAdmin: false, verifiedFactor: false, aal2: false };
+  assert.equal(paymentsGatewaySettingIssue({ status: "disabled", provider: "moyasar" }, { ...base, liveActor: nobody }), null);
+  assert.equal(paymentsGatewaySettingIssue({ status: "test", provider: "moyasar" }, { ...base, liveActor: nobody }), null);
+  // a truthy non-boolean is not true
+  assert.equal(liveGatewayActorIssue({ superAdmin: 1, verifiedFactor: true, aal2: true } as unknown as Parameters<typeof liveGatewayActorIssue>[0]), LIVE_NEEDS_SUPER_ADMIN_AR);
+});
+
+test("l16 A-22 source contract: the settings route passes the live actor (role + factor + aal2)", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const settings = readFileSync(join(import.meta.dirname, "../../app/api/v1/admin/settings/route.ts"), "utf8");
+  assert.match(settings, /liveActor: wantsLive \? await ctx\.liveActor\(\) : undefined/);
+  assert.match(settings, /liveActor: \(\) => readLiveGatewayActor\(gate\.role\)/);
+  const actor = readFileSync(join(import.meta.dirname, "liveGatewayActorServer.ts"), "utf8");
+  assert.match(actor, /superAdmin: role === "super_admin"/);
+  assert.match(actor, /verifiedFactor: hasVerifiedFactor\(user\)/);
+  assert.match(actor, /aal2: aalFromAccessToken\(await currentAccessToken\(supabase\)\) === "aal2"/);
 });

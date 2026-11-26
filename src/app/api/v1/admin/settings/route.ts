@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { dbErrorJson } from "@/lib/api/dbError";
 import { createServiceClient } from "@/lib/supabase/server";
 import { requireStaff } from "@/lib/access-control";
+import { readLiveGatewayActor } from "@/lib/payments/liveGatewayActorServer";
 import { logAdminAction } from "@/lib/auth/adminAudit";
 import {
   founderCampaignSettingIssue,
@@ -23,6 +24,7 @@ import {
   billingCompanySettingIssue,
   isBillingCompanyComplete,
   paymentsGatewaySettingIssue,
+  type LiveGatewayActor,
 } from "@/lib/payments/moyasarConfig";
 import { feqhFreePagesIssue, libraryPublicProtectionIssue, publicRulingsIssue } from "@/lib/library/publicGuard";
 import { libraryMinPointsIssue } from "@/lib/library/pointsGate";
@@ -187,6 +189,8 @@ const ALLOWED_SETTINGS_KEYS = [
 interface SettingValidatorContext {
   /** isBillingCompanyComplete() of the stored billing_company (false on a read error). */
   billingCompanyComplete: () => Promise<boolean>;
+  /** l16 (A-22): the writer's role, verified factor and aal2 session — read only when "live" is asked for. */
+  liveActor: () => Promise<LiveGatewayActor>;
 }
 
 type SettingValidator = (
@@ -224,6 +228,7 @@ const SETTINGS_VALUE_VALIDATORS: Record<string, SettingValidator> = {
     return paymentsGatewaySettingIssue(value, {
       stubAllowed,
       billingCompanyComplete: wantsLive ? await ctx.billingCompanyComplete() : false,
+      liveActor: wantsLive ? await ctx.liveActor() : undefined,
     });
   },
   billing_company: billingCompanySettingIssue,
@@ -443,7 +448,11 @@ export async function PATCH(request: NextRequest) {
   // ── Validate the value shape for safety-critical keys ──────────────────────
   const validate = SETTINGS_VALUE_VALIDATORS[key];
   if (validate) {
-    const invalid = await validate(toStore, { billingCompanyComplete: readBillingCompanyComplete });
+    const invalid = await validate(toStore, {
+      billingCompanyComplete: readBillingCompanyComplete,
+      // l16 (A-22): role + verified factor + aal2 (liveGatewayActorServer.ts)
+      liveActor: () => readLiveGatewayActor(gate.role),
+    });
     if (invalid) {
       return NextResponse.json({ error: invalid }, { status: 400 });
     }
