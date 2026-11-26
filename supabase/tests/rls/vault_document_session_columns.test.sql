@@ -164,15 +164,27 @@ select set_config('test.uid', '10000000-0000-0000-0000-00000000001a', false);
 do $$
 declare n int;
 begin
-  -- the order's other party keeps the Phase 6 rule (bin / hold), unchanged here
+  -- the order's other party may still PLACE a hold (Phase 6); since 20261206_11
+  -- (س٢٠٣) only the file's owner lifts it — when that file is in the chain.
   update public.attachments set legal_hold = true, hold_reason = 'حفظ' where id = 902;
   get diagnostics n = row_count;
   if n <> 1 then raise exception 'T3b FAIL: the lawyer lost the hold he had on the case document (% rows)', n; end if;
-  update public.attachments set legal_hold = false, hold_reason = null where id = 902;
+  if to_regprocedure('public.guard_attachment_hold_owner()') is null then
+    update public.attachments set legal_hold = false, hold_reason = null where id = 902;
+  else
+    begin
+      update public.attachments set legal_hold = false, hold_reason = null where id = 902;
+      raise exception 'T3b FAIL: the lawyer lifted the client''s hold after 20261206_11';
+    exception when insufficient_privilege then null;
+    end;
+    perform set_config('test.uid', 'c0000000-0000-0000-0000-00000000000c', false);
+    update public.attachments set legal_hold = false, hold_reason = null where id = 902;
+    perform set_config('test.uid', '10000000-0000-0000-0000-00000000001a', false);
+  end if;
   update public.attachments set deleted_at = now(), deleted_by = '10000000-0000-0000-0000-00000000001a' where id = 903;
   get diagnostics n = row_count;
   if n <> 1 then raise exception 'T3b FAIL: the lawyer could not bin his own memo (% rows)', n; end if;
-  raise notice 'T3b PASS: the other party''s existing rights (hold, bin) are unchanged';
+  raise notice 'T3b PASS: the other party still places a hold and bins his own file (lifting the other''s hold: owner only after 20261206_11)';
 end $$;
 
 -- ── T4 a stranger still reaches nothing ─────────────────────────────────────

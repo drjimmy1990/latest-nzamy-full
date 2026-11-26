@@ -60,6 +60,11 @@ export async function POST(
       .maybeSingle();
 
     if (updateError) {
+      // س٢٠٣ (20261206_11): only the file's owner bins or restores it (or a
+      // case supervisor for a team member's file); the database says 42501.
+      if (updateError.code === "42501") {
+        return NextResponse.json({ error: "لا يستعيد الملف إلا صاحبه.", code: "file_owner_only" }, { status: 403 });
+      }
       const mapped = documentsDbErrorResponse(updateError);
       console.error("[documents restore] update failed:", id, updateError.message, updateError.code);
       return NextResponse.json({ error: mapped.message }, { status: mapped.status });

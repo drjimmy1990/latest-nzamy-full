@@ -8646,3 +8646,30 @@ select 'l16 D-01: the requester cancel lock is SECURITY DEFINER with an empty se
        and not coalesce(has_function_privilege('authenticated', 'public.service_request_delivered_at(jsonb)', 'EXECUTE'), true)
        and not coalesce(has_function_privilege('authenticated', 'public.enforce_requester_cancel_lock()', 'EXECUTE'), true) as ok;
 -- <<< verify:l16_d01
+-- >>> verify:l16_hold — supabase/tests/rls/attachment_hold_owner.test.sql
+-- l16 س٢٠٣: a party places a hold on any file of its request; only the owner
+-- (a case supervisor for a team member's file, or an admin) lifts it; only the
+-- owner bins / restores; the other party files «طلب رفع الحجز».
+select 'l16 س٢٠٣: the hold/bin owner guard is on attachments, SECURITY INVOKER, enabled (run 20261206_11)' as check,
+       exists (select 1 from pg_catalog.pg_trigger
+                where tgrelid = 'public.attachments'::regclass
+                  and tgname = 'trg_03_attachments_hold_owner' and tgenabled <> 'D'
+                  and tgfoid = to_regprocedure('public.guard_attachment_hold_owner()'))
+       and not coalesce((select prosecdef from pg_catalog.pg_proc
+                          where oid = to_regprocedure('public.guard_attachment_hold_owner()')), true) as ok;
+select 'l16 س٢٠٣: restore_case_document no longer lets the other party restore (run 20261206_11; a re-run of 20261025_51 undoes it)' as check,
+       coalesce(pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.restore_case_document(bigint)')), 'can_manage_attachment') > 0, false) as ok;
+select 'l16 س٢٠٣: «طلب رفع الحجز» — append-only table closed to session writes; the definer RPC callable by signed-in users only (run 20261206_11)' as check,
+       to_regclass('public.attachment_hold_lift_requests') is not null
+       and coalesce((select c.relrowsecurity from pg_catalog.pg_class c where c.oid = to_regclass('public.attachment_hold_lift_requests')), false)
+       and not coalesce(has_table_privilege('authenticated', 'public.attachment_hold_lift_requests', 'INSERT'), true)
+       and not coalesce(has_table_privilege('authenticated', 'public.attachment_hold_lift_requests', 'UPDATE'), true)
+       and not coalesce(has_table_privilege('anon', 'public.attachment_hold_lift_requests', 'SELECT'), true)
+       and exists (select 1 from pg_catalog.pg_trigger
+                    where tgrelid = to_regclass('public.attachment_hold_lift_requests')
+                      and tgname = 'trg_attachment_hold_lift_requests_append_only' and not tgisinternal)
+       and coalesce((select p.prosecdef and p.proconfig @> array['search_path=""']
+                       from pg_catalog.pg_proc p where p.oid = to_regprocedure('public.request_attachment_hold_lift(bigint, text)')), false)
+       and coalesce(has_function_privilege('authenticated', to_regprocedure('public.request_attachment_hold_lift(bigint, text)'), 'EXECUTE'), false)
+       and not coalesce(has_function_privilege('anon', to_regprocedure('public.request_attachment_hold_lift(bigint, text)'), 'EXECUTE'), true) as ok;
+-- <<< verify:l16_hold
