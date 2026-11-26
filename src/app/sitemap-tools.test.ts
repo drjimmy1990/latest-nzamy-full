@@ -18,7 +18,8 @@ const src = readFileSync(new URL("./sitemap.ts", import.meta.url), "utf8").repla
 const urls = [...src.matchAll(/\{ url: "([^"]+)"/g)].map((m) => m[1]);
 
 test("the sitemap lists static routes (the read found them)", () => {
-  assert.ok(urls.length > 50, `only ${urls.length} static urls read from sitemap.ts`);
+  // 46 since the 25-Nov package dropped six redirect / «قريباً» URLs (GSC-01).
+  assert.ok(urls.length > 40, `only ${urls.length} static urls read from sitemap.ts`);
   assert.ok(urls.includes("/ai"), "the AI hub itself stays listed");
 });
 
@@ -28,9 +29,22 @@ test("task 6 review M1: no gate-only or «قريباً» tool route is advertise
 });
 
 test("the guest tools with a working path stay listed", () => {
-  for (const route of ["/ai/legal-translate", "/ai/collector", "/ai/procedures"]) {
+  for (const route of ["/ai/collector", "/ai/procedures"]) {
     assert.ok(urls.includes(route), route);
   }
+});
+
+test("owner package 25-Nov (GSC-01): no redirect and no «قريباً» page is listed", () => {
+  // /ai/legal-translate renders DashboardComingSoon (its page.tsx); it was
+  // pinned as listed above until then. /lawyers, /precedents and
+  // /community/public always redirect; /academy and /media say «قريباً».
+  for (const route of ["/ai/legal-translate", "/lawyers", "/precedents", "/community/public", "/academy", "/media"]) {
+    assert.ok(!urls.includes(route), route);
+  }
+  // /marketplace and /lawyers/browse redirect only during the beta: they stay
+  // in the list and are filtered at runtime while BETA_MONOPOLY_MODE is on.
+  assert.match(src, /const BETA_HIDDEN_ROUTES: readonly string\[\] = \["\/lawyers\/browse", "\/marketplace"\];/);
+  assert.match(src, /BETA_MONOPOLY_MODE\n\s*\? publicRoutes\.filter\(\(r\) => !BETA_HIDDEN_ROUTES\.includes\(r\.url\)\)/);
 });
 
 test("owner 18 Nov, item 4.3: /ai/draft and /ai/legal-opinion are sign-in pages (proxy.ts PROTECTED) — not advertised", () => {

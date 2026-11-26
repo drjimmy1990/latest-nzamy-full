@@ -4,6 +4,7 @@ import { assertRole } from "@/lib/auth/assertRole";
 import { describeActivityEvent, type ActivityBadge } from "@/lib/events";
 import { aiRunActivityItem, readAiRunActivity, type AiRunActivityRow } from "@/lib/ai/aiRunActivity";
 import { mergeActivityPage } from "@/lib/activity/activityPage";
+import { FIRM_TEAM_VIEW_ROLES, resolveCallerFirm } from "@/lib/auth/firmMembershipAccess";
 
 /**
  * GET /api/v1/firm/activity
@@ -72,27 +73,47 @@ interface FirmActivityRow {
 
 export async function GET(request: NextRequest) {
   try {
-    const auth = await assertRole(["firm", "admin"]);
+    // D-53 (l16): the firm account and the admin as before, plus an ACTIVE
+    // member whose role reads the office (FIRM_TEAM_VIEW_ROLES: managing
+    // partner, office admin, HR manager). RLS still decides every event row.
+    const auth = await assertRole();
     if (!auth.ok) return auth.response;
     const { user, supabase } = auth;
+    const isFirmAccount = auth.userType === "firm" || auth.userType === "admin";
 
     const rawBefore = request.nextUrl.searchParams.get("before");
     const before = rawBefore && !Number.isNaN(Date.parse(rawBefore)) ? rawBefore : null;
 
-    // The firm account's OWN runs — user.id, never a member's (owner ٤٤٤).
-    const aiRes = await readAiRunActivity(supabase, user.id, before, PAGE_SIZE);
-    const aiItems = aiRes.rows.map(firmAiRunItem);
-
-    const { data: firm, error: firmError } = await supabase
-      .from("firm_profiles")
-      .select("id")
-      .eq("owner_user_id", user.id)
-      .maybeSingle();
-
-    if (firmError) {
-      console.error("[firm/activity GET] firm_profiles lookup failed:", firmError.message);
-      return NextResponse.json({ error: DB_ERROR_AR }, { status: 500 });
+    let firm: { id: string } | null = null;
+    if (isFirmAccount) {
+      const { data, error: firmError } = await supabase
+        .from("firm_profiles")
+        .select("id")
+        .eq("owner_user_id", user.id)
+        .maybeSingle();
+      if (firmError) {
+        console.error("[firm/activity GET] firm_profiles lookup failed:", firmError.message);
+        return NextResponse.json({ error: DB_ERROR_AR }, { status: 500 });
+      }
+      firm = data ? { id: data.id as string } : null;
+    } else {
+      const { data: callerFirm, error: memberError } = await resolveCallerFirm(supabase, user.id);
+      if (memberError) {
+        console.error("[firm/activity GET] membership lookup failed:", memberError.message);
+        return NextResponse.json({ error: DB_ERROR_AR }, { status: 500 });
+      }
+      if (!callerFirm || !FIRM_TEAM_VIEW_ROLES.has(callerFirm.role)) {
+        return NextResponse.json({ error: "غير مصرح — صلاحيات غير كافية" }, { status: 403 });
+      }
+      firm = { id: callerFirm.id };
     }
+
+    // The firm account's OWN runs — user.id, never a member's (owner ٤٤٤); a
+    // member reading the office feed sees its events only.
+    const aiRes = isFirmAccount
+      ? await readAiRunActivity(supabase, user.id, before, PAGE_SIZE)
+      : { rows: [] as AiRunActivityRow[], degraded: false };
+    const aiItems = aiRes.rows.map(firmAiRunItem);
 
     if (!firm) {
       // No firm row for this account — a real state (nothing to show yet),

@@ -1,6 +1,6 @@
 import { NextResponse, NextRequest } from "next/server";
 import { DB_ERROR_AR } from "@/lib/api/dbError";
-import { assertRole } from "@/lib/auth/assertRole";
+import { assertCaseWorker } from "@/lib/auth/assertCaseWorker";
 import { BOARD_FULL_SELECT, boardWriteError, checkBoardName, isBoardId } from "../_boards";
 
 /**
@@ -20,7 +20,7 @@ import { BOARD_FULL_SELECT, boardWriteError, checkBoardName, isBoardId } from ".
 type Ctx = { params: Promise<{ caseId: string; boardId: string }> };
 
 async function open(context: Ctx) {
-  const auth = await assertRole(["lawyer", "firm", "corporate"]);
+  const auth = await assertCaseWorker(["corporate"]);
   if (!auth.ok) return { response: auth.response } as const;
   const { caseId, boardId } = await context.params;
   if (!caseId || !isBoardId(boardId)) {

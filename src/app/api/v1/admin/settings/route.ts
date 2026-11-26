@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { dbErrorJson } from "@/lib/api/dbError";
-import { createClient, createServiceClient } from "@/lib/supabase/server";
-import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
+import { createServiceClient } from "@/lib/supabase/server";
 import { requireStaff } from "@/lib/access-control";
+import { readLiveGatewayActor } from "@/lib/payments/liveGatewayActorServer";
 import { logAdminAction } from "@/lib/auth/adminAudit";
 import {
   founderCampaignSettingIssue,
@@ -10,6 +10,7 @@ import {
   mergeFounderCampaignSetting,
 } from "@/lib/pricing/campaigns";
 import { aiToolsSettingIssue } from "@/lib/ai/aiToolsConfig";
+import { AI_MODEL_SETTING, aiModelSettingIssue } from "@/lib/ai/aiModel";
 import { founderDiscountExpiresIssue, isFounderDiscountBps } from "@/lib/payments/founderDiscount";
 import { firmExtraSeatPriceIssue } from "@/lib/pricing/firmSeats";
 import { founderRenewalIssue } from "@/lib/membership/founderRenewal";
@@ -23,6 +24,7 @@ import {
   billingCompanySettingIssue,
   isBillingCompanyComplete,
   paymentsGatewaySettingIssue,
+  type LiveGatewayActor,
 } from "@/lib/payments/moyasarConfig";
 import { feqhFreePagesIssue, libraryPublicProtectionIssue, publicRulingsIssue } from "@/lib/library/publicGuard";
 import { libraryMinPointsIssue } from "@/lib/library/pointsGate";
@@ -42,6 +44,8 @@ import { firmCaseScopeIssue } from "@/lib/firm/firmCaseScope";
 import { founderStorageIssue } from "@/lib/membership/founderStorage";
 // Batch l13 founder (20261203_20, owner Q144 أ): the founder monthly invites.
 import { FOUNDER_INVITES_KEY, founderInvitesIssue } from "@/lib/founder/founderInvites";
+// Batch l15 (20261205_10): the WhatsApp sign-up code switch.
+import { SIGNUP_PHONE_OTP_KEY, signupPhoneOtpIssue } from "@/lib/phoneOtp/phoneOtpRules";
 
 /** Allowlisted setting keys that admins can modify */
 const ALLOWED_SETTINGS_KEYS = [
@@ -72,6 +76,9 @@ const ALLOWED_SETTINGS_KEYS = [
   // "review" is refused (aiToolsSettingIssue) until Wave 3's money-safe gate.
   // A tool not named keeps its default in src/lib/ai/tools.ts ("off").
   "ai_tools",
+  // Batch l16 (owner س٢١٩; src/lib/ai/aiModel.ts): {"model": "models/…"} — the
+  // model every AI run sends to n8n; only a model with a price row may be chosen.
+  AI_MODEL_SETTING,
   // l7 (decision 4, 20261127_10): the founder top-up discount in basis points
   // (1500 = 15 %), a whole number 0–10000; read by founderDiscountBps().
   "founder_topup_discount_bps",
@@ -160,6 +167,10 @@ const ALLOWED_SETTINGS_KEYS = [
   // Batch l13 aiadmin (owner ١٦٦): {"included": 0..30} — the legal drafter's
   // section edits included in a memo's price (5 until saved; src/lib/ai/sectionEdits.ts).
   SECTION_EDITS_SETTING_KEY,
+  // Batch l15 (20261205_10; src/lib/phoneOtp/phoneOtpRules.ts): {"enabled": bool} —
+  // «رمز التحقق عبر واتساب عند التسجيل». The database stamps enabled_at the first
+  // time it is stored on and never moves it (trg_signup_phone_otp_setting).
+  SIGNUP_PHONE_OTP_KEY,
   "license_number",
   "license_issuer",
 ] as const;
@@ -178,6 +189,8 @@ const ALLOWED_SETTINGS_KEYS = [
 interface SettingValidatorContext {
   /** isBillingCompanyComplete() of the stored billing_company (false on a read error). */
   billingCompanyComplete: () => Promise<boolean>;
+  /** l16 (A-22): the writer's role, verified factor and aal2 session — read only when "live" is asked for. */
+  liveActor: () => Promise<LiveGatewayActor>;
 }
 
 type SettingValidator = (
@@ -215,6 +228,7 @@ const SETTINGS_VALUE_VALIDATORS: Record<string, SettingValidator> = {
     return paymentsGatewaySettingIssue(value, {
       stubAllowed,
       billingCompanyComplete: wantsLive ? await ctx.billingCompanyComplete() : false,
+      liveActor: wantsLive ? await ctx.liveActor() : undefined,
     });
   },
   billing_company: billingCompanySettingIssue,
@@ -227,6 +241,8 @@ const SETTINGS_VALUE_VALIDATORS: Record<string, SettingValidator> = {
   founder_campaign: founderCampaignSettingIssue,
   // Pure, so src/lib/ai/runCore.test.ts covers it.
   ai_tools: (value) => aiToolsSettingIssue(value, Object.keys(AI_TOOLS)),
+  // Batch l16: pure, covered by src/lib/ai/aiModel.test.ts.
+  [AI_MODEL_SETTING]: aiModelSettingIssue,
   // A malformed rate would read back as the default 1500 — refuse it here.
   founder_topup_discount_bps: (value) =>
     isFounderDiscountBps(value) ? null : "قيمة founder_topup_discount_bps يجب أن تكون عدداً صحيحاً من 0 إلى 10000 (1500 = ١٥٪)",
@@ -275,6 +291,8 @@ const SETTINGS_VALUE_VALIDATORS: Record<string, SettingValidator> = {
   [SIMPLE_CONTRACT_PRICE_KEY]: simpleContractPriceIssue,
   // Batch l13 aiadmin: pure, covered by src/lib/ai/sectionEdits.test.ts.
   [SECTION_EDITS_SETTING_KEY]: sectionEditsIncludedIssue,
+  // Batch l15: pure, covered by src/lib/phoneOtp/phoneOtp.test.ts.
+  [SIGNUP_PHONE_OTP_KEY]: signupPhoneOtpIssue,
 };
 
 /** A read error or a missing row counts as incomplete, so live stays refused. */
@@ -302,36 +320,12 @@ async function readBillingCompanyComplete(): Promise<boolean> {
  *
  * Returns: { data: { [key]: value } } as a flat object
  *
- * Requires: authenticated admin user
+ * Requires: a staff role that may read (requireStaff("read"), l16 C34)
  */
 export async function GET() {
-  // ── Auth check ─────────────────────────────────────────────────────────────
-  const supabase = await createClient();
-  const {
-    data: { user },
-    error: authError,
-  } = await supabase.auth.getUser();
-
-  if (isAuthUnavailable(user, authError)) return authUnavailableResponse();
-  if (!user) {
-    return NextResponse.json(
-      { error: "غير مصرح — يرجى تسجيل الدخول" },
-      { status: 401 },
-    );
-  }
-
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("user_type")
-    .eq("id", user.id)
-    .single();
-
-  if (!profile || profile.user_type !== "admin") {
-    return NextResponse.json(
-      { error: "غير مصرح — صلاحيات المسؤول مطلوبة" },
-      { status: 403 },
-    );
-  }
+  // ── Staff gate (l16 C34): every staff role may read; writes keep their own action ──
+  const gate = await requireStaff("read");
+  if (!gate.ok) return gate.response;
 
   const adminClient = await createServiceClient();
 
@@ -454,7 +448,11 @@ export async function PATCH(request: NextRequest) {
   // ── Validate the value shape for safety-critical keys ──────────────────────
   const validate = SETTINGS_VALUE_VALIDATORS[key];
   if (validate) {
-    const invalid = await validate(toStore, { billingCompanyComplete: readBillingCompanyComplete });
+    const invalid = await validate(toStore, {
+      billingCompanyComplete: readBillingCompanyComplete,
+      // l16 (A-22): role + verified factor + aal2 (liveGatewayActorServer.ts)
+      liveActor: () => readLiveGatewayActor(gate.role),
+    });
     if (invalid) {
       return NextResponse.json({ error: invalid }, { status: 400 });
     }

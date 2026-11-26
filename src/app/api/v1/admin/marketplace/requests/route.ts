@@ -13,7 +13,7 @@ import { toOpenRequestItem } from "@/lib/services/openRequestsView";
  */
 export async function GET() {
   try {
-    const gate = await requireStaff("orders.manage");
+    const gate = await requireStaff("read");
     if (!gate.ok) return gate.response;
     const admin = await createServiceClient();
     const { data, error } = await admin.rpc("marketplace_open_requests_admin", { p_limit: 200, p_offset: 0 });
@@ -30,6 +30,8 @@ export async function GET() {
         title: typeof r.title === "string" ? r.title : "",
         published: r.published === true,
         pendingAsks: typeof r.pending_asks === "number" ? r.pending_asks : 0,
+        // l16 س٢٣ (20261206_40): still in the Nezamy priority window until then; absent before that file runs.
+        releaseAt: typeof r.release_at === "string" ? r.release_at : null,
       })),
     });
   } catch (err) {

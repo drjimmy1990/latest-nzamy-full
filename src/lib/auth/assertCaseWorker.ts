@@ -15,11 +15,30 @@ import { assertRole } from "@/lib/auth/assertRole";
  * Admits: lawyer, firm and admin accounts, plus any account with an ACTIVE
  * `firm_members` row. RLS still decides every row (case_notes,
  * case_team_members — 20261017_41); this is defense in depth, not the gate.
+ *
+ * D-52 (batch l16): the same gate now fronts the lawyer workspace APIs a firm
+ * member's screens call (/api/v1/lawyer/clients, consultations, contracts,
+ * tasks, hearings, deadlines, case stages, case board / graph, activity,
+ * dashboard summary) — `assertRole(["lawyer", "firm"])` refused a member whose
+ * own account is `individual` (secretary, office admin, trainee …). Every one
+ * of those routes reads and writes through this RLS-scoped client, and their
+ * tables already admit an active colleague of the same firm (or only the
+ * caller's own rows). The market routes (open-requests, market-requests), the
+ * public services list, invoices (finance) and reviews keep their lawyer/firm
+ * gate: a member does not claim market requests or bill in his own name. So
+ * do a contract's fee schedule writes (POST contracts/[id]/payments, PATCH /
+ * DELETE contracts/[id]/payments/[pid]) and deleting a contract version
+ * (DELETE contracts/[id]/versions/[vid]) — l16 review: they keep the gate
+ * they had before D-52; a member still reads the contract.
+ *
+ * `extraTypes` admits further account types as they are (the case graph is
+ * also a company's: `assertCaseWorker(["corporate"])`).
  */
-export async function assertCaseWorker(): ReturnType<typeof assertRole> {
+export async function assertCaseWorker(extraTypes: readonly string[] = []): ReturnType<typeof assertRole> {
   const auth = await assertRole();
   if (!auth.ok) return auth;
   if (auth.userType === "lawyer" || auth.userType === "firm" || auth.userType === "admin") return auth;
+  if (extraTypes.includes(auth.userType)) return auth;
 
   const { data, error } = await auth.supabase
     .from("firm_members")

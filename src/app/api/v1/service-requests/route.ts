@@ -28,6 +28,7 @@ import { fallbackPublicSummary, type SummarySource } from "@/lib/services/reques
 import { modelPublicSummary, requestSummaryModelEnabled } from "@/lib/services/requestPublicSummaryModel";
 import { callN8n } from "@/lib/ai/n8nClient";
 import { staffMfaGate } from "@/lib/auth/staffMfaServer";
+import { BUSINESS_REQUEST_ROLES } from "@/constants/entityRouteAccess";
 
 async function resolveActiveEntityIds(supabase: SupabaseClient, userId: string) {
   const [firmResult, businessResult, ownedFirmResult, ownedBusinessResult] = await Promise.all([
@@ -38,11 +39,15 @@ async function resolveActiveEntityIds(supabase: SupabaseClient, userId: string) 
       .eq("status", "active")
       .limit(1)
       .maybeSingle(),
+    // l16 D-10: only a role that may raise a request in the company's name
+    // (BUSINESS_REQUEST_ROLES — not `seconded`, not `compliance_officer`)
+    // makes the request a company one; any other member files it as himself.
     supabase
       .from("business_members")
       .select("business_id")
       .eq("user_id", userId)
       .eq("status", "active")
+      .in("role", [...BUSINESS_REQUEST_ROLES])
       .limit(1)
       .maybeSingle(),
     supabase

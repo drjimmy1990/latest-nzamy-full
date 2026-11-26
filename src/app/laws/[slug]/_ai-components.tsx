@@ -9,9 +9,13 @@ import {
 import type { LawArticle } from "../data";
 import { LiteMarkdown } from "../components/AiTabContent";
 import type { LibraryAiAction } from "./_ai-reply";
-import { askLibrary, loadLibraryHistory, type LibraryHistoryConversation } from "./_library-assistant";
+import { askLibrary, LIBRARY_AI_SOON, loadLibraryHistory, type LibraryHistoryConversation } from "./_library-assistant";
+import { libraryAiRefusal } from "./_ai-reply";
+import { useToolUsable } from "@/hooks/useToolUsable";
+import { aiToolPriceText } from "@/lib/ai/toolPointsDisplay";
 import LibraryPointsLowNotice from "@/components/library/LibraryPointsLowNotice";
-import { explainGreeting, explainSubtitle } from "./_explain-greeting";
+import { explainRequest, explainSubtitle, spokenArticle } from "./_explain-greeting";
+import { explainSession, explainSessionKey, saveExplainSession, type ExplainSession } from "./_explain-session";
 import { asCitations, CitedText, SourceList, type Citation } from "@/components/ai/CitedAnswer";
 import { useUser } from "@/hooks/useUser";
 import { createCommunityPost } from "@/lib/services/communityService";
@@ -312,19 +316,54 @@ export function LibraryAI({ isDark, isRTL = true }: { isDark: boolean; isRTL?: b
 
 // ─── Preamble collapsible ──────────────────────────────────────────────────────
 
+/** The tool «اشرح لي» runs (POST /api/v1/ai/runs, 5 points a question). */
+const EXPLAIN_TOOL = "library-assistant";
+
+/**
+ * May the signed-in reader run «اشرح لي» now (useToolUsable)? Mounted only for
+ * a signed-in reader, so a guest's window asks the server nothing at all.
+ */
+function ExplainToolGate({ onAnswer }: { onAnswer: (usable: boolean) => void }) {
+  const usable = useToolUsable(EXPLAIN_TOOL);
+  useEffect(() => {
+    if (usable !== null) onAnswer(usable);
+  }, [usable, onAnswer]);
+  return null;
+}
+
+/**
+ * Owner package 25-Nov §2.7 / ٢١٨ (batch l16, B-16 / E-20): «اشرح لي» explains
+ * the article as soon as the window opens — no greeting waiting for a typed
+ * question. The request goes ONCE per opening (autoSentRef, set at the moment
+ * it fires, so React's development double effect cannot send it twice), and
+ * never for a guest (the sign-in message, no request) or when the tool is
+ * switched off («قيد التفعيل», no request). The price is on the button that
+ * opens the window and in the window's header. A refusal the server gives
+ * before any charge (tier, points, lock) is shown as it comes.
+ */
 export function ArticleExplainModal({ article, isDark, onClose, isRTL = true, lawName }: { article: LawArticle; isDark: boolean; onClose: () => void; isRTL?: boolean; lawName?: string }) {
+  const user = useUser();
   const [input, setInput] = useState("");
-  // N02-5: an untitled article is named by its law, never by "" (_explain-greeting.ts).
-  const [msgs, setMsgs]   = useState<AIMessage[]>([
-    {
-      role: "ai",
-      text: explainGreeting({ num: article.num, articleTitle: article.title, lawName, isRTL }),
-    }
-  ]);
+  const [msgs, setMsgs]   = useState<AIMessage[]>([]);
   const subtitle = explainSubtitle(article.title, lawName);
   const [loading, setLoading] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const conversationRef = useRef<string | null>(null);
+  // One question at a time: a second Enter while one is in flight is not a second charge.
+  const sendingRef = useRef(false);
+  const autoSentRef = useRef(false);
+  const [usable, setUsable] = useState<boolean | null>(null);
+  const onGate = useCallback((answer: boolean) => setUsable(answer), []);
+  const signedIn = !user.loading && user.isLoggedIn;
+  // l16 review: the last answer per article is kept for the session
+  // (_explain-session.ts) — a re-opening shows it, and a window closed while a
+  // question runs gets its answer on the next opening. No new charge.
+  const sessionKey = signedIn ? explainSessionKey(user.userId, article.id) : null;
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
 
   const [isRecording, setIsRecording] = useState(false);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
@@ -356,26 +395,98 @@ export function ArticleExplainModal({ article, isDark, onClose, isRTL = true, la
 
   const handleSend = async (q: string) => {
     const query = q.trim();
-    if (!query) return;
+    if (!query || sendingRef.current) return;
+    sendingRef.current = true;
     setInput("");
+    const session: ExplainSession<AIMessage> | null = sessionKey ? explainSession<AIMessage>(sessionKey) : null;
+    let settle: () => void = () => {};
+    const kept = session ? session.msgs : [];
+    let answered = false;
+    if (session) {
+      session.msgs = [...session.msgs, { role: "user", text: query }];
+      session.pending = new Promise<void>((resolve) => { settle = resolve; });
+    }
     setMsgs(m => [...m, { role: "user", text: query }]);
     setLoading(true);
-    // «اشرح لي» on the AI pipeline (plan §5 L5): the open article is sent as
-    // the first source, whatever the library search finds around it. Q458: a
-    // follow-up in this window carries its conversation (the server adds the
-    // last six turns).
-    const answer = await askLibrary(
-      { message: query, articleId: article.id, conversationId: conversationRef.current },
-      window.location.pathname + window.location.search,
-    );
-    if (answer.conversationId) conversationRef.current = answer.conversationId;
-    const reply = answer.text;
-    const action = answer.action;
-    const cites = asCitations(answer.citations);
-    setMsgs(m => [...m, { role: "ai", text: reply, action, cites }]);
-    setLoading(false);
-    setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
+    try {
+      // «اشرح لي» on the AI pipeline (plan §5 L5): the open article is sent as
+      // the first source, whatever the library search finds around it. Q458: a
+      // follow-up in this window carries its conversation (the server adds the
+      // last six turns).
+      const answer = await askLibrary(
+        { message: query, articleId: article.id, conversationId: conversationRef.current },
+        window.location.pathname + window.location.search,
+      );
+      if (answer.conversationId) conversationRef.current = answer.conversationId;
+      const reply = answer.text;
+      const action = answer.action;
+      const cites = asCitations(answer.citations);
+      // kept even if the window was closed meanwhile: the answer is paid for.
+      // A refusal (no points, tool off, an error) is not kept — the next
+      // opening asks again.
+      if (session && sessionKey && !answer.refused) {
+        session.msgs = [...session.msgs, { role: "ai", text: reply, action, cites }];
+        session.conversationId = conversationRef.current;
+        session.refusal = null;
+        saveExplainSession(sessionKey, session);
+        answered = true;
+      } else if (session) {
+        // shown once to a window re-opened while this question ran
+        session.refusal = { role: "ai", text: reply, action };
+      }
+      if (mountedRef.current) setMsgs(m => [...m, { role: "ai", text: reply, action, cites }]);
+    } finally {
+      sendingRef.current = false;
+      if (session) {
+        if (!answered) session.msgs = kept;
+        session.pending = null;
+      }
+      settle();
+      if (mountedRef.current) {
+        setLoading(false);
+        setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
+      }
+    }
   };
+
+  // B-16 / E-20: the explanation request, once, as soon as it is known that it may go.
+  useEffect(() => {
+    if (autoSentRef.current || user.loading) return;
+    if (!user.isLoggedIn) {
+      autoSentRef.current = true;
+      const refusal = libraryAiRefusal(401, window.location.pathname + window.location.search);
+      setMsgs([{ role: "ai", text: refusal?.text ?? "", action: refusal?.action }]);
+      return;
+    }
+    // l16 review: this article was already explained in this session — show
+    // it (or wait for the answer still in flight); nothing is sent again
+    const kept = sessionKey ? explainSession<AIMessage>(sessionKey) : null;
+    if (kept && (kept.msgs.length > 0 || kept.pending)) {
+      autoSentRef.current = true;
+      conversationRef.current = kept.conversationId;
+      setMsgs(kept.msgs);
+      if (kept.pending) {
+        sendingRef.current = true;
+        setLoading(true);
+        void kept.pending.then(() => {
+          sendingRef.current = false;
+          if (!mountedRef.current) return;
+          setMsgs(kept.msgs.length > 0 ? kept.msgs : kept.refusal ? [kept.refusal] : []);
+          setLoading(false);
+        });
+      }
+      return;
+    }
+    if (usable === null) return;
+    autoSentRef.current = true;
+    if (!usable) {
+      setMsgs([{ role: "ai", text: LIBRARY_AI_SOON }]);
+      return;
+    }
+    void handleSend(explainRequest({ num: article.num, articleTitle: article.title, lawName, isRTL }));
+    // handleSend reads only refs and setters besides the article: the effect keys on the gate.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user.loading, user.isLoggedIn, usable]);
 
   return (
     <>
@@ -388,14 +499,20 @@ export function ArticleExplainModal({ article, isDark, onClose, isRTL = true, la
             <Sparkle size={20} weight="duotone" className="text-[#C8A762]" />
           </div>
           <div className="flex-1 mt-0.5 min-w-0">
-            <p className={`text-[14px] font-bold ${isDark ? "text-zinc-100" : "text-zinc-800"}`}>{isRTL ? "اشرح لي" : "Explain"} — {article.num}</p>
+            <p className={`text-[14px] font-bold ${isDark ? "text-zinc-100" : "text-zinc-800"}`}>{isRTL ? "اشرح لي" : "Explain"} — {isRTL ? spokenArticle(article.num) : article.num}</p>
             {subtitle && <p className={`text-[11px] mt-0.5 line-clamp-1 ${isDark ? "text-zinc-500" : "text-slate-500"}`}>{subtitle}</p>}
+            {usable === true && (
+              <p className={`text-[10.5px] mt-0.5 ${isDark ? "text-zinc-500" : "text-slate-500"}`}>
+                {isRTL ? `${aiToolPriceText(EXPLAIN_TOOL, "ar")} لكل سؤال، ويبدأ الشرح فور فتح النافذة` : `${aiToolPriceText(EXPLAIN_TOOL, "en")} a question; the explanation starts as the window opens`}
+              </p>
+            )}
           </div>
           <button onClick={onClose} className={`flex-shrink-0 p-2 rounded-xl transition ${isDark ? "hover:bg-white/[0.06] text-zinc-400" : "hover:bg-slate-100 text-slate-500"}`}>
             <X size={16} />
           </button>
         </div>
 
+        {signedIn && <ExplainToolGate onAnswer={onGate} />}
         {/* Chat */}
         <div className={`flex-1 min-h-0 overflow-y-auto p-4 space-y-3 ${isDark ? "bg-black/20" : "bg-slate-50/50"}`}>
           <div className={`p-3 rounded-xl border text-[11px] leading-relaxed mb-4 ${isDark ? "border-[#C8A762]/20 bg-[#C8A762]/5 text-[#C8A762]/80" : "border-amber-200 bg-amber-50 text-amber-800"}`}>
@@ -428,6 +545,9 @@ export function ArticleExplainModal({ article, isDark, onClose, isRTL = true, la
                 {[0,1,2].map(i => <span key={i} className="w-1.5 h-1.5 rounded-full bg-[#C8A762] animate-bounce" style={{ animationDelay: `${i*150}ms` }} />)}
               </div>
             </div>
+          )}
+          {msgs.length === 0 && !loading && (
+            <p role="status" className={`text-[11px] ${isDark ? "text-zinc-500" : "text-slate-500"}`}>{isRTL ? "جارٍ التحقق…" : "Checking…"}</p>
           )}
           <div ref={bottomRef} className="h-1" />
         </div>

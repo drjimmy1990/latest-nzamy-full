@@ -23,7 +23,11 @@
 /** The app_metadata key the gates read. */
 export const ACCOUNT_SUSPENSION_KEY = "account_suspension";
 
-/** GoTrue ban length for an admin suspension: 100 years, i.e. until lifted. */
+/**
+ * GoTrue ban length of a suspension written before owner س٢١٥ (100 years,
+ * i.e. until lifted). A new suspension never uses it: its ban lasts exactly
+ * until its end (banDurationUntil in ./suspensionTerms.ts).
+ */
 export const SUSPENSION_BAN_DURATION = "876000h";
 
 /** GoTrue's value that lifts a ban. */
@@ -55,6 +59,12 @@ export function isBanActive(bannedUntil: unknown, now: number = Date.now()): boo
  * (`app_metadata.account_suspension.status === "suspended"`). Anything else —
  * no key, a malformed one, `"active"` — is NOT suspended, so no ordinary
  * account is ever locked out by it. user_metadata is never read.
+ *
+ * Owner س٢١٥: the copy of a new suspension carries `until`, its end. Once that
+ * time has passed the copy no longer suspends (the GoTrue ban ends at the same
+ * moment), so the account is free on time even before the automatic lift has
+ * run. A copy with no `until` (from before س٢١٥) or an unreadable one still
+ * suspends: only a parseable past end frees it.
  */
 export function isSuspendedUser(user: unknown, now: number = Date.now()): boolean {
   if (!isRecord(user)) return false;
@@ -62,20 +72,37 @@ export function isSuspendedUser(user: unknown, now: number = Date.now()): boolea
   const meta = user.app_metadata;
   if (!isRecord(meta)) return false;
   const entry = meta[ACCOUNT_SUSPENSION_KEY];
-  return isRecord(entry) && entry.status === "suspended";
+  if (!isRecord(entry) || entry.status !== "suspended") return false;
+  if (typeof entry.until === "string") {
+    const until = Date.parse(entry.until);
+    if (Number.isFinite(until) && until <= now) return false;
+  }
+  return true;
+}
+
+/** The end (`until`) the app's copy of a suspension carries, or null. */
+export function suspensionUntil(user: unknown): string | null {
+  if (!isRecord(user) || !isRecord(user.app_metadata)) return null;
+  const entry = user.app_metadata[ACCOUNT_SUSPENSION_KEY];
+  if (!isRecord(entry) || entry.status !== "suspended" || typeof entry.until !== "string") return null;
+  return Number.isFinite(Date.parse(entry.until)) ? entry.until : null;
 }
 
 /**
  * The whole app_metadata to write when suspending: the existing keys
- * (provider, providers, account_deletion…) are kept.
+ * (provider, providers, account_deletion…) are kept. `untilIso` (owner
+ * س٢١٥) is the suspension's end; it is written only when given.
  */
 export function suspendedAppMetadata(
   existing: unknown,
   actorId: string,
   atIso: string,
+  untilIso?: string,
 ): Record<string, unknown> {
   const base = isRecord(existing) ? { ...existing } : {};
-  return { ...base, [ACCOUNT_SUSPENSION_KEY]: { status: "suspended", at: atIso, by: actorId } };
+  const entry: Record<string, unknown> = { status: "suspended", at: atIso, by: actorId };
+  if (typeof untilIso === "string" && untilIso !== "") entry.until = untilIso;
+  return { ...base, [ACCOUNT_SUSPENSION_KEY]: entry };
 }
 
 /**

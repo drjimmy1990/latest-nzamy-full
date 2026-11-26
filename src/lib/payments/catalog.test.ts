@@ -186,9 +186,10 @@ test("٣٠٣: outside the campaign, without a clock, or in another cycle, the li
 
 test("٣٠٣: every place that quotes a price to charge or show passes the request's clock", () => {
   const sites: Array<[string, RegExp]> = [
-    ["./checkoutCore.ts", /quote\(input\.itemId, input\.billing, catalog, now\)/],
-    ["./couponServer.ts", /quote\(input\.itemId, input\.billing, catalog, now\)/],
-    ["../../app/checkout/page.tsx", /quote\(item\.id, parsed\.billing, undefined, new Date\(\)\)/],
+    // l16 (A-01): each also passes its VAT rate (vatRule.test.ts vatCallSites)
+    ["./checkoutCore.ts", /quote\(input\.itemId, input\.billing, catalog, now, vatPct\)/],
+    ["./couponServer.ts", /quote\(input\.itemId, input\.billing, catalog, now, input\.vatPercent\)/],
+    ["../../app/checkout/page.tsx", /quote\(item\.id, parsed\.billing, undefined, new Date\(\), vatPercentFor\(vatRegistered === true\)\)/],
   ];
   for (const [path, call] of sites) {
     const src = readFileSync(new URL(path, import.meta.url), "utf8")

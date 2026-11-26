@@ -212,6 +212,7 @@ function moyasar() {
 }
 
 const input = (over: Partial<CheckoutInput> = {}): CheckoutInput => ({
+  vatPercent: 15,
   user: { id: USER, email: "buyer@example.test" },
   itemId: "ind-preventive",
   billing: "yearly",
@@ -273,20 +274,20 @@ test("preview: the same 409 as checkout, before the pay button", async () => {
   const none = db();
   const r = await validateCouponWith(
     { admin: none.client, now: () => NOW, catalog: CATALOG, book: BOOK, attempts: createCouponAttemptBudget() },
-    { userId: USER, code: "FREE100", itemId: "ind-preventive", billing: "yearly", gatewayMode: "test" },
+    { userId: USER, code: "FREE100", itemId: "ind-preventive", billing: "yearly", gatewayMode: "test", vatPercent: 15 },
   );
   assert.deepEqual(r, { status: 409, body: { error: FULL_DISCOUNT_CARD_REQUIRED_AR, code: FULL_DISCOUNT_CARD_REQUIRED_CODE } });
   const withCard = db({ cards: [LIVE_CARD] });
   const r2 = await validateCouponWith(
     { admin: withCard.client, now: () => NOW, catalog: CATALOG, book: BOOK, attempts: createCouponAttemptBudget() },
-    { userId: USER, code: "FREE100", itemId: "ind-preventive", billing: "yearly", gatewayMode: "test" },
+    { userId: USER, code: "FREE100", itemId: "ind-preventive", billing: "yearly", gatewayMode: "test", vatPercent: 15 },
   );
   assert.deepEqual(r2, { status: 409, body: { error: FULL_DISCOUNT_PENDING_AR, code: FULL_DISCOUNT_PENDING_CODE } });
   // no gateway mode (the gateway is off) → no card counts
   const off = db({ cards: [LIVE_CARD] });
   const r3 = await validateCouponWith(
     { admin: off.client, now: () => NOW, catalog: CATALOG, book: BOOK, attempts: createCouponAttemptBudget() },
-    { userId: USER, code: "FREE100", itemId: "ind-preventive", billing: "yearly" },
+    { userId: USER, code: "FREE100", itemId: "ind-preventive", billing: "yearly", vatPercent: 15 },
   );
   assert.equal((r3.body as { code?: string }).code, FULL_DISCOUNT_CARD_REQUIRED_CODE);
 });
@@ -294,5 +295,5 @@ test("preview: the same 409 as checkout, before the pay button", async () => {
 test("the validate route passes the gateway mode (payments_gateway) to the preview", () => {
   const route = readFileSync(join(ROOT, "src", "app", "api", "v1", "coupons", "validate", "route.ts"), "utf8");
   assert.match(route, /const cfg = await getMoyasarConfig\(\);\s*if \(cfg\.enabled\) gatewayMode = cfg\.mode;/);
-  assert.match(route, /billing: parsed\.billing, gatewayMode \}/);
+  assert.match(route, /billing: parsed\.billing, gatewayMode, vatPercent: vatPercentFor\(vatRegistered\) \}/);
 });

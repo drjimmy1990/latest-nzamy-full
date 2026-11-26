@@ -38,8 +38,9 @@ test("the owner cannot activate a membership that was never accepted", () => {
 test("the consent check reads the row's CURRENT state, before the update", () => {
   // `accepted_at` has to come from the pre-update lookup: the value in the row
   // the UPDATE returns is already whatever the caller just wrote.
-  assert.match(routeSource, /\.from\("firm_members"\)\s*\n\s*\.select\("id, firm_id, user_id, status, accepted_at"\)/);
-  const lookup = routeSource.indexOf('.select("id, firm_id, user_id, status, accepted_at")');
+  // D-53 (l16): `role` is read too — the team-manager rule needs it.
+  assert.match(routeSource, /\.from\("firm_members"\)\s*\n\s*\.select\("id, firm_id, user_id, role, status, accepted_at"\)/);
+  const lookup = routeSource.indexOf('.select("id, firm_id, user_id, role, status, accepted_at")');
   const gate = routeSource.indexOf("existingAcceptedAt === null");
   const update = routeSource.indexOf(".update(patch)");
   assert.ok(lookup > 0, "the pre-update lookup does not read status/accepted_at");
@@ -88,17 +89,20 @@ test("the firm owner's own row is never editable through this endpoint", () => {
 test("the target row is scoped to the caller's OWN firm on both the read and the write", () => {
   const eqFirm = routeSource.match(/\.eq\("firm_id", firm\.id\)/g) ?? [];
   assert.ok(eqFirm.length >= 2, "the lookup and the update must both be firm-scoped");
-  assert.match(routeSource, /\.eq\("owner_user_id", user\.id\)/);
+  // D-53 (l16): the caller's firm — owned, or an active membership — RLS-scoped
+  assert.match(routeSource, /await resolveCallerFirm\(supabase, user\.id\)/);
 });
 
 test("the service client is created only after BOTH authorization checks", () => {
-  const owner = routeSource.indexOf('.eq("owner_user_id", user.id)');
+  const owner = routeSource.indexOf("await resolveCallerFirm(supabase, user.id)");
   const rowCheck = routeSource.indexOf('.eq("firm_id", firm.id)');
+  const managerGate = routeSource.indexOf("teamWriteRefusal({");
   const m = /const service = await createServiceClient\(\);/.exec(routeSource);
   assert.ok(m, "no createServiceClient() call found");
-  assert.ok(owner > 0, "owner check missing");
-  assert.ok(rowCheck > owner, "the row-belongs-to-this-firm check must follow the owner check");
-  assert.ok(m!.index > rowCheck, "the service client is created before the row check");
+  assert.ok(owner > 0, "firm check missing");
+  assert.ok(rowCheck > owner, "the row-belongs-to-this-firm check must follow the firm check");
+  assert.ok(managerGate > rowCheck, "D-53: the team-manager gate reads the row first");
+  assert.ok(m!.index > managerGate, "the service client is created before the manager gate");
 });
 
 test("`profiles` is read only through the narrow projection", () => {

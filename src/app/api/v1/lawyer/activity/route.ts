@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { assertRole } from "@/lib/auth/assertRole";
+import { assertCaseWorker } from "@/lib/auth/assertCaseWorker";
 import { describeActivityEvent, describeRequestEvent, type ActivityBadge } from "@/lib/events";
 import { aiRunActivityItem, readAiRunActivity } from "@/lib/ai/aiRunActivity";
 import { mergeActivityPage } from "@/lib/activity/activityPage";
@@ -68,7 +68,7 @@ function firstEmbed(value: EmbeddedRequest | EmbeddedRequest[] | null): Embedded
  */
 export async function GET(request: NextRequest) {
   try {
-    const auth = await assertRole(["lawyer", "firm"]);
+    const auth = await assertCaseWorker();
     if (!auth.ok) return auth.response;
     const { user, supabase } = auth;
 

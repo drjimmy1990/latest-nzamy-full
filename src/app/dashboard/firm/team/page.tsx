@@ -59,6 +59,8 @@ import {
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
 import FirmInviteLinks from "./_components/FirmInviteLinks";
+import { FIRM_TEAM_MANAGE_ROLES } from "@/lib/auth/firmMembershipAccess";
+import OfficePlanNotice from "@/components/limits/OfficePlanNotice";
 import LeaveFirmCard from "./_components/LeaveFirmCard";
 import EmptyState from "@/components/ui/EmptyState";
 import {
@@ -516,9 +518,14 @@ function MemberCard({ m, isDark, card, canManage, onChangeRole, onToggleStatus, 
 export default function FirmTeamPage() {
   const { isDark } = useTheme();
   const user = useUser();
-  // Active office_admin / hr_manager members may read this roster. Mutations
-  // remain owner-only at the API/RLS boundary, so controls stay hidden for them.
-  const canManage = user.userType === "firm" || user.userType === "admin";
+  // Active office_admin / hr_manager members may read this roster. D-53 (l16):
+  // the managing partner and the HR manager also manage it (the API and the
+  // database hold the same list, FIRM_TEAM_MANAGE_ROLES); invitation links stay
+  // with the owner and the managing partner (POST /api/v1/firm/invitations).
+  const memberRole = user.affiliation?.entityType === "firm" ? user.affiliation.role : null;
+  const canManage = user.userType === "firm" || user.userType === "admin"
+    || (memberRole !== null && FIRM_TEAM_MANAGE_ROLES.has(memberRole));
+  const canInviteLinks = user.userType === "firm" || user.userType === "admin" || memberRole === "managing_partner";
 
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState<FirmRole | "all">("all");
@@ -595,6 +602,9 @@ export default function FirmTeamPage() {
 
   return (
     <div className="max-w-[1200px] mx-auto space-y-5" dir="rtl">
+
+      {/* س٢١٢: the team and its seats are «إدارة المكتب» — said before an invitation is refused */}
+      <OfficePlanNotice isDark={isDark} />
 
       {/* Header */}
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
@@ -742,7 +752,7 @@ export default function FirmTeamPage() {
       )}
 
       {/* F7: invitation links (owner) and «مغادرة المكتب» (a member) */}
-      {canManage && <FirmInviteLinks isDark={isDark} card={card} />}
+      {canInviteLinks && <FirmInviteLinks isDark={isDark} card={card} />}
       {!user.loading && user.isLoggedIn && user.userType !== "firm" && user.userType !== "admin" && (
         <LeaveFirmCard isDark={isDark} card={card} />
       )}

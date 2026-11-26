@@ -29,6 +29,13 @@ const ICONS = {
 type IconComponent = (typeof ICONS)[keyof typeof ICONS];
 
 /**
+ * l16 (C23): the icon names this console can draw. An item whose icon is not
+ * here silently falls back to ChartBar (the old «شركات المحاماة» row asked for
+ * «Gavel», which was never imported); adminNavByRole.test.ts checks every item.
+ */
+export const ADMIN_NAV_ICON_NAMES: readonly string[] = Object.freeze(Object.keys(ICONS));
+
+/**
  * The console's sidebar, built from the ONE admin list (src/constants/
  * adminNavItems.ts, file 15 row 54): ADMIN_SIDEBAR is built from the same
  * list, so the two can no longer disagree.

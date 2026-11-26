@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { assertRole } from "@/lib/auth/assertRole";
-import { createServiceClient } from "@/lib/supabase/server";
+import { requireStaff } from "@/lib/access-control";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { parseStatusFilter } from "@/lib/services/feedbackInput";
 import { COMMUNITY_REPORT_STATUSES } from "@/lib/services/communityReportsInput";
 import {
@@ -20,7 +20,7 @@ import {
  * The main SELECT runs on the RLS-scoped client — `community_reports`'s own
  * SELECT policy already grants an admin every row via `public.is_admin()`,
  * so there is no need to bypass RLS for the list itself (defense in depth:
- * a bug in `assertRole` alone would not open this table to a non-admin).
+ * a bug in the staff gate alone would not open this table to a non-admin).
  * The service client is used ONLY for the two hydration lookups this route
  * cannot do under RLS by design: the reporter's `profiles.display_name`
  * (their own profile row, not the reporter's) and a short excerpt of the
@@ -30,9 +30,10 @@ import {
  */
 export async function GET(request: NextRequest) {
   try {
-    const auth = await assertRole(["admin"]);
+    // l16 (C35): the staff-role gate (every role may read), not admin-only.
+    const auth = await requireStaff("read");
     if (!auth.ok) return auth.response;
-    const { supabase } = auth;
+    const supabase = await createClient();
 
     const { searchParams } = new URL(request.url);
     const filter = parseStatusFilter(searchParams.get("status"), COMMUNITY_REPORT_STATUSES);

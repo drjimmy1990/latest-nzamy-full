@@ -251,6 +251,8 @@ const WRITE_MARKERS = [
   // l13 journal: building an issue, and e-mailing one batch of an approved issue
   "buildIssue(",
   "sendIssueBatch(",
+  // l15: the admin's test WhatsApp code (an outside send, audited)
+  "sendAdminTestCode(",
 ];
 
 function firstWriteAt(body: string): number {
@@ -282,6 +284,8 @@ const GATES: Array<{ file: string; method: string; action: StaffAction | "per-fi
   { file: "entitlements/requests/[id]/route.ts", method: "PATCH", action: "entitlements.decide", logs: 3 },
   { file: "credits/route.ts", method: "POST", action: "credits.adjust", logs: 1 },
   { file: "settings/route.ts", method: "PATCH", action: "settings.write", logs: 1 },
+  // Batch l15: «أرسل رمزًا تجريبيًا إلى جوالي» — super admin, audited.
+  { file: "phone-otp/test-send/route.ts", method: "POST", action: "settings.write", logs: 1 },
   { file: "library/route.ts", method: "DELETE", action: "library.delete", logs: 1 },
   { file: "library/route.ts", method: "PATCH", action: "settings.write", logs: 1 },
   { file: "articles/[id]/route.ts", method: "DELETE", action: "content.delete", logs: 1 },
@@ -298,6 +302,8 @@ const GATES: Array<{ file: string; method: string; action: StaffAction | "per-fi
   { file: "marketplace/acceptances/[id]/route.ts", method: "PATCH", action: "orders.manage", logs: 1 },
   { file: "marketplace/requests/[id]/route.ts", method: "PATCH", action: "orders.manage", logs: 2 },
   { file: "marketplace/settings/route.ts", method: "PATCH", action: "settings.write", logs: 1 },
+  // l16 س٢٣: the Nezamy priority window (minutes + working hours).
+  { file: "marketplace/priority/route.ts", method: "PATCH", action: "settings.write", logs: 1 },
   { file: "community/reports/[id]/route.ts", method: "PATCH", action: "community.moderate", logs: 1 },
   { file: "broadcasts/route.ts", method: "POST", action: "broadcasts.send", logs: 1 },
   { file: "broadcasts/[id]/route.ts", method: "PATCH", action: "broadcasts.send", logs: 1 },
@@ -331,6 +337,11 @@ const GATES: Array<{ file: string; method: string; action: StaffAction | "per-fi
   { file: "users/[id]/library-devices/route.ts", method: "POST", action: "library.lock_lift", logs: 1 },
   // S3 (20261125_50): the demo flag
   { file: "users/[id]/demo/route.ts", method: "PATCH", action: "users.change_type", logs: 1 },
+  // l16 (owner س٢١٥): rejecting an appeal against a suspension.
+  { file: "users/[id]/suspension-appeal/route.ts", method: "PATCH", action: "users.suspend", logs: 1 },
+  // l16 C14: the account-type converter. The audit row is written by the SQL function itself, in the
+  // same transaction as the conversion (20261206_80), so the route holds no logAdminAction.
+  { file: "users/[id]/account-type/route.ts", method: "POST", action: "users.change_type", logs: 0 },
   { file: "receipts/route.ts", method: "POST", action: "orders.manage", logs: 1 },
   { file: "tickets/route.ts", method: "POST", action: "tickets.manage", logs: 1 },
   { file: "tickets/[id]/route.ts", method: "PATCH", action: "tickets.manage", logs: 1 },
@@ -361,6 +372,11 @@ const GATES: Array<{ file: string; method: string; action: StaffAction | "per-fi
   { file: "journal/issues/route.ts", method: "POST", action: "broadcasts.send", logs: 1 },
   // send arm + approve / unapprove arm
   { file: "journal/issues/[id]/route.ts", method: "PATCH", action: "broadcasts.send", logs: 2 },
+  // l16 (owner س٢٠٣): the administration lifts a legal hold on a request file
+  { file: "documents/[id]/hold/route.ts", method: "PATCH", action: "orders.manage", logs: 1 },
+  // l16 (owner س٢١٦): break-glass steps run as the admin's own session; the
+  // database functions write the audit rows themselves (20261206_12)
+  { file: "restricted-cases/access/route.ts", method: "POST", action: "staff.manage", logs: 0 },
 ];
 
 for (const { file, method, action, logs } of GATES) {
@@ -574,7 +590,9 @@ test("nothing outside adminAudit.ts inserts into admin_audit_events (one row per
   // write fails — logAdminAction never throws, so it cannot be the gate there.
   // payments/minTopup.ts (batch l7, decision 5) records a BUYER's refused top-up
   // below his type's minimum (actor_type "user") — not an admin action either.
-  const ALLOWED = new Set(["lib/auth/adminAudit.ts", "app/api/v1/onboarding/account-type/route.ts", "lib/payments/refundCore.ts", "lib/payments/minTopup.ts"]);
+  // payments/couponRedeemCore.ts (l16 review) records a USER's own code
+  // redemption (actor_type "user", coupon_redeemed), the minTopup pattern.
+  const ALLOWED = new Set(["lib/auth/adminAudit.ts", "app/api/v1/onboarding/account-type/route.ts", "lib/payments/refundCore.ts", "lib/payments/minTopup.ts", "lib/payments/couponRedeemCore.ts"]);
   const offenders: string[] = [];
   const walk = (dir: string) => {
     for (const name of readdirSync(dir)) {
@@ -600,6 +618,8 @@ test("nothing outside adminAudit.ts inserts into admin_audit_events (one row per
   assert.ok(onboarding.includes('actor_type: "user"'), "the allow-listed onboarding writer must be a user actor");
   const minTopup = codeOnly(readFileSync(join(SRC, "lib/payments/minTopup.ts"), "utf8"));
   assert.ok(minTopup.includes('actor_type: "user"'), "the allow-listed min top-up writer must be a user actor");
+  const redeem = codeOnly(readFileSync(join(SRC, "lib/payments/couponRedeemCore.ts"), "utf8"));
+  assert.ok(redeem.includes('actor_type: "user"'), "the allow-listed coupon redemption writer must be a user actor");
 });
 
 test("requireStaff: requireAdmin first, the role from platform_staff with the service client, fail-closed", () => {

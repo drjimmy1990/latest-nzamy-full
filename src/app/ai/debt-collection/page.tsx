@@ -4,7 +4,7 @@ import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Money, CaretLeft, Warning, CheckCircle, ArrowRight,
-  ArrowCounterClockwise, Copy, Download, FileText,
+  ArrowCounterClockwise, Copy, FileText,
   Gavel, ArrowCircleLeft, Alarm, X,
 } from "@phosphor-icons/react";
 import Link from "next/link";
@@ -274,7 +274,7 @@ function Step3({ inputs, isDark, onSelectTrack }: { inputs: DebtInputs; isDark: 
       <div className={`p-3.5 rounded-xl border flex gap-2 ${isDark ? "border-emerald-700/30 bg-emerald-900/10" : "border-emerald-200 bg-emerald-50"}`}>
         <CheckCircle size={15} className="text-emerald-500 flex-shrink-0 mt-0.5" weight="fill" />
         <p className={`text-[12px] ${isDark ? "text-emerald-300" : "text-emerald-800"}`}>
-          <span className="font-bold">تنبيه شرعي:</span> لا يجوز اشتراط فائدة ربوية على التأخر. الجزاء التأخيري المذكور في المرحلة 2 مشروع بشرط أن يكون <span className="font-bold">بنداً مُدرَجاً في العقد الأصلي الموقَّع</span>. نزامي تعرف هذا — تأكد من صحة عقودك.
+          <span className="font-bold">تنبيه شرعي:</span> لا يجوز اشتراط فائدة ربوية على التأخر. الجزاء التأخيري المذكور في المرحلة 2 مشروع بشرط أن يكون <span className="font-bold">بنداً مُدرَجاً في العقد الأصلي الموقَّع</span>. نظامي تعرف هذا — تأكد من صحة عقودك.
         </p>
       </div>
 
@@ -447,9 +447,6 @@ export default function DebtCollectionPage() {
                     <button onClick={handleCopy}
                       className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold transition-all ${copied ? "bg-emerald-500/10 text-emerald-500" : isDark ? "bg-white/[0.06] text-zinc-400 hover:text-zinc-200" : "bg-slate-100 text-slate-500 hover:bg-slate-200"}`}>
                       <Copy size={12} /> {copied ? "تم النسخ!" : "نسخ"}
-                    </button>
-                    <button className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold ${isDark ? "bg-white/[0.06] text-zinc-400 hover:text-zinc-200" : "bg-slate-100 text-slate-500 hover:bg-slate-200"}`}>
-                      <Download size={12} /> تصدير
                     </button>
                   </div>
                 </div>

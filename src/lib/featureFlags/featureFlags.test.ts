@@ -5,6 +5,7 @@ import {
   FEATURE_FLAGS,
   FEATURE_FLAG_KEYS,
   FIXED_FLAGS,
+  marketStateTextAr,
   createFeatureFlagCache,
   defaultFeatureFlags,
   featureFlagsIssue,
@@ -66,13 +67,27 @@ test("write validator: an object of known flags → booleans, nothing else", () 
   assert.match(featureFlagsIssue({ site_assistant: 1 }) ?? "", /true أو false/);
 });
 
-test("the beta gates are shown as they are in code, read-only", () => {
-  assert.deepEqual(FIXED_FLAGS.map((f) => f.id), ["review", "single-provider"]);
+test("the review beta gate is shown as it is in code, read-only", () => {
+  assert.deepEqual(FIXED_FLAGS.map((f) => f.id), ["review"]);
   for (const f of FIXED_FLAGS) assert.doesNotMatch(f.nameAr + f.descriptionAr, /[A-Za-z]/);
   const page = readFileSync(new URL("../../app/dashboard/admin/features/page.tsx", import.meta.url), "utf8");
-  assert.match(page, /import \{ BETA_MONOPOLY_MODE, BETA_REVIEW_MODE \} from "@\/lib\/betaConfig";/);
-  assert.match(page, /review: BETA_REVIEW_MODE,\s*"single-provider": BETA_MONOPOLY_MODE,/);
+  assert.match(page, /import \{ BETA_REVIEW_MODE \} from "@\/lib\/betaConfig";/);
+  assert.match(page, /review: BETA_REVIEW_MODE,\s*\};/);
   assert.doesNotMatch(page, /onClick=\{[^}]*FIXED/, "no switch for a fixed gate");
+});
+
+test("l16 C36: the market card reads the database switch, never BETA_MONOPOLY_MODE", () => {
+  const page = readFileSync(new URL("../../app/dashboard/admin/features/page.tsx", import.meta.url), "utf8");
+  const code = page.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
+  assert.doesNotMatch(code, /BETA_MONOPOLY_MODE/);
+  assert.match(code, /fetch\("\/api\/v1\/admin\/marketplace\/settings"/);
+  assert.equal(marketStateTextAr({ open: true, installed: true }).label, "مفتوح");
+  assert.equal(marketStateTextAr({ open: false, installed: true }).label, "مغلق");
+  assert.equal(marketStateTextAr({ open: true, installed: false }).label, "مغلق", "no row = closed, as the server reads it");
+  assert.equal(marketStateTextAr(null).label, "تعذّرت القراءة", "an unreadable switch is never shown as open or closed");
+  for (const r of [{ open: true, installed: true }, { open: false, installed: true }, { open: false, installed: false }, null]) {
+    assert.doesNotMatch(marketStateTextAr(r).detail, /[A-Za-z]/);
+  }
 });
 
 test("cache: one read per ttl, shared by concurrent callers, cleared on write", async () => {

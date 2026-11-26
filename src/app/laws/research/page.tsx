@@ -1,5 +1,4 @@
 import Navbar from "@/components/Navbar";
-import Footer from "@/components/Footer";
 import ResearchStudio from "./_components/ResearchStudio";
 
 /**
@@ -9,6 +8,11 @@ import ResearchStudio from "./_components/ResearchStudio";
  * LAWS_STATIC_SEGMENTS (so it stays under the section's LibraryGuard and a
  * question asked here never carries a law slug), and is per viewer: not
  * indexed. The /laws tab «باحث المكتبة الذكي» links here.
+ *
+ * Owner package 25-Nov §2.1 (batch l16, B-01): the fixed site bar covered the
+ * studio's header and the guest footer's call-to-action band sat over the
+ * question box — the studio keeps the bar (with room under it, in the studio
+ * itself) and has no footer.
  */
 
 export const metadata = {
@@ -21,7 +25,6 @@ export default function LibraryResearchPage() {
     <>
       <Navbar />
       <ResearchStudio />
-      <Footer />
     </>
   );
 }

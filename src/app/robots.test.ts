@@ -72,7 +72,9 @@ test("every group: /_next/static/ and /_next/image open, the rest of /_next/ and
 test("the private disallows are kept in every group that may crawl", () => {
   for (const agent of EVERY_GROUP) {
     const g = groupOf(agent);
-    for (const p of ["/dashboard/", "/api/", "/ai/settings", "/ai/vault", "/ai/share-history", "/track/", "/_next/"]) {
+    for (const p of ["/dashboard/", "/api/", "/ai/settings", "/ai/vault", "/ai/share-history", "/track/", "/_next/",
+      // owner package 25-Nov, annex 09 GSC-05
+      "/review/", "/cases/", "/ai/gov/", "/ai/ngo/", "/ai/debt-collection", "/ai/memo-studio"]) {
       assert.ok(g.disallow.includes(p), `${agent}: ${p}`);
     }
   }
@@ -142,4 +144,21 @@ test("served by a route handler as text/plain UTF-8 (app/robots.ts cannot print 
   assert.match(route, /"Content-Type": "text\/plain; charset=utf-8"/);
   assert.match(route, /new Response\(buildRobotsTxt\(\)/);
   assert.equal(existsSync(new URL("./robots.ts", import.meta.url)), false);
+});
+
+test("owner package 25-Nov (GSC-05): the 404 routes and the gov/NGO/studio tools are closed to every group that may crawl", () => {
+  for (const agent of EVERY_GROUP) {
+    for (const p of ["/review/abc123", "/cases/new", "/cases/x", "/ai/gov/arrest-forms", "/ai/ngo/donation-analyzer", "/ai/debt-collection", "/ai/memo-studio"]) {
+      assert.ok(!allowed(agent, p), `${agent} ${p}`);
+    }
+    // /services/cases is a public page: only a path that STARTS with /cases/ is closed.
+    assert.ok(allowed(agent, "/services/cases"), `${agent} /services/cases`);
+  }
+});
+
+test("every static URL of the sitemap is open to Googlebot (a listed URL robots closes is a Search Console error)", () => {
+  const sitemap = readFileSync(new URL("./sitemap.ts", import.meta.url), "utf8");
+  const urls = [...sitemap.matchAll(/\{ url: "([^"]+)"/g)].map((m) => m[1]);
+  assert.ok(urls.length > 40, `only ${urls.length} urls read`);
+  for (const u of urls) assert.ok(allowed("Googlebot", u), u);
 });

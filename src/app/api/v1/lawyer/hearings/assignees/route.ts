@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { assertRole } from "@/lib/auth/assertRole";
+import { assertCaseWorker } from "@/lib/auth/assertCaseWorker";
 import { resolveDisplayNames } from "../../tasks/_assignees";
 import { readCallerHearingFirmId, readHearingAssignableIds } from "../_shared";
 
@@ -17,7 +17,7 @@ import { readCallerHearingFirmId, readHearingAssignableIds } from "../_shared";
  */
 export async function GET() {
   try {
-    const auth = await assertRole(["lawyer", "firm"]);
+    const auth = await assertCaseWorker();
     if (!auth.ok) return auth.response;
     const { user, supabase } = auth;
 

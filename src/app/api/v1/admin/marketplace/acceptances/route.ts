@@ -15,7 +15,7 @@ const STATUSES = new Set(["pending", "approved", "rejected", "withdrawn", "super
  */
 export async function GET(request: NextRequest) {
   try {
-    const gate = await requireStaff("orders.manage");
+    const gate = await requireStaff("read");
     if (!gate.ok) return gate.response;
 
     const raw = request.nextUrl.searchParams.get("status") ?? "pending";

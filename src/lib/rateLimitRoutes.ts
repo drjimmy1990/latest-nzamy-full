@@ -21,6 +21,8 @@ export const STRICT_RATE_LIMITED_ROUTES: readonly RegExp[] = [
   /^\/api\/v1\/contact$/, // POST /api/v1/contact
   // Batch l13 founder (owner Q144 أ): a founder invite code is redeemed here.
   /^\/api\/v1\/membership\/founder\/invites\/redeem$/, // POST …/membership/founder/invites/redeem
+  // Batch l16 (owner س٢١٥): the public appeal against a suspension.
+  /^\/api\/v1\/suspension-appeal$/, // POST /api/v1/suspension-appeal
 ];
 
 export const GENERAL_RATE_LIMITED_METHODS: ReadonlySet<string> = new Set([

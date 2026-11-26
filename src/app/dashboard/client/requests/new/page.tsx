@@ -17,6 +17,7 @@ import { createWorkflowId, createWorkflowRequest } from "@/lib/clientWorkflowRep
 import { formatClientServicePrice } from "@/lib/pricingRepository";
 import { resolveClientService } from "@/lib/pricing/clientPricingAudience";
 import { SAUDI_CITIES, saudiCityLabelAr } from "@/constants/saudiCities";
+import MarketPriorityChoice from "@/components/marketplace/MarketPriorityChoice";
 
 /**
  * NewRequestWizard — the client's «طلب خدمة جديدة» form.
@@ -81,6 +82,8 @@ export default function NewRequestWizard() {
   const [city, setCity] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // Owner س٢٣ (batch l16): «افتحه للجميع فوراً» — skips the Nezamy priority window.
+  const [marketOpenNow, setMarketOpenNow] = useState(false);
 
   const { catalog, source: pricingSource, audience, audienceLoading } = useClientPricingCatalog();
   // Real uploads, identical to the four lawyer wizards. `attachments` holds
@@ -188,6 +191,9 @@ export default function NewRequestWizard() {
           // Verbatim, no remapping: route.ts reads `.documentId` off each
           // entry to bind the uploaded files to this order.
           attachments,
+          // Owner س٢٣ (batch l16): the database stamps the market release
+          // moment from this (20261206_40); sent only when chosen.
+          ...(marketOpenNow ? { marketOpenNow: true } : {}),
         } as unknown as Record<string, string | number | boolean | null>,
         auditEvent: "client_request_created",
       });
@@ -357,6 +363,9 @@ export default function NewRequestWizard() {
               <CheckCircle size={16} weight="fill" className="flex-shrink-0 mt-0.5" />
               <span>إرسال الطلب مجاني — لا يُطلب منك أي دفع في هذه الخطوة. يراجع فريق نظامي طلبك ثم يتواصل معك بعرض السعر النهائي قبل بدء التنفيذ.</span>
             </div>
+
+            {/* Owner س٢٣ (batch l16): the Nezamy priority window, disclosed, with «افتحه للجميع فوراً». */}
+            <MarketPriorityChoice checked={marketOpenNow} onChange={setMarketOpenNow} disabled={isSubmitting} />
 
             {/* السعر التقديري */}
             <div className="bg-gray-50 dark:bg-white/5 rounded-2xl p-5 space-y-3">

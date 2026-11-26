@@ -648,7 +648,12 @@ function RefsSkeleton({ isDark }: { isDark: boolean }) {
  * mode), so the reading never moves. Nothing at all while loading or when the
  * article has no link (no spinner under hundreds of articles).
  */
-export function ArticleRefsInline({ articleId }: { articleId: string }) {
+/**
+ * `chip` (batch l16, owner package 25-Nov §2.6): false outside reading mode —
+ * the header's «الإحالات (N)» is the one button then, and this stays only as
+ * the per-article fallback request (no chip, no space taken).
+ */
+export function ArticleRefsInline({ articleId, chip = true }: { articleId: string; chip?: boolean }) {
   const ctx = useRefBox();
   const box = useRef<HTMLDivElement>(null);
   const [near, setNear] = useState(false);
@@ -668,6 +673,7 @@ export function ArticleRefsInline({ articleId }: { articleId: string }) {
   const { isDark } = ctx;
   const data = state.data;
   const open = ctx.panel?.articleId === articleId;
+  if (!chip) return <div ref={box} aria-hidden="true" className="print:hidden" />;
   return (
     <div ref={box} className="mt-3 print:hidden">
       {total > 0 && data && data.available && (
@@ -811,7 +817,7 @@ export function RefBox({ articleId }: { articleId: string | null }) {
           <LinkSimple size={14} className="text-[#C8A762]" />
           <span className="flex-1">{title}</span>
           {label && <span className={`truncate max-w-[40%] text-[10px] font-bold ${isDark ? "text-zinc-500" : "text-slate-400"}`}>{label}</span>}
-          <button type="button" onClick={ctx.closePanel} aria-label="إغلاق" className={`flex h-7 w-7 items-center justify-center rounded-lg ${isDark ? "text-zinc-400 hover:bg-white/10" : "text-slate-500 hover:bg-slate-100"}`}>
+          <button type="button" onClick={ctx.closePanel} aria-label="إغلاق" className={`flex min-h-11 min-w-11 items-center justify-center rounded-lg ${isDark ? "text-zinc-400 hover:bg-white/10" : "text-slate-500 hover:bg-slate-100"}`}>
             <X size={13} weight="bold" />
           </button>
         </h3>

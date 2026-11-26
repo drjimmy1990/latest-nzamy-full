@@ -99,7 +99,7 @@ export default function LibraryDevicesPanel({ isDark, card }: Props) {
 
       {!loading && available && codesAvailable === false && (
         <p className={`text-[11px] leading-6 ${isDark ? "text-amber-300" : "text-amber-700"}`}>
-          رمز البريد غير مفعّل على هذا الخادم (لا مزوّد بريد أو لا مفتاح للرموز: DEVICE_CODE_PEPPER أو LAWYER_OTP_PEPPER).
+          رمز البريد غير مفعّل على هذا الخادم (ينقصه مزوّد البريد أو مفتاح حماية الرموز، ويتولّى ذلك الفريق التقني).
           ما دام كذلك يُسجَّل الجهاز الجديد دون رمز إن بقي مكان، وتبقى بقية القواعد سارية.
         </p>
       )}

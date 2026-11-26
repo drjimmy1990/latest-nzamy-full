@@ -28,7 +28,10 @@ import {
 import { apiErrorText } from "@/lib/services/apiErrorText";
 import { cyclePrice, cycleUnitAr, subscriptionCycleAr } from "@/lib/payments/planRowPrice";
 import UserLibraryDevicesCard from "./UserLibraryDevicesCard";
+import AccountTypeConverterCard from "./AccountTypeConverterCard";
 import { adminToast } from "@/components/admin/adminToast";
+import SuspendAccountDialog from "../SuspendAccountDialog";
+import { APPEAL_STATUS_AR, formatSuspensionEndAr, templateLabelAr, type AppealStatus } from "@/lib/auth/suspensionTerms";
 
 /* ── Types ─────────────────────────────────────────────────────────────────── */
 interface SubscriptionPlan {
@@ -61,9 +64,21 @@ interface CreditTransaction {
   created_at: string;
 }
 
+/** Owner س٢١٥: one appeal against a suspension (GET's `appeals`). */
+interface SuspensionAppeal {
+  id: string;
+  freezeId: string;
+  message: string;
+  status: string;
+  createdAt: string;
+  decidedAt: string | null;
+  decisionNote: string | null;
+}
+
 interface UserData {
   id: string;
-  full_name: string;
+  /** profiles.display_name (C12: there is no full_name column). */
+  display_name: string | null;
   email: string;
   phone: string;
   user_type: string;
@@ -71,7 +86,21 @@ interface UserData {
   city: string;
   verified_at: string | null;
   created_at: string;
-  last_sign_in_at: string;
+  /** From GoTrue (C12); null when never signed in or unreadable. */
+  last_sign_in_at: string | null;
+  /**
+   * C10 / owner س٢١٥: the suspension as GoTrue and the freeze row say it.
+   * `suspended` null = GoTrue could not be read (no state is shown).
+   */
+  suspension?: {
+    suspended: boolean | null;
+    ends_at: string | null;
+    reason: string | null;
+    template: string | null;
+    frozen_at: string | null;
+    kind: string | null;
+  };
+  appeals?: SuspensionAppeal[];
   subscription: Subscription | null;
   subscription_history: Subscription[];
   lawyer_profile: Record<string, unknown> | null;
@@ -523,13 +552,18 @@ const TIER_MAP: Record<string,string> = {
 
 const STATUS_MAP: Record<string,{label:string;cls:string}> = {
   active: { label:"نشط", cls:"bg-emerald-500/15 border border-emerald-500/30 text-emerald-400" },
-  suspended: { label:"معلّق", cls:"bg-red-500/15 border border-red-500/30 text-red-400" },
+  suspended: { label:"موقوف", cls:"bg-red-500/15 border border-red-500/30 text-red-400" },
   pending: { label:"بانتظار التحقق", cls:"bg-amber-500/15 border border-amber-500/30 text-amber-400" },
   trial: { label:"تجربة مجانية", cls:"bg-blue-500/15 border border-blue-500/30 text-blue-400" },
   inactive: { label:"غير نشط", cls:"bg-zinc-500/15 border border-zinc-500/30 text-zinc-400" },
 };
 
-function mapStatus(subStatus?: string, verifiedAt?: string | null): string {
+/**
+ * C10: a suspension is GoTrue's (the API's `suspension.suspended`), never a
+ * subscription status — the freeze does not change the subscription row.
+ */
+function mapStatus(subStatus?: string, verifiedAt?: string | null, suspended?: boolean | null): string {
+  if (suspended === true) return "suspended";
   if (subStatus === "suspended") return "suspended";
   if (subStatus === "trialing" || subStatus === "trial") return "trial";
   if (!verifiedAt) return "pending";
@@ -701,16 +735,25 @@ export default function UserProfilePage() {
     }
   };
 
-  const handleSuspend = async () => {
-    if (!confirm("هل أنت متأكد من تعليق الحساب؟ سيتم إلغاء أي اشتراك نشط.")) return;
+  // Owner س٢١٥: the suspension form (template or custom end + reason). The
+  // old confirm said a suspension cancels the subscription; since owner ٢٥ it
+  // freezes it (C10).
+  const [suspendOpen, setSuspendOpen] = useState(false);
+  const handleSuspend = () => setSuspendOpen(true);
+
+  // C09 / E-01: «رفع الإيقاف» lifts the GoTrue ban and the freeze (PATCH
+  // status "active"), the same call as the users list. It used to send
+  // { verified: true }, which lifted nothing.
+  const handleReactivate = async () => {
+    if (!confirm("رفع الإيقاف عن هذا الحساب الآن؟ سيتمكن من الدخول من جديد، وتُمدَّد اشتراكاته ومنحه المجمّدة بقدر مدة الإيقاف، ويُعدّ أي اعتراض قائم مقبولاً.")) return;
     setActionLoading(true);
     try {
       const res = await fetch(`/api/v1/admin/users/${userId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: "suspended" }),
+        body: JSON.stringify({ status: "active" }),
       });
-      if (!res.ok) throw new Error(apiErrorText(res.status, await res.json().catch(() => null), "فشل تعليق الحساب"));
+      if (!res.ok) throw new Error(apiErrorText(res.status, await res.json().catch(() => null), "تعذّر رفع الإيقاف"));
       fetchUser();
     } catch (err) {
       adminToast(err instanceof Error ? err.message : "حدث خطأ");
@@ -719,15 +762,20 @@ export default function UserProfilePage() {
     }
   };
 
-  const handleReactivate = async () => {
+  // Owner س٢١٥: rejecting an appeal needs a short reason (kept and audited).
+  const [rejectingAppeal, setRejectingAppeal] = useState<string | null>(null);
+  const [rejectNote, setRejectNote] = useState("");
+  const handleRejectAppeal = async (appealId: string) => {
     setActionLoading(true);
     try {
-      const res = await fetch(`/api/v1/admin/users/${userId}`, {
+      const res = await fetch(`/api/v1/admin/users/${encodeURIComponent(userId)}/suspension-appeal`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ verified: true }),
+        body: JSON.stringify({ appealId, note: rejectNote }),
       });
-      if (!res.ok) throw new Error(apiErrorText(res.status, await res.json().catch(() => null), "فشل تفعيل الحساب"));
+      if (!res.ok) throw new Error(apiErrorText(res.status, await res.json().catch(() => null), "تعذّر حفظ القرار"));
+      setRejectingAppeal(null);
+      setRejectNote("");
       fetchUser();
     } catch (err) {
       adminToast(err instanceof Error ? err.message : "حدث خطأ");
@@ -901,7 +949,9 @@ export default function UserProfilePage() {
   const activeSub = U?.subscription;
   const subHistory = U?.subscription_history ?? [];
   const creditTxns = U?.credit_transactions ?? [];
-  const statusInfo = U ? (STATUS_MAP[mapStatus(activeSub?.status, U.verified_at)] ?? STATUS_MAP.inactive) : STATUS_MAP.inactive;
+  const statusKey = U ? mapStatus(activeSub?.status, U.verified_at, U.suspension?.suspended) : "inactive";
+  const statusInfo = STATUS_MAP[statusKey] ?? STATUS_MAP.inactive;
+  const appeals = U?.appeals ?? [];
 
   // The last fallback is reached only when `activeSub` is null — i.e. the
   // account has no subscription row at all — and it used to print «مجاني».
@@ -1051,7 +1101,7 @@ export default function UserProfilePage() {
           </Link>
           <div>
             <div className="flex items-center gap-2 mb-0.5">
-              <h1 className={`text-xl font-bold ${isDark?"text-white":"text-slate-800"}`}>{U.full_name ?? U.email}</h1>
+              <h1 className={`text-xl font-bold ${isDark?"text-white":"text-slate-800"}`}>{U.display_name || U.email}</h1>
               <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${statusInfo.cls}`}>
                 {statusInfo.label}
               </span>
@@ -1078,37 +1128,107 @@ export default function UserProfilePage() {
                 <UserSwitch size={13}/> عرض كمستخدم
               </Link>
               )}
+              {/* l16 C11: never offered on a staff account (the route refuses it too). */}
+              {U.user_type !== "admin" && (
               <button onClick={handleDemoToggle} disabled={demoLoading}
                 title="الحساب التجريبي: لا يكتب في الأقسام العامة، لا يدفع ولا يحجز مقعد المؤسس، وحدوده ٥ قضايا و٥ استشارات و١٠ موكلين"
                 className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-bold bg-sky-500/10 border border-sky-500/20 text-sky-400 hover:bg-sky-500/20 transition-colors disabled:opacity-50">
                 {U.is_demo === true ? "إلغاء وضع الحساب التجريبي" : "تحويل إلى حساب تجريبي"}
               </button>
+              )}
               <button onClick={() => { setTab("subscription"); setChangingPlan(true); }}
                 className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-bold bg-purple-500/10 border border-purple-500/20 text-purple-400 hover:bg-purple-500/20 transition-colors">
                 <Crown size={13}/> ترقية الباقة
               </button>
-              {mapStatus(activeSub?.status, U.verified_at) === "pending" && (
+              {statusKey === "pending" && (
                 <button onClick={handleVerify}
                   className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-bold bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20 transition-colors">
                   <ShieldCheck size={13}/> تحقق من الحساب
                 </button>
               )}
-              {mapStatus(activeSub?.status, U.verified_at) === "active" && (
+              {/* l16 C11: an admin account cannot be suspended (the server refuses it too). */}
+              {statusKey !== "suspended" && U.user_type !== "admin" && (
                 <button onClick={handleSuspend}
                   className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-bold bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 transition-colors">
-                  <Prohibit size={13}/> تعليق الحساب
+                  <Prohibit size={13}/> إيقاف الحساب
                 </button>
               )}
-              {mapStatus(activeSub?.status, U.verified_at) === "suspended" && (
+              {statusKey === "suspended" && (
                 <button onClick={handleReactivate}
                   className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-bold bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20 transition-colors">
-                  <CheckCircle size={13}/> تفعيل الحساب
+                  <CheckCircle size={13}/> رفع الإيقاف
                 </button>
               )}
             </>
           )}
         </div>
       </motion.div>
+      {/* Owner س٢١٥: the suspension form */}
+      {suspendOpen && (
+        <SuspendAccountDialog
+          userId={userId}
+          userLabel={U.display_name || U.email}
+          onClose={() => setSuspendOpen(false)}
+          onDone={() => { setSuspendOpen(false); fetchUser(); }}
+        />
+      )}
+
+      {/* C10 / owner س٢١٥: the suspension — why, until when — and the appeals */}
+      {(statusKey === "suspended" || appeals.length > 0) && (
+        <div className={`${card} p-5 space-y-3 border-red-500/20`}>
+          {statusKey === "suspended" && (
+            <div className="space-y-1.5">
+              <p className="text-[13px] font-bold text-red-400 flex items-center gap-1.5"><Prohibit size={14}/> الحساب موقوف</p>
+              <div className="grid gap-1 text-[12px] text-zinc-300">
+                <p>ينتهي الإيقاف: <span className="font-bold">{formatSuspensionEndAr(U.suspension?.ends_at) ?? "غير محدد (إيقاف سابق لنظام المدد — ارفعه يدوياً متى رأيت)"}</span>{U.suspension?.ends_at ? " (بتوقيت الرياض، ويُرفع تلقائياً)" : ""}</p>
+                {templateLabelAr(U.suspension?.template) && <p>المدة: {templateLabelAr(U.suspension?.template)}</p>}
+                <p>السبب: {U.suspension?.reason ?? "غير مسجل"}</p>
+                {U.suspension?.kind === "device_limit" && <p className="text-amber-400">أُوقف الحساب بسبب تجاوز حد أجهزة المكتبة.</p>}
+              </div>
+            </div>
+          )}
+          {appeals.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-[12px] font-bold text-zinc-200">الاعتراضات على الإيقاف</p>
+              {appeals.map((a) => (
+                <div key={a.id} className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-3 space-y-1.5">
+                  <div className="flex items-center justify-between gap-2 text-[11px]">
+                    <span className={a.status === "new" ? "font-bold text-amber-400" : "text-zinc-400"}>
+                      {APPEAL_STATUS_AR[a.status as AppealStatus] ?? a.status}
+                    </span>
+                    <span className="text-zinc-500">{formatDate(a.createdAt)}</span>
+                  </div>
+                  <p className="text-[12px] leading-6 text-zinc-300 whitespace-pre-wrap break-words">{a.message}</p>
+                  {a.decisionNote && <p className="text-[11px] text-zinc-500">ردّ الإدارة: {a.decisionNote}</p>}
+                  {a.status === "new" && statusKey === "suspended" && (
+                    rejectingAppeal === a.id ? (
+                      <div className="space-y-2">
+                        <textarea value={rejectNote} onChange={(e) => setRejectNote(e.target.value)} rows={2} maxLength={1000}
+                          placeholder="سبب رفض الاعتراض"
+                          className="w-full resize-none rounded-xl border border-white/10 bg-zinc-950 px-3 py-2 text-[12px] text-zinc-200 placeholder:text-zinc-600" />
+                        <div className="flex gap-2">
+                          <button onClick={() => handleRejectAppeal(a.id)} disabled={actionLoading || rejectNote.trim().length < 3}
+                            className="rounded-lg bg-red-500/15 border border-red-500/30 px-3 py-1.5 text-[11px] font-bold text-red-300 disabled:opacity-50">تأكيد الرفض</button>
+                          <button onClick={() => { setRejectingAppeal(null); setRejectNote(""); }}
+                            className="rounded-lg border border-white/10 px-3 py-1.5 text-[11px] font-bold text-zinc-400">إلغاء</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex flex-wrap gap-2">
+                        <button onClick={handleReactivate} disabled={actionLoading}
+                          className="rounded-lg bg-emerald-500/10 border border-emerald-500/20 px-3 py-1.5 text-[11px] font-bold text-emerald-400 disabled:opacity-50">قبول الاعتراض ورفع الإيقاف</button>
+                        <button onClick={() => { setRejectingAppeal(a.id); setRejectNote(""); }} disabled={actionLoading}
+                          className="rounded-lg bg-red-500/10 border border-red-500/20 px-3 py-1.5 text-[11px] font-bold text-red-400 disabled:opacity-50">رفض الاعتراض</button>
+                      </div>
+                    )
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* KPI Strip */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
@@ -1449,6 +1569,10 @@ export default function UserProfilePage() {
                             both checks — this list is convenience, not the guard. */}
                         {DB_USER_TYPES
                           .filter(t => isAssignableUserType(t) && t !== U.user_type)
+                          // l16 C14: individual → lawyer / provider goes through the
+                          // converter card (it creates the sector row, checks the
+                          // open commitments and audits), not this profiles-only write.
+                          .filter(t => !(U.user_type === "individual" && (t === "lawyer" || t === "provider")))
                           .map(t => <option key={t} value={t}>{ROLE_MAP[t]}</option>)}
                       </select>
                       <CaretDown size={12} className={`absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none ${isDark ? "text-zinc-500" : "text-slate-400"}`} />
@@ -1500,7 +1624,7 @@ export default function UserProfilePage() {
             {/* ── The remaining security rows ────────────────────────────────── */}
             <div className={`mt-3 border-t ${isDark?"border-white/[0.04]":"border-slate-50"}`}>
               {[
-                { label:"حالة الحساب", val: statusInfo.label, ok: U.status === "active" },
+                { label:"حالة الحساب", val: statusInfo.label, ok: statusKey === "active" },
                 { label:"معرف المستخدم", val: U.id, ok:true },
               ].map((r,i)=>(
                 <div key={i} className={`flex items-center justify-between py-2.5 ${i<1?`border-b ${isDark?"border-white/[0.04]":"border-slate-50"}`:""}`}>
@@ -1513,6 +1637,8 @@ export default function UserProfilePage() {
               ))}
             </div>
           </div>
+          {/* l16 C14: the full account type and its converter (first slice). */}
+          <AccountTypeConverterCard userId={U.id} isDark={isDark} card={card} onConverted={fetchUser} />
           {/* Owner ٤٢٧: the user's library devices + «إعادة تعيين الأجهزة». */}
           <UserLibraryDevicesCard userId={U.id} isDark={isDark} card={card} />
         </motion.div>

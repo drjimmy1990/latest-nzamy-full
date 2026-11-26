@@ -30,10 +30,107 @@ test("the subtitle falls back the same way", () => {
   assert.equal(explainSubtitle("  ", null), "");
 });
 
-test("the modal uses the greeting and the reader passes the law's title", () => {
+test("the modal sends the explanation request and the reader passes the law's title", () => {
   const modal = readFileSync(join(import.meta.dirname, "_ai-components.tsx"), "utf8");
-  assert.match(modal, /explainGreeting\(\{ num: article\.num, articleTitle: article\.title, lawName, isRTL \}\)/);
+  // Batch l16 (B-16 / E-20): the window sends the explanation request itself, no greeting.
+  assert.match(modal, /void handleSend\(explainRequest\(\{ num: article\.num, articleTitle: article\.title, lawName, isRTL \}\)\);/);
+  assert.doesNotMatch(modal, /explainGreeting\(/);
   assert.doesNotMatch(modal, /المتضمنة لـ "\$\{article\.title\}"/);
   const page = readFileSync(join(import.meta.dirname, "page.tsx"), "utf8");
   assert.match(page, /<ArticleExplainModal\s+article=\{explainArticle\}\s+lawName=\{law\?\.title\}/);
+});
+
+test("B-17 (batch l16): a bare ordinal or number reads «المادة …»; a unit, a position or a heading is kept", async () => {
+  const { spokenArticle } = await import("./_explain-greeting.ts");
+  assert.equal(spokenArticle("الأولى"), "المادة الأولى");
+  assert.equal(spokenArticle("الحادية عشرة"), "المادة الحادية عشرة");
+  assert.equal(spokenArticle("الثمانون"), "المادة الثمانون");
+  assert.equal(spokenArticle("٥"), "المادة ٥");
+  assert.equal(spokenArticle("المادة الأولى"), "المادة الأولى");
+  assert.equal(spokenArticle("البند الثالث"), "البند الثالث");
+  assert.equal(spokenArticle("(3)"), "(3)");
+  assert.equal(spokenArticle("التعريفات"), "التعريفات");
+  assert.equal(spokenArticle(""), "المادة");
+  assert.match(explainGreeting({ num: "الأولى", articleTitle: "", lawName: "نظام القضاء", isRTL: true }), /أشرح لك المادة الأولى من «نظام القضاء»/);
+});
+
+test("B-16 / E-20 (batch l16): the request «اشرح لي» sends by itself names the article and its law", async () => {
+  const { explainRequest } = await import("./_explain-greeting.ts");
+  assert.equal(
+    explainRequest({ num: "الأولى", articleTitle: "", lawName: "نظام القضاء", isRTL: true }),
+    "اشرح لي المادة الأولى من «نظام القضاء» بلغة واضحة، مع بيان ما يترتب عليها.",
+  );
+  assert.match(explainRequest({ num: "المادة ٧٧", articleTitle: "إنهاء العقد", lawName: "نظام العمل", isRTL: true }), /^اشرح لي المادة ٧٧ المتضمنة لـ «إنهاء العقد» من «نظام العمل» /);
+  assert.doesNotMatch(explainRequest({ num: "٥", articleTitle: null, lawName: null, isRTL: true }), /«»|من «/);
+  assert.match(explainRequest({ num: "Article 5", lawName: "Labour Law", isRTL: false }), /^Explain Article 5 of Labour Law/);
+});
+
+test("B-16 / E-20 (batch l16): sent once per opening, never for a guest or a switched-off tool, one question at a time", () => {
+  const modal = readFileSync(join(import.meta.dirname, "_ai-components.tsx"), "utf8").replace(/\r\n/g, "\n");
+  const start = modal.indexOf("export function ArticleExplainModal");
+  const body = modal.slice(start, modal.indexOf("// ─── Community Question Modal", start));
+  const effect = body.slice(body.indexOf("useEffect(() => {\n    if (autoSentRef.current"), body.indexOf("}, [user.loading, user.isLoggedIn, usable]);"));
+  assert.ok(effect.length > 0, "the auto-send effect is found");
+  // The guard is set at the moment it fires — every branch, before anything is sent.
+  assert.match(effect, /if \(autoSentRef\.current \|\| user\.loading\) return;/);
+  assert.match(effect, /if \(!user\.isLoggedIn\) \{\n\s*autoSentRef\.current = true;\n\s*const refusal = libraryAiRefusal\(401,/);
+  assert.match(effect, /if \(usable === null\) return;\n\s*autoSentRef\.current = true;\n\s*if \(!usable\) \{\n\s*setMsgs\(\[\{ role: "ai", text: LIBRARY_AI_SOON \}\]\);\n\s*return;/);
+  assert.equal((effect.match(/handleSend\(/g) ?? []).length, 1);
+  // A guest's window never asks the server (the gate mounts only when signed in).
+  assert.match(body, /\{signedIn && <ExplainToolGate onAnswer=\{onGate\} \/>\}/);
+  assert.match(body, /const signedIn = !user\.loading && user\.isLoggedIn;/);
+  // In-flight guard: a second Enter while a question runs is not a second charge.
+  assert.match(body, /if \(!query \|\| sendingRef\.current\) return;\n\s*sendingRef\.current = true;/);
+  assert.match(body, /finally \{\n\s*sendingRef\.current = false;/);
+  // No greeting any more; the price is in the window's header.
+  assert.doesNotMatch(body, /explainGreeting/);
+  assert.match(body, /aiToolPriceText\(EXPLAIN_TOOL, "ar"\)\} لكل سؤال/);
+  // …and on the button that opens it.
+  const reader = readFileSync(join(import.meta.dirname, "_article-components.tsx"), "utf8");
+  assert.match(reader, /aiToolPriceText\("library-assistant", isRTL \? "ar" : "en"\)/);
+  // l16 review: the price only where the tool can run, never on a locked article; a locked one opens the paywall
+  assert.match(reader, /\{isRTL \? "اشرح لي" : "Explain"\}\s*\{showExplainPrice && <span className="font-semibold opacity-80">· \{explainPrice\}<\/span>\}/);
+  assert.match(reader, /const showExplainPrice = explainUsable && !isLocked;/);
+  assert.match(reader, /const onExplainClick = \(\) => \(isLocked \? showPaywall\(\) : onExplain\(article\)\);/);
+  assert.match(reader, /onClick=\{onExplainClick\}/);
+  const page = readFileSync(join(import.meta.dirname, "page.tsx"), "utf8");
+  assert.match(page, /const explainUsable = useToolUsable\("library-assistant"\);/);
+  assert.equal((page.match(/explainUsable=\{explainUsable === true\}/g) ?? []).length, 2, "both card lists get the one answer");
+  assert.match(body, /\{usable === true && \(/, "the window's header names the price only when the tool runs");
+});
+
+test("l16 review: «اشرح لي» keeps the last answer per article — re-opening shows it, a closed window keeps its paid answer", () => {
+  const modal = readFileSync(join(import.meta.dirname, "_ai-components.tsx"), "utf8").replace(/\r\n/g, "\n");
+  const start = modal.indexOf("export function ArticleExplainModal");
+  const body = modal.slice(start, modal.indexOf("// ─── Community Question Modal", start));
+  const effect = body.slice(body.indexOf("useEffect(() => {\n    if (autoSentRef.current"), body.indexOf("}, [user.loading, user.isLoggedIn, usable]);"));
+  // the kept session is read before anything is sent, and then nothing is sent
+  const keptAt = effect.indexOf("const kept = sessionKey ? explainSession<AIMessage>(sessionKey) : null;");
+  const sendAt = effect.indexOf("void handleSend(");
+  assert.ok(keptAt > -1 && keptAt < sendAt);
+  const restore = effect.slice(keptAt, effect.indexOf("if (usable === null) return;"));
+  assert.match(restore, /autoSentRef\.current = true;/);
+  assert.doesNotMatch(restore, /handleSend\(/);
+  // the answer is written to the session whether or not the window is still open; setMsgs only while mounted
+  assert.match(body, /if \(session && sessionKey && !answer\.refused\) \{\n\s*session\.msgs = \[\.\.\.session\.msgs, \{ role: "ai", text: reply, action, cites \}\];/);
+  assert.match(body, /saveExplainSession\(sessionKey, session\);/);
+  assert.match(body, /if \(mountedRef\.current\) setMsgs\(m => \[\.\.\.m, \{ role: "ai", text: reply, action, cites \}\]\);/);
+  // keyed by the signed-in user and the article
+  assert.match(body, /const sessionKey = signedIn \? explainSessionKey\(user\.userId, article\.id\) : null;/);
+});
+
+test("l16 review: the explain session store", async () => {
+  const { explainSession, explainSessionKey, saveExplainSession, resetExplainSessionsForTest } = await import("./_explain-session.ts");
+  assert.equal(explainSessionKey(null, "a-1"), null, "a guest keeps nothing");
+  assert.equal(explainSessionKey("u-1", ""), null);
+  const key = explainSessionKey("u-1", "a-1")!;
+  assert.notEqual(key, explainSessionKey("u-2", "a-1"), "another account never sees it");
+  const s = explainSession<{ role: string; text: string }>(key);
+  assert.deepEqual([s.msgs, s.conversationId, s.pending], [[], null, null]);
+  s.msgs = [{ role: "user", text: "q" }, { role: "ai", text: "a" }];
+  s.conversationId = "c-1";
+  saveExplainSession(key, s); // no sessionStorage under node: memory only, never throws
+  assert.equal(explainSession(key), s, "the same session comes back");
+  resetExplainSessionsForTest();
+  assert.deepEqual(explainSession(key).msgs, []);
 });

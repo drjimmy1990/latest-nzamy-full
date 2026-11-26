@@ -176,7 +176,7 @@ test("the reader: one choke point in the page mapping, cards from the merge, dif
   const reader = readFileSync(new URL("./_article-components.tsx", import.meta.url), "utf8").replace(/\r\n/g, "\n");
   assert.match(reader, /visibleAmendments\(mergeLiftedVersions\(article\.amendments, article\.liftedVersions, showAmendmentSource\)\)/);
   assert.match(reader, /\(isAmended \|\| \(article\.liftedVersions\?\.length \?\? 0\) > 0\) && previousVersions\.length > 0/);
-  assert.match(reader, /currentText=\{pickDiffTarget\(/);
+  assert.match(reader, /currentText=\{diffTargetFor\(/);
 });
 
 test("the reader: the «معدّلة» badge opens the history; an empty toggle is not drawn", () => {
@@ -195,4 +195,49 @@ test("a stored row with the same wording but small differences is still one card
   const { lifted } = splitAmendmentText(LIVE_TEXT, [REG_NAME]);
   const noisy = ROWS.map((r) => (r.fullText ? { ...r, fullText: `> > ${r.fullText.replace(/،/g, " ، ").replace(/\.$/, "")}  ` } : r));
   assert.equal(visibleAmendments(mergeLiftedVersions(noisy, lifted, true)).length, 2);
+});
+
+// ── batch l16 (owner package 25-Nov §2.4): never hidden, chained ─────────────
+test("B-09: diffTargetFor never leaves a wording without a comparison — the close paragraph, else the whole text", async () => {
+  const { diffTargetFor } = await import("./_amendment-split.ts");
+  // Unrelated wording (pickDiffTarget → null): compared with the whole current text.
+  assert.equal(pickDiffTarget(P7_ORIGINAL, diffCandidates(CURRENT)), null);
+  assert.equal(diffTargetFor(P7_ORIGINAL, diffCandidates(CURRENT)), CURRENT);
+  // A close paragraph still wins.
+  const regulation = "> 7. **يحدد المجلس الأعلى للقضاء فترة انتقالية - بعد تعديل نظام المرافعات الشرعية ونظام الإجراءات الجزائية - لتباشر بعدها المحاكم العمالية اختصاصاتها المنصوص عليها نظاماً.**";
+  assert.match(diffTargetFor(P7_ORIGINAL, diffCandidates(CURRENT, regulation)) ?? "", /^7\. يحدد المجلس/);
+  // Nothing to compare: no candidates, or an old text without words.
+  assert.equal(diffTargetFor(P7_ORIGINAL, []), null);
+  assert.equal(diffTargetFor("…", diffCandidates(CURRENT)), null);
+});
+
+test("B-10: each version against the one that followed it; the newest against today's text", async () => {
+  const { diffChain } = await import("./_amendment-split.ts");
+  const current = diffCandidates(CURRENT);
+  // Display order newest first, no dates (a non-subscriber's cards).
+  const cards = [
+    { source: "", date: "", fullText: "الصيغة الثانية" },
+    { source: "", date: "", fullText: "", textMissing: true },
+    { source: "", date: "", fullText: "الصيغة الأولى" },
+  ];
+  const chain = diffChain(cards, current);
+  assert.equal(chain[0].against, "current");
+  assert.deepEqual(chain[0].candidates, current);
+  assert.equal(chain[2].against, "next");
+  assert.equal(chain[2].candidates[0], "الصيغة الثانية", "the card with no text is skipped");
+  assert.equal(chain[1].against, "current", "a card with no text compares nothing (its own toggle never shows)");
+  // Dated cards follow their dates whatever the display order (the parser's position may run oldest first).
+  const dated = diffChain([
+    { source: "المرسوم الملكي م/6", date: "1440/01/02هـ", fullText: "نص 1440" },
+    { source: "المرسوم الملكي م/113", date: "1443/11/09هـ", fullText: "نص 1443" },
+  ], current);
+  assert.equal(dated[1].against, "current");
+  assert.equal(dated[0].against, "next");
+  assert.equal(dated[0].candidates[0], "نص 1443");
+  // Parts are compared through the version's whole wording.
+  const parts = diffChain([
+    { source: "", date: "", fullText: "", parts: [{ label: "الفقرة 5", text: "خمسة" }, { label: "الفقرة 7", text: "سبعة" }] },
+    { source: "", date: "", fullText: "أقدم" },
+  ], current);
+  assert.deepEqual(parts[1].candidates, ["خمسة\n\nسبعة", "خمسة", "سبعة"]);
 });

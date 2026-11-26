@@ -10,7 +10,7 @@ import { requireStaff } from "@/lib/access-control";
  */
 export async function GET(request: NextRequest) {
   try {
-    const gate = await requireStaff("orders.manage");
+    const gate = await requireStaff("read");
     if (!gate.ok) return gate.response;
     const q = (request.nextUrl.searchParams.get("q") ?? "").trim().slice(0, 60);
     if (q.length < 2) return NextResponse.json({ data: [] });

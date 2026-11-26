@@ -88,3 +88,17 @@ export function withExtraPlans<T extends { id: string }>(
   const extras = source.filter((p) => extraIds.includes(p.id) && !have.has(p.id));
   return extras.length === 0 ? list : [...list, ...extras];
 }
+
+/**
+ * l16 (A-15, owner 25 Nov §1.4.2): the plans an INDEPENDENT legal consultant
+ * may not buy — «إدارة المكتب» and the office + library bundle. Checkout
+ * refuses them (checkoutCore step 2c, the /checkout page), and /pricing and
+ * the subscription tab do not show them to him.
+ */
+export const CONSULTANT_REFUSED_PLAN_ID_LIST: readonly string[] = Object.freeze(["lawyer-pro", "lawyer-bundle"]);
+
+/** The list without the consultant-refused plans for an independent consultant; unchanged (same object) otherwise. */
+export function withoutConsultantRefusedPlans<T extends { id: string }>(list: T[], independentConsultant: boolean): T[] {
+  if (!independentConsultant) return list;
+  return list.filter((p) => !CONSULTANT_REFUSED_PLAN_ID_LIST.includes(p.id));
+}

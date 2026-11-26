@@ -206,10 +206,16 @@ test("fix round 1 (I4, I5): the micro request catalogue and the arbitrator's too
   const micro = read("app/dashboard/micro/requests/page.tsx");
   assert.doesNotMatch(micro, /من [٠-٩]+ ر\.س/, "a «من … ر.س» price nothing charges is back");
   let gatedRows = 0;
+  const hrefs: string[] = [];
   for (const m of micro.matchAll(/\{ id: "[^"]+",[^\n]*price: "([^"]*)", href: "([^"]+)" \}/g)) {
+    hrefs.push(m[2]);
     if (isTerminalToolHref(m[2])) { gatedRows++; assert.equal(m[1], "", `${m[2]} carries a typed price`); }
   }
-  assert.equal(gatedRows, 2, "consult, notice");
+  // E-108 (l16): consult and notice now open the shared client intake, not
+  // the «قريباً» /ai/consult — no row of this catalogue is a dead end.
+  assert.equal(gatedRows, 0, "no gated row left");
+  assert.ok(hrefs.includes("/dashboard/client/services?cat=consultation"), "consult → the services catalogue");
+  assert.ok(hrefs.includes("/dashboard/client/requests/new?type=legal-notice"), "notice → the order form");
   assert.match(micro, /\.map\(\(s\) => \(\{ \.\.\.s, price: isTerminalToolHref\(s\.href\) \? COMING_SOON_BADGE_AR : s\.price \}\)\)/);
 
   const arb = read("app/dashboard/provider/components/ArbitratorDashboard.tsx");

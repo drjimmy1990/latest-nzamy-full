@@ -6,6 +6,7 @@ import { CheckCircle, LinkBreak, Scales } from "@phosphor-icons/react";
 import { createWorkflowRequest, getWorkflowRequestsByReceiver } from "@/lib/services/workflowService";
 import { apiGet, isSupabaseMode } from "@/lib/services/api";
 import { createLawyerHearing, getHearingAssigneeOptions, HearingOverlapError, type HearingAssigneeOption } from "@/lib/services/lawyerHearingsService";
+import LimitRefusalLink from "@/components/limits/LimitRefusalLink";
 import type { WorkflowRequest } from "@/lib/workflowStore";
 import ModalShell from "@/components/ui/ModalShell";
 import { isLawyerCaseRow } from "../cases/_caseListRules";
@@ -356,6 +357,8 @@ export default function AddHearingModal({ onClose, isDark, user, caseRequestId, 
             {error && (
               <div className={`rounded-xl px-3 py-2 text-[12px] font-semibold ${isDark ? "bg-red-500/10 text-red-400 border border-red-500/20" : "bg-red-50 text-red-600 border border-red-200"}`}>
                 {error}
+                {/* س٢١٢: «الجلسات متاحة في باقة إدارة المكتب» carries its pricing link */}
+                {" "}<LimitRefusalLink message={error} />
               </div>
             )}
             {/* «الخطوة ١ من ٢».

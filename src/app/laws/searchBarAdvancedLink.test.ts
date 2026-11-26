@@ -36,3 +36,21 @@ test("Q170: a small «خيارات متقدمة» link under the bar opens the a
   // the panel itself is unchanged
   assert.match(page, /<AdvancedSearchModal/);
 });
+
+test("B-06 (batch l16, owner package 25-Nov §2.2): a search form — Enter or «بحث» runs the search at once", () => {
+  const form = bar.slice(bar.indexOf('<form role="search"'), bar.indexOf("</form>"));
+  assert.ok(form.length > 0, "the input sits in a <form role=\"search\">");
+  assert.match(form, /onSubmit=\{submitSearch\}/);
+  assert.match(form, /placeholder=\{phList\[phIdx\]\}/, "the input is inside the form");
+  assert.match(form, /type="submit"[\s\S]*?\{isRTL \? "بحث" : "Search"\}/);
+  assert.match(form, /min-h-11/, "a 44 px tap target");
+  // The submit drops the pending debounce timers before searching, and closes the suggestions.
+  const submit = page.slice(page.indexOf("const submitSearch ="), page.indexOf("};", page.indexOf("const submitSearch =")));
+  assert.match(submit, /e\.preventDefault\(\);/);
+  assert.match(submit, /clearTimeout\(searchTimerRef\.current\)/);
+  assert.match(submit, /clearTimeout\(autocompleteTimerRef\.current\)/);
+  assert.match(submit, /setShowSuggest\(false\);/);
+  assert.match(submit, /fetchSearchResults\(search, activeType, activeCat\)/);
+  // «خيارات متقدمة» stays a small link under the bar, outside the form.
+  assert.ok(bar.indexOf('data-testid="library-advanced-link"') > bar.indexOf("</form>"));
+});

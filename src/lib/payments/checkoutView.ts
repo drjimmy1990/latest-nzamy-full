@@ -20,7 +20,7 @@
 
 import { resolveItem, sellableItem, type Billing, type PayableItem, type VatMode } from "./catalog.ts";
 import type { CheckoutResponse } from "./checkoutRules.ts";
-import { VAT_NOTICE } from "../pricing/vatNotice.ts";
+import { VAT_NOTICE, VAT_UNREGISTERED_NOTICE } from "../pricing/vatNotice.ts";
 import { BILLING_LABEL_AR, isBilling } from "../pricing/priceBook.ts";
 import { FOUNDER_CREDITS, FOUNDER_LIBRARY_DAYS, FOUNDER_MEMBERSHIP_MONTHS } from "../membership/founderPlan.ts";
 import { libraryExpiryLockLineAr } from "../points/pointsExpiryNotice.ts";
@@ -275,15 +275,21 @@ export function billingLabelAr(billing: Billing): string {
  * The VAT sentence beside the listed price, before the server has quoted:
  * the one notice (٢٥٨) — every price is VAT-exclusive, whoever buys.
  */
-export function listedVatNotice(item: PayableItem): string {
+export function listedVatNotice(item: PayableItem, vatRegistered: boolean | null = true): string | null {
   void item;
-  return VAT_NOTICE.exclusive.ar;
+  // l16 (A-01): no 15 % before the platform's VAT number is saved; nothing while unknown
+  if (vatRegistered === null) return null;
+  return vatRegistered ? VAT_NOTICE.exclusive.ar : VAT_UNREGISTERED_NOTICE.ar;
 }
 
-/** The VAT sentence for the quote POST /api/v1/payments/checkout returned (always exclusive since ٢٥٨). */
-export function quoteVatNotice(mode: VatMode): string {
+/**
+ * The VAT sentence for the quote POST /api/v1/payments/checkout returned
+ * (always exclusive since ٢٥٨). l16 (A-01): a quote with no VAT (0 halalas —
+ * no VAT number saved yet) says so in the owner's words, never «0 %».
+ */
+export function quoteVatNotice(mode: VatMode, vatHalalas?: number): string {
   void mode;
-  return VAT_NOTICE.exclusive.ar;
+  return vatHalalas === 0 ? VAT_UNREGISTERED_NOTICE.ar : VAT_NOTICE.exclusive.ar;
 }
 
 // ── the checkout answer ─────────────────────────────────────────────────────

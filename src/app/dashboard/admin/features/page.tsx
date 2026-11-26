@@ -11,18 +11,21 @@
  * src/lib/featureFlags/featureFlags.ts. The page reads it through GET
  * /api/v1/admin/settings and writes the whole object through PATCH (staff
  * settings.write, validated, audited); the server reads it with a one-minute
- * cache. The two beta gates are code constants and are shown read-only.
+ * cache. The review beta gate is a code constant and is shown read-only;
+ * the lawyers' market card reads the real database switch (l16 C36).
  */
 
 import { useCallback, useEffect, useState } from "react";
 import { Info, Lock, ToggleRight, WarningCircle } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
-import { BETA_MONOPOLY_MODE, BETA_REVIEW_MODE } from "@/lib/betaConfig";
+import Link from "next/link";
+import { BETA_REVIEW_MODE } from "@/lib/betaConfig";
 import {
   FEATURE_FLAGS,
   FEATURE_FLAG_KEYS,
   FEATURE_FLAGS_SETTING,
   FIXED_FLAGS,
+  marketStateTextAr,
   parseFeatureFlags,
   type FeatureFlagKey,
   type FeatureFlagValues,
@@ -32,14 +35,17 @@ import {
 /** The code value of each fixed beta gate (featureFlags.ts FIXED_FLAGS). */
 const FIXED_FLAG_ON: Record<FixedFlag["id"], boolean> = {
   review: BETA_REVIEW_MODE,
-  "single-provider": BETA_MONOPOLY_MODE,
 };
 
 type LoadState = { kind: "loading" } | { kind: "error"; message: string } | { kind: "ready"; flags: FeatureFlagValues };
 
+/** l16 (C36): the real market switch; undefined = still loading, null = unreadable. */
+type MarketRead = { open: boolean; installed: boolean } | null | undefined;
+
 export default function AdminFeatureFlagsPage() {
   const { isDark } = useTheme();
   const [state, setState] = useState<LoadState>({ kind: "loading" });
+  const [market, setMarket] = useState<MarketRead>(undefined);
   const [saving, setSaving] = useState<FeatureFlagKey | null>(null);
   const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
 
@@ -61,6 +67,23 @@ export default function AdminFeatureFlagsPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // l16 (C36): the market card reads the database switch, never a constant.
+  useEffect(() => {
+    let live = true;
+    fetch("/api/v1/admin/marketplace/settings", { cache: "no-store" })
+      .then(async (res) => {
+        const body = (await res.json().catch(() => null)) as { data?: { open?: unknown; installed?: unknown } } | null;
+        if (!live) return;
+        setMarket(res.ok && body?.data ? { open: body.data.open === true, installed: body.data.installed === true } : null);
+      })
+      .catch(() => {
+        if (live) setMarket(null);
+      });
+    return () => {
+      live = false;
+    };
+  }, []);
 
   async function toggle(key: FeatureFlagKey) {
     if (state.kind !== "ready" || saving) return;
@@ -160,12 +183,41 @@ export default function AdminFeatureFlagsPage() {
           })}
       </section>
 
+      {/* l16 (C36): the lawyers' market as the database has it — the same
+          switch «طلبات السوق» opens and closes. */}
+      <section className="space-y-3" aria-label="سوق المحامين">
+        <h2 className={`text-base font-black ${strong}`}>سوق المحامين</h2>
+        <div className={`${card} p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3`}>
+          <div className="min-w-0">
+            <h3 className={`font-bold ${strong}`}>حالة السوق الآن</h3>
+            <p className={`text-sm mt-1 leading-relaxed ${muted}`}>
+              {market === undefined ? "جارٍ قراءة حالة السوق…" : marketStateTextAr(market).detail}
+            </p>
+            <Link href="/dashboard/admin/marketplace/orders" className={`inline-block mt-2 text-xs font-bold underline underline-offset-4 ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}>
+              فتح صفحة «طلبات السوق»
+            </Link>
+          </div>
+          {market !== undefined && (
+            <span
+              className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border ${
+                market?.installed && market.open
+                  ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-500"
+                  : isDark ? "border-white/10 text-gray-400" : "border-gray-200 text-gray-500"
+              }`}
+            >
+              <Info size={14} />
+              {marketStateTextAr(market).label}
+            </span>
+          )}
+        </div>
+      </section>
+
       <section className="space-y-3" aria-label="إعدادات ثابتة للمرحلة التجريبية">
         <div className="flex items-center gap-2">
           <Lock size={16} className={muted} />
-          <h2 className={`text-base font-black ${strong}`}>إعدادات ثابتة للمرحلة التجريبية</h2>
+          <h2 className={`text-base font-black ${strong}`}>إعداد ثابت للمرحلة التجريبية</h2>
         </div>
-        <p className={`text-xs ${muted}`}>هذان الإعدادان لا يُغيَّران من هنا؛ يتغيّران مع الإطلاق الكامل للمنصة.</p>
+        <p className={`text-xs ${muted}`}>هذا الإعداد لا يُغيَّر من هنا؛ يتغيّر مع الإطلاق الكامل للمنصة.</p>
         {FIXED_FLAGS.map((flag) => (
           <div key={flag.id} className={`${card} p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3`}>
             <div className="min-w-0">

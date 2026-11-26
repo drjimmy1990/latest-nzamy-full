@@ -22,6 +22,8 @@ import { useTheme } from "@/components/ThemeProvider";
 import IntermediaryNotice from "@/components/marketplace/IntermediaryNotice";
 import { formatArabicDate } from "@/lib/services/clientDashboardCards";
 import { toArabicDigits } from "@/lib/marketplace/marketSettings";
+import PrioritySettingsBox from "@/components/marketplace/PrioritySettingsBox";
+import { isHeld } from "@/lib/marketplace/marketPriority";
 
 interface Settings {
   open: boolean;
@@ -58,6 +60,8 @@ interface MarketRequest {
   createdAt: string | null;
   published: boolean;
   pendingAsks: number;
+  /** l16 س٢٣: set while the request is still in the Nezamy priority window. */
+  releaseAt?: string | null;
 }
 
 function fmtTime(iso: string | null): string {
@@ -334,6 +338,8 @@ export default function MarketplaceOrdersPage() {
             </div>
           </div>
         )}
+        {/* l16 س٢٣: the Nezamy priority window (its own route). */}
+        <PrioritySettingsBox isDark={isDark} />
       </section>
 
       {/* 2. Asks */}
@@ -443,6 +449,11 @@ export default function MarketplaceOrdersPage() {
                   </div>
                   <div className="flex items-center gap-2 text-xs">
                     {r.published && <span className={`rounded-full px-2 py-0.5 ${chip}`}>منشور يدوياً</span>}
+                    {!r.published && isHeld(r.releaseAt, Date.now()) && (
+                      <span className="rounded-full px-2 py-0.5 bg-sky-500/15 text-sky-700 dark:text-sky-300">
+                        لدى فريق نظامي حتى {fmtTime(r.releaseAt ?? null)} — لا يراه المحامون بعد
+                      </span>
+                    )}
                     {r.pendingAsks > 0 && (
                       <span className="rounded-full px-2 py-0.5 bg-amber-500/15 text-amber-700 dark:text-amber-300">
                         {toArabicDigits(r.pendingAsks)} طلب قبول

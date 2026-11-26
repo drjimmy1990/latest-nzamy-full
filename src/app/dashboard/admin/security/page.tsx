@@ -9,6 +9,7 @@ import LibraryActivityPanel from "./LibraryActivityPanel";
 import LibraryDevicesPanel from "./LibraryDevicesPanel";
 import LibraryProtectionPanel from "./LibraryProtectionPanel";
 import TwoFactorPanel from "./TwoFactorPanel";
+import RestrictedCasesPanel from "./RestrictedCasesPanel";
 import AdminMfaOffBanner from "@/components/admin/AdminMfaOffBanner";
 
 // "library_activity" (20261031_10) and "library_locks" (owner note ١٣ C09,
@@ -20,8 +21,8 @@ import AdminMfaOffBanner from "@/components/admin/AdminMfaOffBanner";
 // "library_devices" — owner ٤٢٧, the device limit (20261108_20).
 // "library_protection" — batch l11 (20261201_30): the non-subscriber view
 // cap, the verified crawlers, the sequential / parallel reading alerts.
-type SecTab = "library_activity"|"library_locks"|"library_devices"|"library_protection"|"two_factor"|"overview"|"duplicates"|"scraping"|"threats";
-const SEC_TABS: readonly SecTab[] = ["library_activity","library_locks","library_devices","library_protection","two_factor","overview","duplicates","scraping","threats"];
+type SecTab = "library_activity"|"library_locks"|"library_devices"|"library_protection"|"two_factor"|"restricted_cases"|"overview"|"duplicates"|"scraping"|"threats";
+const SEC_TABS: readonly SecTab[] = ["library_activity","library_locks","library_devices","library_protection","two_factor","restricted_cases","overview","duplicates","scraping","threats"];
 
 export default function SecurityPage() {
   const { isDark } = useTheme();
@@ -44,6 +45,8 @@ export default function SecurityPage() {
     { id:"library_protection", label:"حماية المكتبة من السحب", icon:ShieldWarning },
     // Owner item 18 (batch l7): the staff member's own two-step state.
     { id:"two_factor", label:"التحقق بخطوتين", icon:ShieldCheck },
+    // l16 (owner س٢١٦): restricted firm cases — metadata only + emergency access.
+    { id:"restricted_cases", label:"القضايا المقيّدة", icon:LockSimple },
     { id:"overview", label:"نظرة عامة", icon:ShieldCheck, soon:true },
     { id:"duplicates", label:"حسابات مكررة", icon:Users, soon:true },
     { id:"scraping", label:"حماية البوتات", icon:Bug, soon:true },
@@ -84,6 +87,7 @@ export default function SecurityPage() {
       {tab==="library_devices" && <LibraryDevicesPanel isDark={isDark} card={card} />}
       {tab==="library_protection" && <LibraryProtectionPanel isDark={isDark} card={card} />}
       {tab==="two_factor" && <TwoFactorPanel isDark={isDark} card={card} />}
+      {tab==="restricted_cases" && <RestrictedCasesPanel isDark={isDark} card={card} />}
 
       {current?.soon && (
         <motion.div key={tab} initial={{opacity:0}} animate={{opacity:1}}

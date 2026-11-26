@@ -397,7 +397,7 @@ test("every shell goes through the one resolver", () => {
 
   const navbar = read("components/Navbar.tsx");
   assert.match(navbar, /resolveNavbarUserType\(\{/);
-  assert.match(navbar, /getNavByUserType\(isLoggedIn \? navUserType : null\)/);
+  assert.match(navbar, /getNavForSession\(isLoggedIn \? navUserType : null, independentConsultant\)/);
 
   const parts = read("components/dashboard/SidebarComponents.tsx");
   assert.match(parts, /export \{ inferUserTypeFromPath \} from "@\/lib\/nav\/shellContext";/);

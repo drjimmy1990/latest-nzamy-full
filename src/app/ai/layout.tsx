@@ -15,6 +15,7 @@ import MicroDashboardLayout from "@/app/dashboard/micro/layout";
 import ProviderDashboardLayout from "@/app/dashboard/provider/layout";
 import LawyerOnlyToolNotice from "@/components/ai/LawyerOnlyToolNotice";
 import AdminToolsNotice from "@/components/ai/AdminToolsNotice";
+import { LicenceRequiredBanner, LicenceRequiredNotice, useLicenceGate } from "@/components/ai/LicenceRequiredNotice";
 import { canSeeLawyerTools, isLawyerOnlyAiHref } from "@/lib/ai/lawyerOnlyTools";
 import TermsReacceptGate from "@/components/legal/TermsReacceptGate";
 import TopUpModalHost from "@/components/payments/TopUpModalHost";
@@ -90,9 +91,21 @@ function AIShell({ children: page }: { children: React.ReactNode }) {
   // keeps the page (the edge sends him to /login first; the page has its own
   // sign-in handling).
   const lawyerOnlyRefused = shell !== "loading" && user.isLoggedIn && isLawyerOnlyAiHref(pathname) && !canSeeLawyerTools(user.userType);
-  const tool = lawyerOnlyRefused ? <LawyerOnlyToolNotice userType={user.userType} /> : page;
+  // Owner س٢١٤ (batch l16): a lawyer's or firm's drafting-tool page waits
+  // for the verified licence — «وثّق رخصتك» with its link, not the page's
+  // «قريباً» (display only; the run route refuses either way).
+  const licence = useLicenceGate(pathname, user.userType, shell !== "loading" && user.isLoggedIn && !lawyerOnlyRefused);
+  const tool = lawyerOnlyRefused ? (
+    <LawyerOnlyToolNotice userType={user.userType} />
+  ) : licence.state === "required" ? (
+    <LicenceRequiredNotice verifyHref={licence.verifyHref} userType={user.userType} />
+  ) : licence.state === "unknown" ? (
+    <AILoading />
+  ) : (
+    page
+  );
   // N2 (batch l12): one line for the admin, who sees every tool open (display only).
-  const children = <><AdminToolsNotice />{tool}</>;
+  const children = <><AdminToolsNotice /><LicenceRequiredBanner userType={user.userType} />{tool}</>;
 
   switch (shell) {
     case "loading":    return <AILoading />;

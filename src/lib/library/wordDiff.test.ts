@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { diffSourceText, diffWords, tokenizeWords, type DiffRun } from "./wordDiff.ts";
+import { diffSourceText, diffTexts, diffWords, tokenizeWords, type DiffRun } from "./wordDiff.ts";
 
 const side = (runs: DiffRun[], keep: "del" | "add") =>
   runs.filter((r) => r.op === "equal" || r.op === keep).map((r) => r.text).join("").replace(/\s+/g, " ").trim();
@@ -68,4 +68,39 @@ test("diffSourceText drops the embedded history block and markdown marks", () =>
   assert.equal(diffSourceText("## المادة (5): `[معدّلة]`\n> للعامل الحق (معدلة)"), "المادة (5):\nللعامل الحق");
   assert.equal(diffWords(diffSourceText("للعامل الحق"), diffSourceText("للعامل الحق [مُعدَّلة]"))!.added, 0);
   assert.equal(diffSourceText("أ\r\n\r\n\r\nب"), "أ\nب");
+});
+
+// ── B-09 (owner package 25-Nov §2.4): the coloured diff never disappears ─────
+test("diffTexts: the word diff when it fits", () => {
+  assert.deepEqual(diffTexts("أ ب ج", "أ د ج"), diffWords("أ ب ج", "أ د ج"));
+});
+
+test("diffTexts: too long for the word diff → lines, each changed block word by word; never null", () => {
+  const lines = (w: string, n: number) => Array.from({ length: n }, (_, i) => `${w}${i} سطر`).join("\n");
+  // A cap so small the word diff refuses; the changed lines are then compared line by line.
+  const rewritten = `${lines("x", 40)}\nالقديمة\n${lines("y", 40)}`;
+  const target = `${lines("x", 40)}\nالجديدة\n${lines("w", 40)}`;
+  assert.equal(diffWords(rewritten, target, 20), null);
+  const coarse = diffTexts(rewritten, target, 20);
+  assert.equal(side(coarse.runs, "del"), side([{ op: "equal", text: rewritten }], "del"), "old side rebuilds the old text");
+  assert.equal(side(coarse.runs, "add"), side([{ op: "equal", text: target }], "add"), "new side rebuilds the new text");
+  assert.ok(coarse.removed > 0 && coarse.added > 0);
+  assert.ok(coarse.runs.some((r) => r.op === "equal" && r.text.includes("x0 سطر")), "the common head stays equal");
+});
+
+test("diffTexts: a full rewrite past every cap is all red then all green", () => {
+  const d = diffTexts("أ ب\nج", "د هـ\nو", 1);
+  assert.equal(side(d.runs, "del"), "أ ب ج");
+  assert.equal(side(d.runs, "add"), "د هـ و");
+  assert.equal(d.removed, 3);
+  assert.equal(d.added, 3);
+  assert.ok(!d.runs.some((r) => r.op === "equal" && r.text.trim() !== ""), "no word is kept as equal");
+});
+
+test("diffTexts: equal lines stay equal in the line fallback (harakat ignored)", () => {
+  const d = diffTexts("مَادة ثابتة\nقديم قديم", "مادة ثابتة\nجديد جديد", 2);
+  assert.equal(d.runs[0].op, "equal");
+  assert.match(d.runs[0].text, /مادة ثابتة/);
+  assert.equal(d.removed, 2);
+  assert.equal(d.added, 2);
 });

@@ -81,6 +81,10 @@ export async function GET(request: NextRequest) {
     // was listed anyway. It defaults to false, which is the right default for
     // publishing a licensed professional's details.
     .eq("lawyer_profiles.marketplace_visible", true)
+    // l16 D-51: the public lawyer directory lists advocates only — an
+    // independent consultant (practice_kind 'consultant', NOT NULL default
+    // 'advocate', 20261019_20) never appears here, whatever his switches say.
+    .neq("lawyer_profiles.practice_kind", "consultant")
     .range(offset, offset + limit - 1);
 
   if (specialty) {

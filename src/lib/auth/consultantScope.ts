@@ -39,6 +39,9 @@ export const CONSULTANT_ALLOWED_PAGE_PREFIXES = [
   // "/marketplace" prefix, which would also open the provider side.
   "/marketplace/post",
   "/marketplace/order",
+  // l16 review: the services request wizard (the top bar's «اطلب خدمة»). Not
+  // in the scoped area, so this only documents that it is his.
+  "/services",
   "/dashboard/lawyer/join-office", // «انضم إلى مكتب أو محامٍ»
   "/dashboard/lawyer/profile", // his own profile and licence details
 ] as const;

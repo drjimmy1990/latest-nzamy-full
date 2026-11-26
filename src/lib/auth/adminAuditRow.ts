@@ -7,8 +7,13 @@
  */
 
 export interface AdminActionInput {
-  /** The acting admin (requireStaff's userId). */
-  actorId: string;
+  /** The acting admin (requireStaff's userId); null only for a system action. */
+  actorId: string | null;
+  /**
+   * 'admin' (the default) or 'system' — a scheduled job acting on its own,
+   * e.g. the automatic end of a suspension (owner س٢١٥), with actorId null.
+   */
+  actorType?: "admin" | "system";
   /** A snake_case label; the audit-log screen derives severity from its words. */
   action: string;
   targetType: string;
@@ -32,7 +37,7 @@ export function buildAdminAuditRow(
 ): Record<string, unknown> {
   const row: Record<string, unknown> = {
     actor_id: input.actorId,
-    actor_type: "admin",
+    actor_type: input.actorType === "system" ? "system" : "admin",
     action: input.action,
     target_type: input.targetType,
     target_id: input.targetId,

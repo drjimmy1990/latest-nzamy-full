@@ -158,7 +158,8 @@ const firm = read("src/app/dashboard/firm/cases/[id]/page.tsx");
 const mig = read("supabase/migrations/20261203_60_case_free_board.sql");
 
 test("the route asks the case's rule, uses the caller's RLS client, checks every save", () => {
-  assert.match(route, /assertRole\(\["lawyer", "firm"\]\)/);
+  // D-52 (l16): a firm member reaches it too (assertCaseWorker); the case rule still decides
+  assert.match(route, /assertCaseWorker\(\)/);
   assert.equal((route.match(/rpc\("case_board_open"/g) ?? []).length, 1);
   assert.equal((route.match(/await canOpen\(supabase, caseId\)/g) ?? []).length, 2, "GET and PUT both ask");
   assert.match(route, /const checked = checkFreeBoard\(body\)/);

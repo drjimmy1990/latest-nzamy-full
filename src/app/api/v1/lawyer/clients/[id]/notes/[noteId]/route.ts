@@ -1,5 +1,5 @@
 import { NextResponse, NextRequest } from "next/server";
-import { assertRole } from "@/lib/auth/assertRole";
+import { assertCaseWorker } from "@/lib/auth/assertCaseWorker";
 import { isMissingColumnError } from "@/lib/services/archivedRows";
 import {
   CLIENT_NOTES_ARCHIVE_UNAVAILABLE_AR, NOTE_SELECT_WITH_ARCHIVE, toNoteDto, type NoteRow,
@@ -34,7 +34,7 @@ async function setArchived(
   archive: boolean,
   tag: string,
 ) {
-  const auth = await assertRole(["lawyer", "firm"]);
+  const auth = await assertCaseWorker();
   if (!auth.ok) return auth.response;
   const { user, supabase } = auth;
   const { id, noteId } = await context.params;

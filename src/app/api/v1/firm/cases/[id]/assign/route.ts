@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { officePlanRefusal } from "@/lib/auth/assertOfficePlan";
 import { assertRole } from "@/lib/auth/assertRole";
 import { resolveCallerFirm } from "@/lib/auth/firmMembershipAccess";
 import { createServiceClient } from "@/lib/supabase/server";
@@ -142,6 +143,9 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     const auth = await assertRole();
     if (!auth.ok) return auth.response;
     const { user, supabase } = auth;
+    // Owner س٢١٢: case management are «إدارة المكتب» — refused on the free side.
+    const locked = await officePlanRefusal(supabase, "cases", auth.userType);
+    if (locked) return locked;
     const { id } = await context.params;
 
     const body = await request.json().catch(() => null) as { assigneeUserId?: unknown } | null;

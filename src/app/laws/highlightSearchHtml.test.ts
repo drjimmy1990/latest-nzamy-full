@@ -5,7 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { escapeHtml, highlightSearchHtml } from "./highlightSearchHtml.ts";
 
-const MARK_OPEN = '<mark class="bg-yellow-300/80 text-yellow-900 rounded px-0.5">';
+const MARK_OPEN = '<mark class="bg-yellow-300/80 text-yellow-900 rounded-sm">';
 const mark = (s: string) => `${MARK_OPEN}${s}</mark>`;
 
 /** Every `<` / `>` in the output belongs to our own <mark> tags. */
@@ -83,4 +83,25 @@ test("the laws page uses this module for its dangerouslySetInnerHTML suggestion 
     "dangerouslySetInnerHTML={{ __html: highlightText(s.core || s.label, search) }}",
     "dangerouslySetInnerHTML={{ __html: highlightText(s.snippet, search) }}",
   ]);
+});
+
+// B-36 (batch l16, W1 #54): horizontal padding on a <mark> inside a word pulls
+// the article «ال» away from the rest («ال محكمة»): no mark (or diff run) pads sideways.
+test("B-36: no highlight mark carries horizontal padding", async () => {
+  const { readFileSync } = await import("node:fs");
+  const files = [
+    "./highlightSearchHtml.ts",
+    "./components/ListItems.tsx",
+    "./research/_components/ResearchRefDrawer.tsx",
+    "./[slug]/_highlight-html.ts",
+    "./[slug]/_word-diff.tsx",
+    "../../components/library/ScopedSearchPanel.tsx",
+    "../../components/search/MultiColorHighlight.tsx",
+  ];
+  for (const f of files) {
+    const src = readFileSync(new URL(f, import.meta.url), "utf8");
+    const marks = src.match(/<(?:mark|del|ins)\b[^>]*>/g) ?? [];
+    assert.ok(marks.length > 0, `${f}: a mark is found`);
+    for (const m of marks) assert.doesNotMatch(m, /\bpx-|\bp-\d/, `${f}: ${m}`);
+  }
 });

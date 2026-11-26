@@ -5,7 +5,6 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Copy, Check, CaretDown, CaretUp,
   ClockCounterClockwise, FileText, BookOpen, Lock,
-  Scales,
   Gavel, Sparkle
 } from "@phosphor-icons/react";
 import { markdownBoldToSafeHtml } from "@/utils/sanitize";
@@ -26,7 +25,7 @@ import {
 import { READER_SCROLL_MARGIN_TOP } from "./_reader-anchors";
 import { amendedByLine, visibleAmendments } from "./_previous-versions";
 import Link from "next/link";
-import { diffCandidates, mergeLiftedVersions, pickDiffTarget } from "./_amendment-split";
+import { diffCandidates, diffChain, diffTargetFor, mergeLiftedVersions } from "./_amendment-split";
 import { isPreambleEmpty } from "./_preamble";
 import { OfficialMetaLockedRow } from "../components/OfficialMetaLockedRow";
 import { Hl, useHighlight, useTextHasHighlight } from "@/components/search/MultiColorHighlight";
@@ -37,6 +36,9 @@ import { OWN_DOCUMENT_REFS_AS_TEXT, linkCitationsHtml } from "./_cite-links";
 import { useCitations } from "./_citation-popover";
 import { articleNumberOf } from "./_cite-status";
 import { ArticleRefsButton, ArticleRefsInline, useRefBox } from "./_ref-box";
+import { ArticleShareButton } from "./_article-share";
+import { spokenArticle } from "./_explain-greeting";
+import { aiToolPriceText } from "@/lib/ai/toolPointsDisplay";
 import { regulationNameFromRefs } from "@/lib/library/regulationName";
 import { DraftToggleIcon, DraftToggleLabel } from "@/components/draft/DraftToggleIcon"; // l12 lib02 «New 2»
 
@@ -663,10 +665,10 @@ function PrincipleCard({ p, isDark, inCart, onToggle, locked, onLock, isRTL = tr
           <p className={`text-[10px] ${isDark ? "text-zinc-400" : "text-slate-400"}`}>{p.ref}</p>
         </div>
         <div className="flex gap-1">
-          <button onClick={handleCopy} aria-label={isRTL ? "نسخ المبدأ" : "Copy principle"} className={`p-2 rounded-lg transition ${isDark ? "hover:bg-white/[0.08] text-zinc-400 hover:text-zinc-200" : "hover:bg-slate-200 text-slate-600 hover:text-slate-800"}`}>
+          <button onClick={handleCopy} aria-label={isRTL ? "نسخ المبدأ" : "Copy principle"} className={`min-w-11 min-h-11 inline-flex items-center justify-center p-2 rounded-lg transition ${isDark ? "hover:bg-white/[0.08] text-zinc-400 hover:text-zinc-200" : "hover:bg-slate-200 text-slate-600 hover:text-slate-800"}`}>
             {copied ? <Check size={11} className="text-emerald-500" /> : <Copy size={11} />}
           </button>
-          <button onClick={locked ? onLock : onToggle} aria-pressed={inCart} aria-label={inCart ? (isRTL ? "في المسودة — اضغط للإزالة" : "In the draft — remove") : (isRTL ? "أضف للمسودة" : "Add to draft")} className={`p-2 rounded-lg transition ${inCart ? isDark ? "bg-emerald-900/25 text-emerald-400" : "bg-emerald-50 text-emerald-700" : isDark ? "bg-[#C8A762]/10 text-[#C8A762]" : "bg-amber-50 text-amber-600"}`}>
+          <button onClick={locked ? onLock : onToggle} aria-pressed={inCart} aria-label={inCart ? (isRTL ? "في المسودة — اضغط للإزالة" : "In the draft — remove") : (isRTL ? "أضف للمسودة" : "Add to draft")} className={`min-w-11 min-h-11 inline-flex items-center justify-center p-2 rounded-lg transition ${inCart ? isDark ? "bg-emerald-900/25 text-emerald-400" : "bg-emerald-50 text-emerald-700" : isDark ? "bg-[#C8A762]/10 text-[#C8A762]" : "bg-amber-50 text-amber-600"}`}>
             <DraftToggleIcon inDraft={inCart} size={11} />
           </button>
         </div>
@@ -696,10 +698,10 @@ function PrecedentCard({ pr, isDark, inCart, onToggle, locked, onLock, isRTL = t
           <p className={`text-[10px] ${isDark ? "text-zinc-400" : "text-slate-400"}`}>{pr.caseNum} · {pr.year}</p>
         </div>
         <div className="flex gap-1">
-          <button onClick={handleCopy} aria-label={isRTL ? "نسخ السابقة القضائية" : "Copy precedent"} className={`p-2 rounded-lg transition ${isDark ? "hover:bg-white/[0.08] text-zinc-400 hover:text-zinc-200" : "hover:bg-slate-200 text-slate-600 hover:text-slate-800"}`}>
+          <button onClick={handleCopy} aria-label={isRTL ? "نسخ السابقة القضائية" : "Copy precedent"} className={`min-w-11 min-h-11 inline-flex items-center justify-center p-2 rounded-lg transition ${isDark ? "hover:bg-white/[0.08] text-zinc-400 hover:text-zinc-200" : "hover:bg-slate-200 text-slate-600 hover:text-slate-800"}`}>
             {copied ? <Check size={11} className="text-emerald-500" /> : <Copy size={11} />}
           </button>
-          <button onClick={locked ? onLock : onToggle} aria-pressed={inCart} aria-label={inCart ? (isRTL ? "في المسودة — اضغط للإزالة" : "In the draft — remove") : (isRTL ? "أضف للمسودة" : "Add to draft")} className={`p-2 rounded-lg transition ${inCart ? isDark ? "bg-emerald-900/25 text-emerald-400" : "bg-emerald-50 text-emerald-700" : isDark ? "bg-[#C8A762]/10 text-[#C8A762]" : "bg-amber-50 text-amber-600"}`}>
+          <button onClick={locked ? onLock : onToggle} aria-pressed={inCart} aria-label={inCart ? (isRTL ? "في المسودة — اضغط للإزالة" : "In the draft — remove") : (isRTL ? "أضف للمسودة" : "Add to draft")} className={`min-w-11 min-h-11 inline-flex items-center justify-center p-2 rounded-lg transition ${inCart ? isDark ? "bg-emerald-900/25 text-emerald-400" : "bg-emerald-50 text-emerald-700" : isDark ? "bg-[#C8A762]/10 text-[#C8A762]" : "bg-amber-50 text-amber-600"}`}>
             <DraftToggleIcon inDraft={inCart} size={11} />
           </button>
         </div>
@@ -725,7 +727,7 @@ export function RightPanel({ article, isDark, cart, onTogglePrinciple, onToggleP
 
   if (!article) return (
     <div className={`${card} ${border} p-4 text-center`}>
-      <Scales size={28} className={`mx-auto mb-2 ${muted}`} />
+      <Gavel size={28} className={`mx-auto mb-2 ${muted}`} />
       <p className={`text-[12px] ${muted}`}>{isRTL ? "اختر مادة من القائمة لعرض المبادئ والسوابق المرتبطة" : "Choose an article to show related principles and precedents"}</p>
     </div>
   );
@@ -748,7 +750,7 @@ export function RightPanel({ article, isDark, cart, onTogglePrinciple, onToggleP
       {/* Principles */}
       <div className={`${card} ${border} p-3 space-y-2`}>
         <div className="flex items-center gap-1.5 mb-1">
-          <Scales size={13} className={isDark ? "text-[#C8A762]" : "text-amber-600"} weight="duotone" />
+          <Gavel size={13} className={isDark ? "text-[#C8A762]" : "text-amber-600"} weight="duotone" />
           <p className={`text-[11px] font-bold ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>{isRTL ? "المبادئ القضائية" : "Judicial Principles"}</p>
           {hasPrinciples && <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${isDark ? "bg-[#C8A762]/10 text-[#C8A762]" : "bg-amber-50 text-amber-700"}`}>{article.principles!.length}</span>}
         </div>
@@ -789,7 +791,7 @@ export function RightPanel({ article, isDark, cart, onTogglePrinciple, onToggleP
 }
 
 // ─── Article Block ─────────────────────────────────────────────────────────────
-export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddArticle, onRemoveArticle, onAddExecReg, onRemoveExecReg, onActive, isActive, showPaywall, onExplain, isRTL = true, fontClass = "text-[13px]", isReadingMode = false, viewMode = "all", viewerHasFullAccess, showAmendmentSource = false }: {
+export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddArticle, onRemoveArticle, onAddExecReg, onRemoveExecReg, onActive, isActive, showPaywall, onExplain, explainUsable = false, isRTL = true, fontClass = "text-[13px]", isReadingMode = false, viewMode = "all", viewerHasFullAccess, showAmendmentSource = false }: {
   article: LawArticle; lawName: string;
   /** The document's own kind, straight from `library.laws.type`. */
   lawType?: string;
@@ -803,6 +805,12 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
   isActive: boolean;
   showPaywall: () => void;
   onExplain: (a: LawArticle) => void;
+  /**
+   * l16 review: may this reader run «اشرح لي» now (the page asks the server
+   * once — useToolUsable — and hands every card the answer). The price is
+   * shown on the button only when true.
+   */
+  explainUsable?: boolean;
   isRTL?: boolean;
   fontClass?: string; // حجم الخط: text-[13px] | text-[15px] | text-[17px]
   isReadingMode?: boolean;
@@ -868,16 +876,19 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
   // O12: what each previous wording is compared with — the current text, one of
   // its paragraphs, or a paragraph of this article's regulation (pickDiffTarget).
   const diffTargets = useMemo(() => diffCandidates(article.text, mergedReg?.text ?? ""), [article.text, mergedReg?.text]);
-  // File 03 L5 (batch l12): «عُدّلت بموجب … بتاريخ …» under the article, outside
-  // the fold, and «إظهار الفروق» beside it — it opens the history on the newest
-  // card's coloured diff (a bump of diffSignal), when that card can be compared.
+  // Owner package 25-Nov §2.4 (batch l16, B-09/B-10): each version is compared
+  // with the version that followed it (the newest with today's text), and the
+  // toggle never disappears (diffTargetFor falls back to the whole text).
+  const diffLinks = useMemo(() => diffChain(previousVersions, diffTargets), [previousVersions, diffTargets]);
+  // File 03 L5 (batch l12) → owner package 25-Nov §2.3 (batch l16, B-07):
+  // «عُدّلت بموجب … بتاريخ …» now sits in the header of the history fold
+  // itself, and «إظهار الفروق» as the fold's first row — it opens every card's
+  // coloured diff (a bump of diffSignal).
   const amendedLine = useMemo(() => (isAmended ? amendedByLine(previousVersions) : null), [isAmended, previousVersions]);
-  const newestDiffable = useMemo(() => {
-    const first = previousVersions[0];
-    if (!first) return false;
-    const texts = first.parts ? first.parts.map((p) => p.text) : first.fullText ? [first.fullText] : [];
-    return texts.some((t) => !!pickDiffTarget(t, diffTargets));
-  }, [previousVersions, diffTargets]);
+  const anyDiffable = useMemo(
+    () => previousVersions.some((v, i) => (v.parts ? v.parts.map((p) => p.text) : v.fullText ? [v.fullText] : []).some((t) => !!diffTargetFor(t, diffLinks[i].candidates))),
+    [previousVersions, diffLinks],
+  );
   const [diffSignal, setDiffSignal] = useState(0);
   const historyHasHit = useTextHasHighlight(historyHay);
   const historicRegHasHit = useTextHasHighlight(article.historicRegulationText);
@@ -963,6 +974,11 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
       : isDark ? "border-white/[0.05] bg-zinc-800/50" : "border-slate-100 bg-slate-50/80";
 
   const showExplainBtn = !isRepealed && (viewMode !== "regulation" || !!mergedReg);
+  const explainPrice = aiToolPriceText("library-assistant", isRTL ? "ar" : "en");
+  // l16 review: a locked article opens the paywall, not a paid explanation of
+  // text the reader may not read; the price only where the tool can run.
+  const showExplainPrice = explainUsable && !isLocked;
+  const onExplainClick = () => (isLocked ? showPaywall() : onExplain(article));
   const mainInCart = viewMode === "regulation" ? regInCart : inCart;
   const mainOnToggleCart = () => {
     if (viewMode === "regulation") {
@@ -1087,10 +1103,17 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
 
         {!isReadingMode && (
           <div className="flex items-center gap-1.5 print:hidden">
+            {/* E-20 (batch l16): the window explains at once and that costs points — the price is on the button. */}
             {showExplainBtn && (
-              <button onClick={() => onExplain(article)} className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg transition text-[10px] font-bold flex-shrink-0 ${isDark ? "bg-[#C8A762]/10 text-[#C8A762] hover:bg-[#C8A762]/20" : "bg-amber-50 text-amber-700 hover:bg-amber-100"}`}>
+              <button
+                onClick={onExplainClick}
+                aria-label={showExplainPrice ? (isRTL ? `اشرح لي — ${explainPrice}` : `Explain — ${explainPrice}`) : (isRTL ? "اشرح لي" : "Explain")}
+                title={showExplainPrice ? (isRTL ? `يبدأ الشرح فور الضغط، ${explainPrice}` : `Starts at once, ${explainPrice}`) : (isRTL ? "اشرح لي" : "Explain")}
+                className={`flex items-center gap-1.5 min-h-11 sm:min-h-0 px-2.5 py-1 rounded-lg transition text-[10px] font-bold flex-shrink-0 ${isDark ? "bg-[#C8A762]/10 text-[#C8A762] hover:bg-[#C8A762]/20" : "bg-amber-50 text-amber-700 hover:bg-amber-100"}`}
+              >
                 <Sparkle size={12} weight="duotone" />
                 {isRTL ? "اشرح لي" : "Explain"}
+                {showExplainPrice && <span className="font-semibold opacity-80">· {explainPrice}</span>}
               </button>
             )}
 
@@ -1108,6 +1131,17 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
             >
               {mainCopied ? <Check size={12} className="text-emerald-500" /> : <Copy size={12} />}
             </button>
+            {/* B-12 (batch l16, owner package 25-Nov §2.5): share the article — its link for
+                everyone, an image card only of text this reader may read (never locked, never
+                repealed). */}
+            <ArticleShareButton
+              articleId={article.id}
+              lawName={lawName ?? ""}
+              articleLabel={viewMode === "regulation" && mergedReg ? mergedReg.ref : spokenArticle(article.num)}
+              text={viewMode === "regulation" && mergedReg ? mergedReg.text : article.text}
+              canImage={!isLocked && !isRepealed && !!(viewMode === "regulation" && mergedReg ? mergedReg.text : article.text).trim()}
+              isDark={isDark}
+            />
             
             <button
               onClick={mainOnToggleCart}
@@ -1227,10 +1261,13 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
                 <MD text={article.text} isDark={isDark} isRTL={isRTL} fontClass={fontClass} cite={citeSelf} />
               )
             )}
-            {/* Owner L1 (20 Nov, lib02): the links under every article again —
-                a counter chip and small cards per relation, from the law's one
-                links request; the side box reads the same cache (_ref-box.tsx). */}
-            {viewMode !== "regulation" && refBox && <ArticleRefsInline articleId={article.id} />}
+            {/* Owner L1 (20 Nov, lib02): the links under every article — then owner
+                package 25-Nov §2.6 (batch l16, B-13): the chip under the article
+                duplicated the header's «الإحالات (N)», so it shows only in reading
+                mode, where the header buttons are hidden. Outside it the component
+                stays mounted without a chip: it is still the per-article fallback
+                request when the law's one links request fails (_ref-box.tsx). */}
+            {viewMode !== "regulation" && refBox && <ArticleRefsInline articleId={article.id} chip={isReadingMode} />}
 
             {/*
               Amendments toggle (collapsible <details> block, matches the layout/style of parsed details blocks).
@@ -1242,46 +1279,6 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
               have it duplicated by an amendment fullText. Showing both would
               print the same superseded text twice on every one of them.
             */}
-            {viewMode !== "regulation" && amendedLine && (
-              <div
-                data-testid="article-amended-by"
-                className={`mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[11.5px] font-bold ${isDark ? "text-amber-300" : "text-amber-800"}`}
-              >
-                {amendedLine.kind === "locked" ? (
-                  <span>
-                    {isRTL ? "عُدّلت هذه المادة" : "This article was amended"}
-                    <span className={`ms-2 text-[10.5px] font-semibold ${isDark ? "text-zinc-400" : "text-slate-500"}`}>
-                      🔒 {isRTL ? "أداة التعديل وتاريخه متاحان للمشتركين" : "The amending instrument and its date are for subscribers"}
-                    </span>
-                  </span>
-                ) : amendedLine.decreeId ? (
-                  <Link href={`/laws/orders/${encodeURIComponent(amendedLine.decreeId)}`} className="underline decoration-dotted underline-offset-4 hover:decoration-solid">
-                    <Hl text={amendedLine.text} />
-                  </Link>
-                ) : (
-                  <span><Hl text={amendedLine.text} /></span>
-                )}
-                {newestDiffable && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const d = historyRef.current;
-                      if (d) {
-                        d.open = true;
-                        d.scrollIntoView({ block: "nearest", behavior: "smooth" });
-                      }
-                      setDiffSignal((n) => n + 1);
-                    }}
-                    className={`inline-flex items-center min-h-[32px] text-[10.5px] font-bold px-2.5 py-1 rounded-lg border transition ${
-                      isDark ? "border-amber-400/30 text-amber-300 hover:bg-amber-500/10" : "border-amber-300 text-amber-800 hover:bg-amber-100"
-                    }`}
-                  >
-                    {isRTL ? "إظهار الفروق" : "Show changes"}
-                  </button>
-                )}
-              </div>
-            )}
-
             {/* O12: also for a version lifted out of the text when the status does not say «معدّلة»
                 — the lifted wording must land somewhere, never vanish. */}
             {viewMode !== "regulation" && (isAmended || (article.liftedVersions?.length ?? 0) > 0) && previousVersions.length > 0 && (
@@ -1294,11 +1291,47 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
                     : "border-amber-100 bg-amber-50/50 text-amber-900"
                 }`}
               >
-                <summary className="px-4 py-2.5 font-black cursor-pointer hover:underline text-[12px] flex items-center gap-1.5 select-none">
+                <summary className="px-4 py-2.5 cursor-pointer text-[12px] flex flex-wrap items-center gap-x-1.5 gap-y-1 select-none">
                   <ClockCounterClockwise size={12} className={isDark ? "text-amber-400" : "text-amber-600"} />
-                  <span>{isRTL ? `الإصدارات السابقة (${previousVersions.length})` : `Previous versions (${previousVersions.length})`}</span>
+                  <span className="font-black hover:underline">{isRTL ? `الإصدارات السابقة (${previousVersions.length})` : `Previous versions (${previousVersions.length})`}</span>
+                  {/* B-07: the latest amendment in the fold's own header (plain text: no link or button inside <summary>). */}
+                  {amendedLine && (
+                    <span data-testid="history-amended-by" className={`text-[11.5px] font-bold ${isDark ? "text-amber-300" : "text-amber-800"}`}>
+                      {"— "}
+                      {amendedLine.kind === "locked" ? (
+                        <>
+                          {isRTL ? "عُدّلت هذه المادة" : "This article was amended"}
+                          <span className={`ms-2 text-[10.5px] font-semibold ${isDark ? "text-zinc-400" : "text-slate-500"}`}>
+                            🔒 {isRTL ? "أداة التعديل وتاريخه متاحان للمشتركين" : "The amending instrument and its date are for subscribers"}
+                          </span>
+                        </>
+                      ) : (
+                        <Hl text={amendedLine.text} />
+                      )}
+                    </span>
+                  )}
                 </summary>
                 <div className="px-4 pb-3 pt-2 border-t border-dashed border-amber-200/20 text-[12px] leading-relaxed space-y-2">
+                  {((amendedLine?.kind === "source" && amendedLine.decreeId) || anyDiffable) && (
+                    <div className={`flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[11px] font-bold ${isDark ? "text-amber-300" : "text-amber-800"}`}>
+                      {amendedLine?.kind === "source" && amendedLine.decreeId && (
+                        <Link href={`/laws/orders/${encodeURIComponent(amendedLine.decreeId)}`} className="inline-flex items-center min-h-11 sm:min-h-0 underline decoration-dotted underline-offset-4 hover:decoration-solid">
+                          {isRTL ? "فتح أداة التعديل" : "Open the amending instrument"}
+                        </Link>
+                      )}
+                      {anyDiffable && (
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); setDiffSignal((n) => n + 1); }}
+                          className={`inline-flex items-center min-h-11 sm:min-h-[32px] text-[10.5px] font-bold px-2.5 py-1 rounded-lg border transition ${
+                            isDark ? "border-amber-400/30 text-amber-300 hover:bg-amber-500/10" : "border-amber-300 text-amber-800 hover:bg-amber-100"
+                          }`}
+                        >
+                          {isRTL ? "إظهار الفروق في كل الإصدارات" : "Show the changes in every version"}
+                        </button>
+                      )}
+                    </div>
+                  )}
                   {previousVersions.map((amend, i) => (
                     <div key={i} className={`p-3 rounded-xl border ${isDark ? "border-amber-700/10 bg-amber-900/5" : "border-amber-200 bg-amber-50/60"}`}>
                       {(amend.sourceLocked || amend.source || amend.date) && (
@@ -1318,30 +1351,33 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
                       {amend.textMissing && (
                         <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-slate-500"}`}>{isRTL ? "نص غير متوفر" : "Text not available"}</p>
                       )}
-                      {/* Owner note ١٢ §٣ / file 16 §4: «إظهار الفروق الملونة» — this version against
-                          the CLEAN current text (O12: the lifted notes are out of it), or the paragraph
-                          of it (or of the article's regulation) it shares most words with; no toggle
-                          when nothing is close (_amendment-split.ts pickDiffTarget, _word-diff.tsx). */}
+                      {/* Owner note ١٢ §٣ / file 16 §4 → package 25-Nov §2.4 (batch l16): «إظهار الفروق
+                          الملونة» — this version against the version that followed it (the newest
+                          against the CLEAN current text, O12), or the paragraph of it (or of the
+                          article's regulation) it shares most words with, else the whole of it —
+                          never hidden (_amendment-split.ts diffChain / diffTargetFor, _word-diff.tsx). */}
                       {amend.parts ? (
                         amend.parts.map((part, pi) => (
                           <div key={pi} className={`${pi > 0 || amend.summary || amend.sourceLocked || amend.source || amend.date ? "pt-2 mt-2 border-t" : ""} ${isDark ? "border-amber-700/15" : "border-amber-200"}`}>
                             {part.label && <p className={`text-[11px] font-bold mb-1 ${isDark ? "text-amber-300" : "text-amber-800"}`}><Hl text={part.label} /></p>}
                             <PreviousVersionText
                               oldText={part.text}
-                              currentText={pickDiffTarget(part.text, diffTargets)}
+                              currentText={diffTargetFor(part.text, diffLinks[i].candidates)}
+                              against={diffLinks[i].against}
                               isDark={isDark}
                               isRTL={isRTL}
-                              openDiffSignal={i === 0 ? diffSignal : 0}
+                              openDiffSignal={diffSignal}
                             />
                           </div>
                         ))
                       ) : amend.fullText && (
                         <PreviousVersionText
                           oldText={amend.fullText}
-                          currentText={pickDiffTarget(amend.fullText, diffTargets)}
+                          currentText={diffTargetFor(amend.fullText, diffLinks[i].candidates)}
+                          against={diffLinks[i].against}
                           isDark={isDark}
                           isRTL={isRTL}
-                          openDiffSignal={i === 0 ? diffSignal : 0}
+                          openDiffSignal={diffSignal}
                           className={`${amend.summary || amend.sourceLocked || amend.source || amend.date ? "pt-2 border-t" : ""} ${isDark ? "border-amber-700/15" : "border-amber-200"}`}
                         />
                       )}
@@ -1384,14 +1420,15 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
                       <button
                         onClick={(e) => { e.stopPropagation(); handleCopyReg(); }}
                         title={isRTL ? "نسخ اللائحة" : "Copy regulation"}
-                        className={`p-2 rounded-lg transition ${isDark ? "hover:bg-white/[0.06] text-zinc-500" : "hover:bg-slate-200 text-slate-600"}`}
+                        aria-label={isRTL ? "نسخ اللائحة" : "Copy regulation"}
+                        className={`min-w-11 min-h-11 inline-flex items-center justify-center p-2 rounded-lg transition ${isDark ? "hover:bg-white/[0.06] text-zinc-500" : "hover:bg-slate-200 text-slate-600"}`}
                       >
                         {copiedReg ? <Check size={11} className="text-emerald-500" /> : <Copy size={11} />}
                       </button>
                       <button
                         onClick={(e) => { e.stopPropagation(); regInCart ? onRemoveExecReg(article.id) : (isLocked ? showPaywall() : onAddExecReg(article)); }}
                         title={regInCart ? (isRTL ? "إزالة من المسودة" : "Remove from draft") : (isRTL ? "إضافة للمسودة" : "Add to draft")}
-                        className={`p-2 rounded-lg transition ${
+                        className={`min-w-11 min-h-11 inline-flex items-center justify-center p-2 rounded-lg transition ${
                           regInCart
                             ? isDark ? "bg-emerald-900/25 text-emerald-400" : "bg-emerald-50 text-emerald-700"
                             : isDark ? "bg-[#C8A762]/15 text-[#C8A762]" : "bg-amber-50 text-amber-700"
@@ -1418,7 +1455,7 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
                 <p className={`text-[10px] font-bold ${isDark ? "text-zinc-400" : "text-slate-400"}`}>{isRTL ? "مضاف للمسودة:" : "Added to draft:"}</p>
                 {entry.principles.map(p => (
                   <div key={p.id} className={`flex items-start gap-2 p-2 rounded-lg text-[11px] ${isDark ? "bg-[#C8A762]/5" : "bg-amber-50"}`}>
-                    <Scales size={10} className={`mt-0.5 flex-shrink-0 ${isDark ? "text-[#C8A762]" : "text-amber-600"}`} />
+                    <Gavel size={10} className={`mt-0.5 flex-shrink-0 ${isDark ? "text-[#C8A762]" : "text-amber-600"}`} />
                     <span className={isDark ? "text-zinc-400" : "text-zinc-600"}>{p.text}</span>
                   </div>
                 ))}

@@ -1,5 +1,5 @@
 import { NextResponse, NextRequest } from "next/server";
-import { assertRole } from "@/lib/auth/assertRole";
+import { assertCaseWorker } from "@/lib/auth/assertCaseWorker";
 import { createServiceClient } from "@/lib/supabase/server";
 import { recordEvent, RequestEvent } from "@/lib/events";
 import { recordNotification } from "@/lib/notify";
@@ -130,7 +130,7 @@ async function resolveClientCard(
 
 export async function POST(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
-    const auth = await assertRole(["lawyer", "firm"]);
+    const auth = await assertCaseWorker();
     if (!auth.ok) return auth.response;
     const { user, supabase } = auth;
     const { id } = await context.params;

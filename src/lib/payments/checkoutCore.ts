@@ -130,6 +130,7 @@ import type { MoyasarClient } from "./moyasarClient.ts";
 import { buyerAllowed, PAYABLE_ITEMS, quote, resolveItem, type Billing, type PayableItem } from "./catalog.ts";
 import { checkMinTopup } from "./minTopup.ts";
 import { readConsultantStanding } from "../auth/consultantScopeServer.ts";
+import { CONSULTANT_REFUSED_PLAN_ID_LIST } from "../pricing/audienceForUserType.ts";
 import { LIBRARY_ACCOUNT_LOCKED_AR, LIBRARY_ACCOUNT_LOCKED_CODE } from "../library/accountAccess.ts";
 import { isMissingPaymentsObject } from "./fulfillDecision.ts";
 import { MOYASAR_DISABLED_MESSAGE_AR } from "./moyasarConfig.ts";
@@ -188,7 +189,10 @@ export const CHECKOUT_FAILED_AR = "تعذّر بدء عملية الدفع، ح�
 export const AUDIENCE_REFUSED_AR = "هذه الباقة غير متاحة لنوع حسابك";
 /** l14: an independent consultant's account is library-only (owner, 23 Nov). */
 export const CONSULTANT_PLAN_REFUSED_AR = "حساب المستشار القانوني المستقل للمكتبة وحدها، فلا تُشترى له «إدارة المكتب». وتبقى باقات المكتبة متاحة لك.";
-const CONSULTANT_REFUSED_PLAN_IDS: ReadonlySet<string> = new Set(["lawyer-pro", "lawyer-bundle"]);
+/** l16 (A-17): the consultant check could not be read — the office plans are never sold on a guess. */
+export const CONSULTANT_CHECK_FAILED_AR = "تعذّر التحقق من صلاحية الحساب الآن، حاول مرة أخرى بعد قليل";
+/** The plans an independent consultant may not buy (also read by the /checkout page pre-check and the pricing cards). */
+export const CONSULTANT_REFUSED_PLAN_IDS: ReadonlySet<string> = new Set(CONSULTANT_REFUSED_PLAN_ID_LIST);
 export const UNKNOWN_ITEM_AR = "هذا المنتج غير متاح للدفع الإلكتروني";
 export const BILLING_NOT_OFFERED_AR = "مدة الاشتراك هذه غير متاحة لهذا المنتج";
 export { NOT_FOR_SALE_AR };
@@ -291,6 +295,12 @@ export interface CheckoutInput {
    * demoRefusal below). Absent → not stored.
    */
   gatewayMode?: "test" | "live";
+  /**
+   * l16 (A-01): the VAT rate of this checkout — catalog.vatPercentFor(the
+   * route's checkoutVatRegistered): 15 once billing_company holds the VAT
+   * number (always in live mode), 0 before it. Every price step uses it.
+   */
+  vatPercent: number;
 }
 
 export type CheckoutReply =
@@ -527,16 +537,21 @@ export async function startCheckoutWith(deps: CheckoutDeps, input: CheckoutInput
   // independent consultant (practice_kind 'consultant', no active firm
   // membership — readConsultantStanding, the proxy's rule) cannot buy «إدارة
   // المكتب» or the office + library bundle; the library itself stays open to
-  // him. A read that fails counts as an advocate (the existing rule).
+  // him. Batch l16 (A-17 / E-06, owner 25 Nov «Fail-Closed»): a practice_kind
+  // read that fails is NOT an advocate here — 503, nothing written, the same
+  // rule as the proxy's API branch. (Elsewhere a blip still reads as an
+  // advocate, so a real lawyer is never locked out of his workspace.)
   if (userType === "lawyer" && CONSULTANT_REFUSED_PLAN_IDS.has(known.id)) {
     const standing = await readConsultantStanding(admin, user.id);
+    if (standing.readFailed) return fail(503, CONSULTANT_CHECK_FAILED_AR);
     if (standing.scopeKind === "consultant") return fail(403, CONSULTANT_PLAN_REFUSED_AR);
   }
 
   // 3. the price — on the request's clock, so a launch price (owner ٣٠٣) is
   // charged while its campaign runs and never after
   const now = deps.now?.() ?? new Date();
-  const q = quote(input.itemId, input.billing, catalog, now);
+  const vatPct = input.vatPercent;
+  const q = quote(input.itemId, input.billing, catalog, now, vatPct);
   if (!q.ok) {
     if (q.error === "not_for_sale") return fail(410, NOT_FOR_SALE_AR);
     return fail(400, q.error === "unknown_item" ? UNKNOWN_ITEM_AR : BILLING_NOT_OFFERED_AR);
@@ -575,6 +590,7 @@ export async function startCheckoutWith(deps: CheckoutDeps, input: CheckoutInput
       now,
       book: deps.book,
       gateway: client,
+      vatPercent: vatPct,
     });
     if (!priced.ok) {
       if (priced.status === 400) attempts.spend(user.id);
@@ -611,7 +627,7 @@ export async function startCheckoutWith(deps: CheckoutDeps, input: CheckoutInput
       const fd = founderDiscountHalalas(listNet, bps);
       const otherSaving = listNet - q.netHalalas + (couponQuote?.discount ?? 0);
       if (bestDiscount(otherSaving, fd).source === "founder") {
-        const d = applyDiscount(listNet, fd);
+        const d = applyDiscount(listNet, fd, vatPct);
         ({ netHalalas: net, vatHalalas: vat, totalHalalas: total } = d);
         couponMeta = null;
         couponQuote = null;
@@ -649,7 +665,7 @@ export async function startCheckoutWith(deps: CheckoutDeps, input: CheckoutInput
   let prorationQuote: { listNet: number; prorationCredit: number } | null = null;
   if (upgrade) {
     if (netAfterCredit(net, upgrade.creditHalalas) === null) return fail(409, UPGRADE_CREDIT_TOO_BIG_AR);
-    const d = applyDiscount(net, upgrade.creditHalalas);
+    const d = applyDiscount(net, upgrade.creditHalalas, vatPct);
     ({ netHalalas: net, vatHalalas: vat, totalHalalas: total } = d);
     prorationMeta = prorationMetadata(upgrade, q.netHalalas);
     prorationQuote = { listNet: q.netHalalas, prorationCredit: d.discountHalalas };

@@ -22,6 +22,8 @@ export const CONSULTANT_BLOCKED_PREFIXES = [
   "/ai/brief-check",
   // Ruling R1 (owner ٤٠٩, 7 Nov 2026): the strength analysis is part of the simulator.
   "/ai/analyze-strength",
+  // D-73 (batch l16): /ai/memo-studio re-exports the simulator (wargaming).
+  "/ai/memo-studio",
 ] as const;
 
 /**

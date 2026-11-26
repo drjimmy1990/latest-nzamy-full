@@ -5,6 +5,10 @@ import { isAuthUnavailable, authUnavailableResponse, frozenAccountResponse } fro
 
 const MAX_HOLD_REASON_LEN = 300;
 
+/** س٢٠٣: what the other party is told when he tries to lift a hold. */
+const HOLD_OWNER_ONLY_AR =
+  "رفع الحجز لصاحب الملف أو للإدارة فقط. يمكنك إرسال «طلب رفع الحجز» إلى صاحب الملف.";
+
 /**
  * PATCH /api/v1/documents/[id]/hold — set or clear a document's legal hold.
  * Body: { legalHold: boolean, holdReason?: string (≤300 chars) }
@@ -19,6 +23,13 @@ const MAX_HOLD_REASON_LEN = 300;
  *
  * hold_reason is cleared whenever legalHold is false — a reason with no
  * active hold behind it is stale, not history worth keeping.
+ *
+ * Owner decision س٢٠٣ (migration 20261206_11, trigger trg_03_attachments_
+ * hold_owner): either party of a request may PLACE a hold on any file of it,
+ * but only the file's owner (or a case supervisor for a team member's file,
+ * or the administration) lifts it. The database refuses the rest with 42501;
+ * this route answers that with the sentence below and points the other party
+ * to «طلب رفع الحجز» (POST …/hold-lift-request).
  */
 export async function PATCH(
   request: NextRequest,
@@ -62,7 +73,7 @@ export async function PATCH(
 
     const { data: doc, error: fetchError } = await supabase
       .from("attachments")
-      .select("id, deleted_at")
+      .select("id, deleted_at, legal_hold, owner_user_id")
       .eq("id", id)
       .maybeSingle();
 
@@ -76,6 +87,11 @@ export async function PATCH(
     if (body.legalHold === true && doc.deleted_at) {
       return NextResponse.json({ error: "استعد الملف من السلة أولاً" }, { status: 409 });
     }
+    // Already on hold and the caller is not its owner: placing it again would
+    // only rewrite the owner's reason, which the database refuses.
+    if (body.legalHold === true && doc.legal_hold === true && doc.owner_user_id !== user.id) {
+      return NextResponse.json({ error: "الملف محجوز بالفعل." }, { status: 409 });
+    }
 
     const { data: updated, error: updateError } = await supabase
       .from("attachments")
@@ -88,6 +104,12 @@ export async function PATCH(
       .maybeSingle();
 
     if (updateError) {
+      if (updateError.code === "42501") {
+        return NextResponse.json(
+          { error: HOLD_OWNER_ONLY_AR, code: "hold_owner_only" },
+          { status: 403 },
+        );
+      }
       const mapped = documentsDbErrorResponse(updateError);
       console.error("[documents hold] update failed:", id, updateError.message, updateError.code);
       return NextResponse.json({ error: mapped.message }, { status: mapped.status });

@@ -41,6 +41,7 @@ import ReviewForm from "@/components/reviews/ReviewForm";
 // only how it is DISPLAYED, and the full id stays reachable in the `title`
 // tooltip and the copy button in the detail modal.
 import { orderReference } from "@/lib/services/orderReference";
+import MarketPriorityStatus from "@/components/marketplace/MarketPriorityStatus";
 
 // ─── Status config ────────────────────────────────────────────────────────────
 const STATUS_CFG: Record<WorkflowRequestStatus, {
@@ -461,6 +462,13 @@ function RequestDetailModal({ req, onClose, onCancel, reviewableEntry, onReviewe
                 </div>
               )}
             </div>
+
+            {/* Owner س٢٣ (batch l16): still with the Nezamy team? until when, and «افتحه للجميع فوراً». */}
+            {req.receiver === "ai_workspace" && (
+              <div className="mb-6">
+                <MarketPriorityStatus requestId={req.id} />
+              </div>
+            )}
 
             {/* Preview Section */}
             <div className="mb-6">

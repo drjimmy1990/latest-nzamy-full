@@ -133,9 +133,10 @@ test("final review 2026-11-08 (9): the readers' later fetches and the feqh previ
   assert.equal(book.match(/const device = deviceRefusalOf\(res\.status, body\);\n\s*if \(device\) setDeviceRefusal\(device\);/g)?.length, 2, "book: the window and the section jump");
   const precedents = read("app/precedents/[slug]/page.tsx");
   assert.equal(precedents.match(/const device = deviceRefusalOf\(res\.status, body\);\n\s*if \(device\) \{ setDeviceRefusal\(device\); return/g)?.length, 3, "precedents: more, before, target window");
+  // The feqh preview no longer reads anything: it answers 404 (batch l16, B-40).
   const feqh = read("app/laws/feqh-preview/page.tsx");
-  assert.match(feqh, /const device = deviceRefusalOf\(bookRes\.status, await bookRes\.json\(\)\.catch\(\(\) => null\)\);/);
-  assert.match(feqh, /if \(deviceRefusal\) return <LibraryDeviceLimitPage refusal=\{deviceRefusal\} \/>;/);
+  assert.match(feqh, /notFound\(\);/);
+  assert.doesNotMatch(feqh, /fetch\(/);
 });
 
 // ── batch l9 (register 14 item 8): the 7-day cap names when it renews ───────

@@ -1,17 +1,18 @@
 "use client";
 
-import { useState, useCallback, useEffect, useRef, useMemo, Suspense } from "react";
+import { memo, useState, useCallback, useEffect, useRef, useMemo, Suspense } from "react";
 import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  ArrowRight, ArrowUp, Crown, Stack, Check, Copy, BookOpen, Bookmark, Scales, Printer,
-  ListBullets, X, Lock, Prohibit, Info, Clock
+  ArrowRight, ArrowUp, Crown, Stack, Check, Copy, BookOpen, Bookmark, Printer,
+  ListBullets, X, Lock, Prohibit, Info, Clock, Gavel
 } from "@phosphor-icons/react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { useTheme } from "@/components/ThemeProvider";
 import Link from "next/link";
 import { useUser } from "@/hooks/useUser";
+import { useToolUsable } from "@/hooks/useToolUsable";
 import { isSupabaseMode } from "@/lib/services/api";
 import { getPreferences, patchPreferences, type RecentSession } from "@/lib/services/preferencesService";
 import { recordLawOpened, type ReadingActivity } from "@/lib/services/readingActivityStats";
@@ -114,6 +115,31 @@ function ReaderArrivalScroll({ query, deps }: { query: string; deps: readonly un
  */
 const READER_ASIDE_FAB_CLEARANCE = "pb-24";
 
+/**
+ * One card of the flat «التشريعات الفرعية» view. Memoised for the same reason
+ * as ArticleBlock (A-72, ./_components.tsx): scrolling changes `activeId`, and
+ * only the card whose `isActive` flips should render again, not every card of
+ * every merged regulation.
+ */
+const RegulationCard = memo(function RegulationCard({ cardId, text, isActive, isDark, isRTL, fontClass }: {
+  cardId: string; text: string; isActive: boolean; isDark: boolean; isRTL: boolean; fontClass: string;
+}) {
+  return (
+    <div
+      id={cardId}
+      // A contents-list jump lands the card just below the fixed bar.
+      style={{ scrollMarginTop: READER_SCROLL_MARGIN_TOP }}
+      className={`rounded-xl border p-4 ${isDark ? "bg-zinc-900" : "bg-white shadow-sm"} ${
+        isActive
+          ? isDark ? "border-[#C8A762]/50" : "border-amber-400"
+          : isDark ? "border-white/[0.07]" : "border-slate-200"
+      }`}
+    >
+      <MD text={text} isDark={isDark} isRTL={isRTL} fontClass={fontClass} />
+    </div>
+  );
+});
+
 function LawSystemPageContent() {
   const { isDark, isRTL }  = useTheme();
   const { isLoggedIn, loading: authLoading } = useUser();
@@ -146,6 +172,9 @@ function LawSystemPageContent() {
   const [showIndexSheet, setShowIndexSheet] = useState(false);
   const [activeId,    setActiveId]    = useState<string>("art-1");
   const [explainArticle, setExplainArticle] = useState<LawArticle | null>(null);
+  // l16 review: may this reader run «اشرح لي» (asked once for the whole page; a
+  // card shows the price only when the answer is yes)
+  const explainUsable = useToolUsable("library-assistant");
   // Starts empty. This used to default to a bundled COMPANIES_LAW (deleted, q390), which meant
   // every law page — whichever one you opened — briefly rendered نظام الشركات
   // while its own data loaded. The `if (!law)` guard below the loading/error
@@ -794,6 +823,9 @@ function LawSystemPageContent() {
   }, [setCart]);
 
   const clearAll = useCallback(() => setCart([]), [setCart]);
+  // A-72: stable, so the memoised article cards (./_components.tsx) do not all
+  // re-render on every scroll step — an inline arrow here is a new prop each time.
+  const openPaywall = useCallback(() => setShowPaywall(true), []);
 
   // N2.6: a hit of the in-document search goes into the same cart, keyed by
   // the article's own id (the same entry the article card adds).
@@ -980,7 +1012,7 @@ function LawSystemPageContent() {
         <Navbar />
         <div className="print-main flex-1 max-w-[1280px] mx-auto w-full px-3 py-8 pt-32 pb-24 flex items-center justify-center">
           <div className="flex flex-col items-center gap-4 text-center max-w-md p-6 rounded-2xl border border-red-500/20 bg-red-500/5">
-            <Scales size={48} className="text-red-500" />
+            <Gavel size={48} className="text-red-500" />
             {loadError === "failed" ? (
               <>
                 <h2 className="text-lg font-black">تعذّر تحميل هذا التشريع</h2>
@@ -1421,19 +1453,15 @@ function LawSystemPageContent() {
                               const cardId = regulationCardId(instIndex, i);
                               const isActiveCard = regulationAnchors.articleIdByCardId.get(cardId) === activeId;
                               return (
-                                <div
+                                <RegulationCard
                                   key={`${inst.ref}-${a.regNum ?? i}`}
-                                  id={cardId}
-                                  // A contents-list jump lands the card just below the fixed bar.
-                                  style={{ scrollMarginTop: READER_SCROLL_MARGIN_TOP }}
-                                  className={`rounded-xl border p-4 ${isDark ? "bg-zinc-900" : "bg-white shadow-sm"} ${
-                                    isActiveCard
-                                      ? isDark ? "border-[#C8A762]/50" : "border-amber-400"
-                                      : isDark ? "border-white/[0.07]" : "border-slate-200"
-                                  }`}
-                                >
-                                  <MD text={a.text} isDark={isDark} isRTL={isRTL} fontClass={fontClass} />
-                                </div>
+                                  cardId={cardId}
+                                  text={a.text}
+                                  isActive={isActiveCard}
+                                  isDark={isDark}
+                                  isRTL={isRTL}
+                                  fontClass={fontClass}
+                                />
                               );
                             })}
                           </div>
@@ -1644,8 +1672,9 @@ function LawSystemPageContent() {
                       onRemoveExecReg={removeExecReg}
                       onActive={setActiveId}
                       isActive={activeId === article.id}
-                      showPaywall={() => setShowPaywall(true)}
-                      onExplain={(a) => setExplainArticle(a)}
+                      showPaywall={openPaywall}
+                      onExplain={setExplainArticle}
+                      explainUsable={explainUsable === true}
                       isRTL={isRTL}
                       fontClass={fontClass}
                       isReadingMode={isReadingMode}
@@ -1673,8 +1702,9 @@ function LawSystemPageContent() {
                     onRemoveExecReg={removeExecReg}
                     onActive={setActiveId}
                     isActive={activeId === article.id}
-                    showPaywall={() => setShowPaywall(true)}
-                    onExplain={(a) => setExplainArticle(a)}
+                    showPaywall={openPaywall}
+                    onExplain={setExplainArticle}
+                    explainUsable={explainUsable === true}
                     isRTL={isRTL}
                     fontClass={fontClass}
                     isReadingMode={isReadingMode}

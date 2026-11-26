@@ -78,6 +78,12 @@ export const PRIVATE_PATH_PREFIXES: readonly string[] = Object.freeze([
   "/ai/corp",
   "/ai/consult",
   "/ai/templates",
+  // D-73 (batch l16): the five tool pages the proxy now signs in for.
+  "/ai/memo-studio",
+  "/ai/debt-collection",
+  "/ai/gov",
+  "/ai/ngo",
+  "/ai/smart-inspector",
   "/marketplace/post",
   "/marketplace/order",
   "/marketplace/workspace",

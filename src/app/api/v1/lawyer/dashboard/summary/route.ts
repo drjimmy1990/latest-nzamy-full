@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { assertRole } from "@/lib/auth/assertRole";
+import { assertCaseWorker } from "@/lib/auth/assertCaseWorker";
 import { kindToType, urgencyFromDb } from "@/lib/services/hearingVocabulary";
 import { addDays, isoDate, parseIsoDate } from "@/lib/services/deadlineEngine";
 import { dashboardItemHref, sumKnown, type DashboardDateSource } from "@/lib/services/dashboardDateItems";
@@ -160,7 +160,7 @@ function saudiToday(): string {
 
 export async function GET() {
   try {
-    const auth = await assertRole(["lawyer", "firm"]);
+    const auth = await assertCaseWorker();
     if (!auth.ok) return auth.response;
     const { user, supabase } = auth;
 

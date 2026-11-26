@@ -12,6 +12,7 @@
 
 import { apiGet, apiMutate, isSupabaseMode } from "@/lib/services/api";
 import { createClient as createBrowserClient } from "@/lib/supabase/client";
+import { STORAGE_QUOTA_FULL_AR, STORAGE_QUOTA_FULL_TOKEN, storageQuotaCheck, type StorageQuotaRow } from "@/lib/auth/officePlan";
 import { listFromApi, listFailed, listOk, type ListRead } from "@/lib/services/listRead";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -284,6 +285,15 @@ export function isDocumentTimeoutError(err: unknown): err is DocumentTimeoutErro
  * metadata POST is a plain `fetch` and could take a real signal — but only by
  * changing apiMutate, which the whole app shares.)
  */
+/** Owner س٢١٢: the free side's stored files reached the cap; `.message` is Arabic. */
+export class StorageQuotaFullError extends Error {
+  readonly code = STORAGE_QUOTA_FULL_TOKEN;
+  constructor(message: string) {
+    super(message);
+    this.name = "StorageQuotaFullError";
+  }
+}
+
 function withTimeout<T>(work: Promise<T>, ms: number, makeError: () => Error): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const timer = setTimeout(() => reject(makeError()), ms);
@@ -365,6 +375,25 @@ export async function uploadDocumentFile(
   );
   if (!user) throw new Error("Unauthorized");
 
+  // Owner س٢١٢ (20261206_70): a professional account without «إدارة المكتب»
+  // stores up to 1 GB. Asked before the bytes travel, so a full account is told
+  // in Arabic instead of uploading for nothing; the database trigger on
+  // storage.objects is the real gate (its token is mapped below too). A failed
+  // or missing check lets the upload go on.
+  try {
+    const quota = await withTimeout(
+      Promise.resolve(supabase.rpc("my_storage_quota")),
+      msUntil(bytesDeadline),
+      () => new UploadTimeoutError(),
+    );
+    const row = Array.isArray(quota.data) ? (quota.data[0] as StorageQuotaRow | undefined) : (quota.data as StorageQuotaRow | null);
+    const check = storageQuotaCheck(quota.error ? null : row);
+    if (!check.ok) throw new StorageQuotaFullError(check.message);
+  } catch (err) {
+    if (err instanceof UploadTimeoutError || err instanceof StorageQuotaFullError) throw err;
+    // the check itself failed: the trigger still decides
+  }
+
   // The storage key travels inside an HTTP header on the way to S3, and HTTP
   // headers are ASCII-only — so an Arabic or spaced filename makes Supabase
   // reject the upload outright. Strip the KEY to ASCII; the original name
@@ -399,7 +428,9 @@ export async function uploadDocumentFile(
     msUntil(bytesDeadline),
     () => new UploadTimeoutError(),
   );
-  if (uploadError) throw new Error(uploadError.message);
+  if (uploadError) {
+    throw new Error(uploadError.message?.includes(STORAGE_QUOTA_FULL_TOKEN) ? STORAGE_QUOTA_FULL_AR : uploadError.message);
+  }
 
   // Wait 3 — the metadata POST, and the one place where a timeout must NOT
   // trigger the rollback in the catch below.

@@ -56,6 +56,11 @@ export const ADMIN_PAGE_ACTION: Readonly<Record<string, StaffAction>> = Object.f
   "/dashboard/admin/offers": "read",
   // l9 testinfra (owner file 19 §1ج): «دفعات الاختبار» — its purge is users.delete (super admin)
   "/dashboard/admin/test-batches": "users.delete",
+  // l16 (C33): pages that were not classified. «المشاهير» and its two
+  // sub-pages are «قيد التفعيل» screens with no write.
+  "/dashboard/admin/celebrities": "read",
+  "/dashboard/admin/celebrities/referrals": "read",
+  "/dashboard/admin/celebrities/upgrade": "read",
 
   // ── Operations' day-to-day queues ──────────────────────────────────────────
   "/dashboard/admin/provider-verification": "verifications.decide",
@@ -109,6 +114,33 @@ const UNCLASSIFIED: StaffAction = "staff.manage";
 export function staffMaySee(role: StaffRole | null | undefined, action: StaffAction): boolean {
   if (role === null || role === undefined) return true;
   return staffCan(role, action);
+}
+
+/**
+ * l16 (C33): the action an admin PAGE needs, for the console's page guard
+ * (src/app/dashboard/admin/AdminPageGuard.tsx). The exact path first, then
+ * the longest classified parent (`/dashboard/admin/users/<id>` is a users
+ * page; `/dashboard/admin/subscriptions/orders/<id>/invoice` an orders
+ * page), with one rule for ids: `/dashboard/admin/users/<id>/view-as` is
+ * `users.view_as` (its API is super admin only). The console root matches itself only, so
+ * an unclassified page falls back to super admins (as in the nav).
+ */
+export function adminPageAction(pathname: string): StaffAction {
+  const path = pathname.replace(/\/+$/, "") || "/";
+  if (path !== "/dashboard/admin" && !path.startsWith("/dashboard/admin/")) return "read";
+  if (Object.hasOwn(ADMIN_PAGE_ACTION, path)) return ADMIN_PAGE_ACTION[path];
+  if (/^\/dashboard\/admin\/users\/[^/]+\/view-as$/.test(path)) return "users.view_as";
+  let best: string | null = null;
+  for (const key of Object.keys(ADMIN_PAGE_ACTION)) {
+    if (key === "/dashboard/admin") continue;
+    if (path.startsWith(`${key}/`) && (best === null || key.length > best.length)) best = key;
+  }
+  return best === null ? UNCLASSIFIED : ADMIN_PAGE_ACTION[best];
+}
+
+/** May this role open this admin page? A null role (unreadable) may — the server decides. */
+export function adminPageAllowed(pathname: string, role: StaffRole | null | undefined): boolean {
+  return staffMaySee(role, adminPageAction(pathname));
 }
 
 /** Is this nav href shown to this role? */

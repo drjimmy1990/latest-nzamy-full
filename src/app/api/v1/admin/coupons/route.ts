@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { DB_ERROR_AR } from "@/lib/api/dbError";
 import { createServiceClient } from "@/lib/supabase/server";
-import { requireAdmin, requireStaff } from "@/lib/access-control";
+import { requireStaff } from "@/lib/access-control";
 import { logAdminAction } from "@/lib/auth/adminAudit";
 import {
   BAD_BODY_AR,
@@ -15,6 +15,14 @@ import {
 } from "@/lib/payments/couponAdminRules";
 import { isMissingFeatureColumn } from "@/lib/library/optionalColumn";
 import { couponsAvailable } from "@/lib/payments/couponServer";
+import {
+  POINTS_GRANT_INVALID_AR,
+  PLAN_GRANT_INVALID_AR,
+  couponPoints,
+  grantablePlan,
+  highCouponIssue,
+  withPlatformOnlyKinds,
+} from "@/lib/payments/couponGrantRules";
 
 /**
  * Coupons admin API — backs src/app/dashboard/admin/subscriptions/coupons/page.tsx
@@ -47,10 +55,9 @@ const PURPOSE_MIGRATION_AR = "حقل «الغرض» غير متاح قبل تر�
  */
 export async function GET() {
   try {
-    const gate = await requireAdmin();
-    if (!gate.isAdmin) {
-      return NextResponse.json({ error: gate.error }, { status: gate.status ?? 403 });
-    }
+    // l16 (C35): least privilege — redeemable codes (100 % ones included) are read only by the role that manages them (the coupons page is settings.write).
+    const gate = await requireStaff("settings.write");
+    if (!gate.ok) return gate.response;
 
     const adminClient = await createServiceClient();
     const { data, error } = await adminClient
@@ -98,6 +105,13 @@ export async function GET() {
  * The cap may go up to 100 % (default 25); a code that covers the whole
  * price is refused at checkout without a saved card (fullDiscount.ts).
  * Before 20261204_60 runs the insert names a missing purpose column → 503.
+ *
+ * Batch l16 (owner س٢١٣, couponGrantRules.ts): a code above 25 %, and every
+ * free-plan / points code, is a management code — super admin only, with its
+ * purpose, an end date and a use limit (400 with the reason). A cap of 100 %
+ * always excludes the services lawyers and offices sell. A free-plan code
+ * names a plan on sale and one of its billings (planGranted + planBilling →
+ * plan_granted + metadata.grant_billing); a points code 1–100,000 points.
  *
  * Review M6/M7: a body that is not a JSON object, or a startsAt / expiresAt
  * that is not a date, is a 400 (it was a 500). A date-only value is that day in
@@ -177,12 +191,31 @@ export async function POST(request: NextRequest) {
     const usageLimitRaw = Number(body.usageLimit);
     const maxUses = Number.isFinite(usageLimitRaw) && usageLimitRaw > 0 ? Math.floor(usageLimitRaw) : null;
 
+    // l16 (س٢١٣): what a free-plan / points code grants
+    let pointsGranted = 0;
+    let planGranted: string | null = null;
+    const grantMeta: Record<string, unknown> = {};
+    if (dbDiscountType === "points_grant") {
+      const points = couponPoints(body.pointsGranted);
+      if (points === null) return NextResponse.json({ error: POINTS_GRANT_INVALID_AR }, { status: 400 });
+      pointsGranted = points;
+    } else if (dbDiscountType === "plan_upgrade") {
+      const plan = grantablePlan(body.planGranted, body.planBilling);
+      if (!plan) return NextResponse.json({ error: PLAN_GRANT_INVALID_AR }, { status: 400 });
+      planGranted = plan.id;
+      grantMeta.grant_billing = body.planBilling;
+    }
+    // l16 (س٢١٣ ب): a 100 % cap never reaches a service of a lawyer or an office
+    if (Array.isArray(discount.fields.excluded_kinds)) {
+      discount.fields.excluded_kinds = withPlatformOnlyKinds(discount.fields.max_discount_pct, discount.fields.excluded_kinds as string[]);
+    }
+
     const insertRow: Record<string, unknown> = {
       code,
       discount_type: dbDiscountType,
       discount_value: Number(body.value) || 0,
-      points_granted: Number(body.pointsGranted) || 0,
-      plan_granted: typeof body.planGranted === "string" ? body.planGranted : null,
+      points_granted: pointsGranted,
+      plan_granted: planGranted,
       eligible_user_types: eligibleUserTypes,
       max_uses: maxUses,
       valid_from: startsAt.value ?? new Date().toISOString(),
@@ -190,9 +223,13 @@ export async function POST(request: NextRequest) {
       active,
       created_by: gate.userId,
       purpose,
-      metadata: flags.metadata ?? baseMetadata,
+      metadata: { ...(flags.metadata ?? baseMetadata), ...grantMeta },
       ...discount.fields,
     };
+
+    // l16 (س٢١٣ أ): a management code — super admin, purpose, end date, use limit
+    const high = highCouponIssue(insertRow, gate.role);
+    if (high) return NextResponse.json({ error: high }, { status: 400 });
 
     const { data, error } = await adminClient
       .from("coupons")

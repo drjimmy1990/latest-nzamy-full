@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { dbErrorJson } from "@/lib/api/dbError";
-import { createClient, createServiceClient } from "@/lib/supabase/server";
-import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
+import { createServiceClient } from "@/lib/supabase/server";
 import { requireStaff } from "@/lib/access-control";
 import { logAdminAction } from "@/lib/auth/adminAudit";
 import { pickPlanRow } from "@/lib/payments/pickPlanRow";
@@ -15,36 +14,12 @@ import { pickPlanRow } from "@/lib/payments/pickPlanRow";
  *   - page    (default 1)
  *   - limit   (default 20)
  *
- * Requires: authenticated admin user
+ * Requires: a staff role that may read (requireStaff("read"), l16 C34)
  */
 export async function GET(request: NextRequest) {
-  // ── Auth check ─────────────────────────────────────────────────────────────
-  const supabase = await createClient();
-  const {
-    data: { user },
-    error: authError,
-  } = await supabase.auth.getUser();
-
-  if (isAuthUnavailable(user, authError)) return authUnavailableResponse();
-  if (!user) {
-    return NextResponse.json(
-      { error: "غير مصرح — يرجى تسجيل الدخول" },
-      { status: 401 },
-    );
-  }
-
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("user_type")
-    .eq("id", user.id)
-    .single();
-
-  if (!profile || profile.user_type !== "admin") {
-    return NextResponse.json(
-      { error: "غير مصرح — صلاحيات المسؤول مطلوبة" },
-      { status: 403 },
-    );
-  }
+  // ── Staff gate (l16 C34): every staff role may read; writes keep their own action ──
+  const gate = await requireStaff("read");
+  if (!gate.ok) return gate.response;
 
   // ── Parse query params ─────────────────────────────────────────────────────
   const { searchParams } = new URL(request.url);

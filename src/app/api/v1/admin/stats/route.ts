@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { createClient, createServiceClient } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/server";
 import { monthlyEquivalent } from "@/lib/payments/planRowPrice";
-import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
+import { requireStaff } from "@/lib/access-control";
 import { isTestAccountId, readTestAccountIds } from "@/lib/testAccounts/testAccountIds";
 
 /**
@@ -14,40 +14,20 @@ import { isTestAccountId, readTestAccountIds } from "@/lib/testAccounts/testAcco
  *   - mrr: estimated Monthly Recurring Revenue
  *   - total_credits_used: total AI credits consumed
  *   - recent_signups_7d: signups in last 7 days
+ *   - active_paid_subscriptions: active subscriptions on a tier other than
+ *     free (C07: the subscriptions page's «مشترك نشط»)
+ *   - active_subscriptions_by_plan: [{ plan_id, name_ar, tier, count, mrr,
+ *     price_monthly }] — the real plans with their real prices (C07)
  *   - test_accounts_excluded / test_accounts_complete (l7 decision 3): every
  *     figure above leaves out the test accounts (profiles.is_demo or
  *     public.test_accounts, not staff — testAccountIds.ts)
  *
- * Requires: authenticated admin user
+ * Requires: a staff role that may read (requireStaff("read"), C34).
  */
 export async function GET() {
-  // ── Auth check ─────────────────────────────────────────────────────────────
-  const supabase = await createClient();
-  const {
-    data: { user },
-    error: authError,
-  } = await supabase.auth.getUser();
-
-  if (isAuthUnavailable(user, authError)) return authUnavailableResponse();
-  if (!user) {
-    return NextResponse.json(
-      { error: "غير مصرح — يرجى تسجيل الدخول" },
-      { status: 401 },
-    );
-  }
-
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("user_type")
-    .eq("id", user.id)
-    .single();
-
-  if (!profile || profile.user_type !== "admin") {
-    return NextResponse.json(
-      { error: "غير مصرح — صلاحيات المسؤول مطلوبة" },
-      { status: 403 },
-    );
-  }
+  // ── Staff gate (C34): the same gate as every other admin read ──────────────
+  const gate = await requireStaff("read");
+  if (!gate.ok) return gate.response;
 
   const adminClient = await createServiceClient();
 
@@ -85,6 +65,7 @@ export async function GET() {
           `
           user_id,
           tier,
+          plan_id,
           billing_cycle,
           subscription_plans ( * )
         `,
@@ -130,6 +111,8 @@ export async function GET() {
     // ── Active subscriptions by tier + MRR ─────────────────────────────────
     const activeSubsByTier: Record<string, number> = {};
     let mrr = 0;
+    let activePaid = 0;
+    const byPlan = new Map<string, { plan_id: string; name_ar: string | null; tier: string; count: number; mrr: number; price_monthly: number | null }>();
 
     for (const sub of activeSubsResult.data ?? []) {
       if (isTestAccountId(testAccounts.ids, sub.user_id)) continue;
@@ -140,7 +123,23 @@ export async function GET() {
       // semiannual / 6), else the monthly price. `subscription_plans ( * )` so
       // the read works before and after 20261026_10 adds the two new columns.
       const plan = sub.subscription_plans as unknown as Record<string, unknown> | null;
-      mrr += monthlyEquivalent(plan, sub.billing_cycle as string);
+      const monthly = monthlyEquivalent(plan, sub.billing_cycle as string);
+      mrr += monthly;
+      if (tier !== "free") activePaid += 1;
+
+      // C07: per real plan (name and price from subscription_plans).
+      const planId = typeof sub.plan_id === "string" && sub.plan_id ? sub.plan_id : `tier:${tier}`;
+      const entry = byPlan.get(planId) ?? {
+        plan_id: planId,
+        name_ar: typeof plan?.name_ar === "string" ? (plan.name_ar as string) : null,
+        tier,
+        count: 0,
+        mrr: 0,
+        price_monthly: typeof plan?.price_monthly === "number" ? (plan.price_monthly as number) : null,
+      };
+      entry.count += 1;
+      entry.mrr += monthly;
+      byPlan.set(planId, entry);
     }
 
     // ── Total credits used ─────────────────────────────────────────────────
@@ -160,6 +159,10 @@ export async function GET() {
         users_by_type: usersByType,
         active_subscriptions_by_tier: activeSubsByTier,
         mrr: Math.round(mrr * 100) / 100,
+        active_paid_subscriptions: activePaid,
+        active_subscriptions_by_plan: [...byPlan.values()]
+          .map((p) => ({ ...p, mrr: Math.round(p.mrr * 100) / 100 }))
+          .sort((a, b) => b.count - a.count),
         total_credits_used: totalCreditsUsed,
         recent_signups_7d: recentSignups7d,
         test_accounts_excluded: testAccounts.ids.size,

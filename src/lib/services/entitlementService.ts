@@ -14,6 +14,8 @@ export interface EntitlementRequestInput {
   requested_ref?: string;
   amount?: number;
   note?: string;
+  /** l16 (A-59): a discount code attached to the request while online payment is off. */
+  coupon_code?: string;
 }
 
 export interface MyEntitlementRequest {
@@ -28,16 +30,17 @@ export interface MyEntitlementRequest {
 
 export async function requestEntitlement(
   input: EntitlementRequestInput,
-): Promise<{ ok: boolean; error?: string }> {
+): Promise<{ ok: boolean; error?: string; id?: string }> {
   try {
     const res = await fetch("/api/v1/entitlement-requests", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(input),
     });
-    const json = (await res.json().catch(() => ({}))) as { error?: string };
+    const json = (await res.json().catch(() => ({}))) as { error?: string; data?: { id?: unknown } };
     if (!res.ok) return { ok: false, error: json.error ?? "تعذّر إرسال الطلب" };
-    return { ok: true };
+    // l16 (A-56): the request's id, so the buyer is shown its reference
+    return { ok: true, ...(typeof json.data?.id === "string" ? { id: json.data.id } : {}) };
   } catch {
     return { ok: false, error: "تعذّر الاتصال بالخادم" };
   }

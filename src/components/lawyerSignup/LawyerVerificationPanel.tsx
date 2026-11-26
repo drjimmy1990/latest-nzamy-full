@@ -52,10 +52,17 @@ export function LawyerVerificationPanel({
   isAr,
   initialFile = null,
   fullName = null,
+  onPhoneUnverified,
 }: {
   isAr: boolean;
   initialFile?: File | null;
   fullName?: string | null;
+  /**
+   * l16 review: the signup page passes this — a phone_unverified refusal
+   * then switches its inline WhatsApp step back on (the picked licence photo
+   * stays in the page) instead of leaving for /verify-phone.
+   */
+  onPhoneUnverified?: () => void;
 }) {
   const [load, setLoad] = useState<Load>({ kind: "loading" });
   const [busy, setBusy] = useState(false);
@@ -66,10 +73,22 @@ export function LawyerVerificationPanel({
   const [emailBusy, setEmailBusy] = useState(false);
   const [emailMsg, setEmailMsg] = useState<string | null>(null);
   const autoUploaded = useRef(false);
+  const onPhoneUnverifiedRef = useRef(onPhoneUnverified);
+  useEffect(() => {
+    onPhoneUnverifiedRef.current = onPhoneUnverified;
+  }, [onPhoneUnverified]);
 
   const applyResponse = useCallback(async (res: Response) => {
     if (res.status === 401) return setLoad({ kind: "signin" });
     const body = await res.json().catch(() => null);
+    // Batch l15: a new account confirms its mobile by WhatsApp first; the
+    // proxy refuses this API until then. Back here once it is confirmed.
+    if (res.status === 403 && body && typeof body === "object" && (body as { code?: unknown }).code === "phone_unverified") {
+      const inline = onPhoneUnverifiedRef.current;
+      if (inline) inline();
+      else window.location.assign("/verify-phone?next=/register/provider/verify");
+      return body;
+    }
     if (res.status === 503 || res.status >= 500) return setLoad({ kind: "unavailable" });
     if (body && typeof body === "object" && "status" in body && "next" in body) setLoad({ kind: "ready", state: body as State });
     return body;
@@ -98,7 +117,7 @@ export function LawyerVerificationPanel({
         form.append("file", f);
         if (fullName) form.append("fullName", fullName);
         const res = await fetch(`${API}/licence`, { method: "POST", body: form });
-        if (!res.ok && res.status !== 503 && res.status !== 401) {
+        if (!res.ok && res.status !== 503 && res.status !== 401 && res.status !== 403) {
           const b = await res.json().catch(() => null);
           setError((b && typeof b.error === "string" && b.error) || (isAr ? "تعذّر رفع الصورة" : "Upload failed"));
           return;

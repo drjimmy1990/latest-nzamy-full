@@ -10,8 +10,17 @@ import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { getPaymentGatewayStatus, TIER_RANK } from "@/lib/access-control";
 import { viewerGatewayState } from "@/lib/payments/testModeAccess";
 import { MOYASAR_DISABLED_MESSAGE_AR } from "@/lib/payments/moyasarConfig";
-import { AUDIENCE_REFUSED_AR, NOT_FOR_SALE_AR, UNKNOWN_ITEM_AR } from "@/lib/payments/checkoutCore";
-import { buyerAllowed, formatHalalas, quote, sellableItem } from "@/lib/payments/catalog";
+import {
+  AUDIENCE_REFUSED_AR,
+  CONSULTANT_CHECK_FAILED_AR,
+  CONSULTANT_PLAN_REFUSED_AR,
+  CONSULTANT_REFUSED_PLAN_IDS,
+  NOT_FOR_SALE_AR,
+  UNKNOWN_ITEM_AR,
+} from "@/lib/payments/checkoutCore";
+import { readConsultantStanding } from "@/lib/auth/consultantScopeServer";
+import { buyerAllowed, formatHalalas, quote, sellableItem, vatPercentFor } from "@/lib/payments/catalog";
+import { readVatRegistered } from "@/lib/payments/vatStatus";
 import { couponsAvailable } from "@/lib/payments/couponServer";
 import { readUpgrade, upgradeCreditLineAr } from "@/lib/payments/upgradeProration";
 import {
@@ -145,10 +154,20 @@ export default async function CheckoutPage({ searchParams }: { searchParams: Sea
   const rawType = (profile as { user_type?: unknown } | null)?.user_type;
   if (typeof rawType === "string") userType = rawType;
   if (profile && !buyerAllowed(item, userType)) return <Notice title={AUDIENCE_REFUSED_AR} />;
+  // l16 (A-16 / A-17): an independent consultant is refused the office plans
+  // before the card form loads — the POST's rule (checkoutCore step 2c), and a
+  // failed read refuses too (fail-closed), never a guess.
+  if (userType === "lawyer" && CONSULTANT_REFUSED_PLAN_IDS.has(item.id)) {
+    const standing = await readConsultantStanding(supabase, user.id);
+    if (standing.readFailed) return <Notice title={CONSULTANT_CHECK_FAILED_AR} />;
+    if (standing.scopeKind === "consultant") return <Notice title={CONSULTANT_PLAN_REFUSED_AR} />;
+  }
 
   // The price the POST will charge now: the launch price while its campaign
   // runs today in Riyadh (owner ٣٠٣), else the listed one. Per request, never cached.
-  const priced = quote(item.id, parsed.billing, undefined, new Date());
+  // l16 (A-01): the VAT state the POST will charge by (a failed read: no VAT sentence; the POST refuses)
+  const vatRegistered = await readVatRegistered(await createServiceClient()).catch(() => null);
+  const priced = quote(item.id, parsed.billing, undefined, new Date(), vatPercentFor(vatRegistered === true));
   let listed = priced.ok ? priced.netHalalas : item.prices[parsed.billing];
   let launchList = priced.ok && priced.launch ? priced.launch.listNetHalalas : null;
   // l11 O7 (register 49, founder terms ١٢): a top-up bought by a holder of a
@@ -253,7 +272,9 @@ export default async function CheckoutPage({ searchParams }: { searchParams: Sea
             ) : null}
           </p>
         ) : null}
-        <p className="mt-1 text-xs font-medium text-zinc-600 dark:text-zinc-400">{listedVatNotice(item)}</p>
+        {listedVatNotice(item, vatRegistered) ? (
+          <p className="mt-1 text-xs font-medium text-zinc-600 dark:text-zinc-400">{listedVatNotice(item, vatRegistered)}</p>
+        ) : null}
         {creditHalalas > 0 ? (
           <p className="mt-3 rounded-xl bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300">
             {upgradeCreditLineAr(creditHalalas)} — بحسب الأيام المتبقية منها، وتبدأ الباقة الجديدة من اليوم

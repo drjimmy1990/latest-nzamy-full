@@ -1,5 +1,5 @@
 import { NextResponse, NextRequest } from "next/server";
-import { assertRole } from "@/lib/auth/assertRole";
+import { assertCaseWorker } from "@/lib/auth/assertCaseWorker";
 import { createServiceClient } from "@/lib/supabase/server";
 import { fileFolderOwner, isPathInOwnerFolder } from "@/lib/storagePathOwnership";
 
@@ -17,7 +17,7 @@ import { fileFolderOwner, isPathInOwnerFolder } from "@/lib/storagePathOwnership
  */
 export async function GET(_request: NextRequest, context: { params: Promise<{ id: string; vid: string }> }) {
   try {
-    const auth = await assertRole(["lawyer", "firm"]);
+    const auth = await assertCaseWorker();
     if (!auth.ok) return auth.response;
     const { supabase } = auth;
     const { id, vid } = await context.params;

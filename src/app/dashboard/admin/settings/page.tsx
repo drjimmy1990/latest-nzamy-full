@@ -33,6 +33,7 @@ import { PlatformLicenceCard } from "./_components/PlatformLicenceCard";
 import { FirmRulesCard } from "./_components/FirmRulesCard";
 import { SimpleContractPriceCard } from "./_components/SimpleContractPriceCard";
 import { DrafterRevisionsCard } from "./_components/DrafterRevisionsCard";
+import { SignupPhoneOtpCard } from "./_components/SignupPhoneOtpCard";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -983,6 +984,8 @@ export default function AdminSettingsPage() {
       <SimpleContractPriceCard />
       {/* ── l13 aiadmin: the drafter's section edits included in a memo's price (owner ١٦٦, default 5) ── */}
       <DrafterRevisionsCard />
+      {/* ── l15: the WhatsApp sign-up code — switch, diagnostic, test send (user decisions 2026-11-24) ── */}
+      <SignupPhoneOtpCard />
 
       {/* ═══════════════════════════════════════════════════════════════════════ */}
       {/* ── Section 4: Legal Library Open/Close ── */}

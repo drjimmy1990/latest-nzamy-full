@@ -82,8 +82,8 @@ export function SimpleContractPriceCard() {
             {loaded && !stored && <span className={`ms-2 text-[11px] font-normal ${muted}`}>(القيمة الافتراضية — لم تُحفظ بعد)</span>}
           </p>
           <p className={`mt-1 text-[11px] leading-relaxed ${muted}`}>
-            أداة للأفراد والمنشآت (السؤال ١٢٣). لم يُثبّت المالك ١٠٠ أم ١٥٠ نقطة بعد، فالسعر ١٠٠ حتى يُحفظ غيره. عدد صحيح من ١ إلى{" "}
-            {SIMPLE_CONTRACT_PRICE_MAX.toLocaleString("ar-SA")}. تشغيل الأداة نفسها من إعدادات أدوات الذكاء الاصطناعي بعد استيراد مسارها في n8n.
+            أداة للأفراد والمنشآت. السعر ١٠٠ نقطة حتى يُحفظ غيره. عدد صحيح من ١ إلى{" "}
+            {SIMPLE_CONTRACT_PRICE_MAX.toLocaleString("ar-SA")}. تشغيل الأداة نفسها من إعدادات أدوات الذكاء الاصطناعي بعد تجهيز مسارها التقني.
           </p>
         </div>
       </div>

@@ -100,7 +100,7 @@ export function Hl({ text, terms: ownTerms }: { text: string | null | undefined;
         s.term === null || (focus !== null && focus !== s.term) ? (
           <span key={i}>{s.text}</span>
         ) : (
-          <mark key={i} data-hl-term={s.term} className={`${paletteFor(terms[s.term].color).mark} rounded px-0.5`}>
+          <mark key={i} data-hl-term={s.term} className={`${paletteFor(terms[s.term].color).mark} rounded-sm`}>
             {s.text}
           </mark>
         ),

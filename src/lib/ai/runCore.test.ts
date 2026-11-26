@@ -10,7 +10,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fakeDb, type FakeQuery } from "../payments/fakeDb.test-helper.ts";
-import { AI_COPY, callbackWith, mapCitations, mergeUsage, startRunWith, type RunActor, type StartRunDeps } from "./runCore.ts";
+import { AI_COPY, callbackWith, mapCitations, mergeUsage, readAiModel, startRunWith, type RunActor, type StartRunDeps } from "./runCore.ts";
+import { AI_MODEL_DEFAULT } from "./aiModel.ts";
 import { resolveAiFiles } from "./aiFiles.ts";
 import { serveFileText } from "./fileTextServe.ts";
 import { FILE_TEXT_TTL_MS } from "./fileTextToken.ts";
@@ -1616,4 +1617,232 @@ test("GraphRAG: embedQuery runs in parallel with lib-queries and rescues colloqu
   });
   const kinds = reported.flatMap((x) => x.events.map((e) => e.kind));
   assert.ok(kinds.includes("law") && kinds.includes("note"), "decree maps to law and feqh maps to note within DB CHECK constraint");
+});
+
+// ── owner س٢١٤ (batch l16): the verified licence before a drafting tool ────────
+
+// A drafting tool (licenceRequired). The licence is asked before the mode and the input.
+const DRAFT = (over: Record<string, unknown> = {}) => body({ tool: "communicate", ...over });
+
+test("س٢١٤: an unverified lawyer is refused a drafting tool (403 + link), uncharged and before the mode is read", async () => {
+  for (const userType of ["lawyer", "firm"]) {
+    const { client, log } = db();
+    const seen: unknown[] = [];
+    const asked: string[] = [];
+    const r = await startRunWith(
+      client as never,
+      {
+        ...deps(okReply(), seen),
+        verifiedProvider: async (id, type) => (asked.push(`${id}:${type}`), { ok: false, status: 403, error: "x", code: "provider_not_verified" }),
+      },
+      { ...LAWYER, userType },
+      DRAFT(),
+    );
+    assert.equal(r.status, 403, userType);
+    assert.equal(r.body.code, "provider_not_verified");
+    assert.match(String(r.body.error), /توثيق/);
+    assert.equal(r.body.verifyHref, userType === "lawyer" ? "/register/provider/verify" : null);
+    assert.deepEqual(asked, [`u-1:${userType}`]);
+    assert.deepEqual(rpcs(log), [], "no money function ran");
+    assert.equal(log.filter((q) => q.table === "platform_settings").length, 0, "refused before the mode is read");
+    assert.equal(seen.length, 0, "n8n was not called");
+  }
+});
+
+test("س٢١٤: a verified lawyer goes on to the next check; a failed or thrown read refuses with 503; an admin is never asked", async () => {
+  {
+    // verified → past the licence: the tool is off in this setting, so the next answer is 423
+    const { client } = db();
+    const r = await startRunWith(client as never, { ...deps(okReply()), verifiedProvider: async () => ({ ok: true }) }, LAWYER, DRAFT());
+    assert.equal(r.status, 423);
+  }
+  for (const verifiedProvider of [
+    async () => ({ ok: false as const, status: 503 as const, error: "تعذّر التحقق" }),
+    async () => {
+      throw new Error("down");
+    },
+  ]) {
+    const { client, log } = db();
+    const r = await startRunWith(client as never, { ...deps(okReply()), verifiedProvider }, LAWYER, DRAFT());
+    assert.equal(r.status, 503);
+    assert.deepEqual(rpcs(log), []);
+  }
+  {
+    const { client } = db();
+    let asked = 0;
+    const r = await startRunWith(
+      client as never,
+      { ...deps(okReply()), verifiedProvider: async () => (asked++, { ok: false, status: 403, error: "x" }) },
+      { ...LAWYER, userType: "admin" },
+      DRAFT(),
+    );
+    assert.notEqual(r.status, 403);
+    assert.equal(asked, 0);
+  }
+  {
+    // a tool without the mark (echo, like the analysis tools) is never asked
+    const { client } = db();
+    let asked = 0;
+    const r = await startRunWith(client as never, { ...deps(okReply()), verifiedProvider: async () => (asked++, { ok: false, status: 403, error: "x" }) }, LAWYER, body());
+    assert.equal(r.status, 200);
+    assert.equal(asked, 0);
+  }
+});
+
+test("س٢١٤: which tools wait for the licence — the drafting tools only; never an analysis tool or one a client may run too", async () => {
+  const { toolNeedsLicence } = await import("./aiToolsConfig.ts");
+  const gated = Object.values(AI_TOOLS).filter((t) => toolNeedsLicence(t)).map((t) => t.id).sort();
+  assert.deepEqual(gated, [
+    "communicate",
+    "contract-drafter",
+    "contract-negotiator",
+    "contract-review",
+    "contracts-pro",
+    "legal-drafter",
+    "legal-opinion-consult",
+    "legal-opinion-letter",
+    "najiz-optimizer",
+  ]);
+  for (const t of Object.values(AI_TOOLS)) {
+    if (t.roles.includes("individual")) assert.equal(toolNeedsLicence(t), false, t.id);
+    if (toolNeedsLicence(t)) assert.ok(t.roles.every((r) => r === "lawyer" || r === "firm"), `${t.id}: lawyers and firms only`);
+  }
+});
+
+test("س٢١٤: the run route wires the licence check (the contracts / invoices rule, service client)", () => {
+  const route = readFileSync(join(process.cwd(), "src/app/api/v1/ai/runs/route.ts"), "utf8");
+  assert.match(route, /verifiedProvider: async \(userId, type\) => verifiedProviderDecision\(await readVerifiedProviderFacts\(admin, userId, type\)\)/);
+});
+
+// ── batch l16: owner س٢١٩ (the model in the settings) and the 422 / 502 / 0-token paths ──
+
+/** platform_settings answers per key: ai_model from `model`, everything else the tools' switches. */
+function modelDb(model: unknown, extra: (q: FakeQuery) => Record<string, unknown> | null = () => null) {
+  return fakeDb((q: FakeQuery) => {
+    const own = extra(q);
+    if (own) return own;
+    if (q.table === "platform_settings") {
+      const key = q.filters.find((f) => f[0] === "eq" && f[1] === "key")?.[2];
+      if (key === "ai_model") return model instanceof Error ? { error: { code: "XX000", message: "down" } } : { data: model === undefined ? null : { value: model } };
+      return { data: { value: QUICK_ON } };
+    }
+    if (q.op === "rpc" && q.table === "ai_start_run") return { data: [{ run_id: RUN, created: true, status: "running", charged: true, charged_points: 1 }] };
+    if (q.op === "rpc" && q.table === "ai_fail_run") return { data: true };
+    if (q.table === "ai_runs" && q.op === "update") return { data: [{ id: RUN }] };
+    return {};
+  });
+}
+const sentModels = (calls: Array<{ path: string }>) => calls.map((c) => ((c as { body?: { model?: unknown } }).body ?? {}).model);
+
+test("owner س٢١٩: the admin's model goes to n8n in the search writer's and the tool's packages", async () => {
+  {
+    const { client } = modelDb({ model: "models/gemini-3.1-flash-lite" });
+    const calls: Array<{ path: string }> = [];
+    const r = await startRunWith(client as never, libraryDeps({}, calls), LAWYER, QUICK_BODY);
+    assert.equal(r.status, 200);
+    assert.deepEqual(calls.map((c) => c.path), [LIB_QUERIES_PATH, "nzamy-ai/quick-answer"]);
+    assert.deepEqual(sentModels(calls), ["models/gemini-3.1-flash-lite", "models/gemini-3.1-flash-lite"]);
+  }
+  // No row, an unknown name, or a read error: the default model, and the run goes on.
+  for (const stored of [undefined, { model: "models/gemini-9-ultra" }, { model: 5 }, new Error("down")]) {
+    const { client } = modelDb(stored);
+    const calls: Array<{ path: string }> = [];
+    const r = await quietly(() => startRunWith(client as never, libraryDeps({}, calls), LAWYER, QUICK_BODY));
+    assert.equal(r.status, 200, String(stored));
+    assert.deepEqual(sentModels(calls), [AI_MODEL_DEFAULT, AI_MODEL_DEFAULT], String(stored));
+  }
+  // A thrown read is the default too.
+  const throwing = { from: () => { throw new Error("boom"); } };
+  assert.equal(await quietly(() => readAiModel(throwing as never)), AI_MODEL_DEFAULT);
+});
+
+test("l16 (422 ungrounded): an answer that cites a sent source in another marker form is grounded, its text rewritten as [S1]", async () => {
+  const { client } = modelDb({ model: AI_MODEL_DEFAULT });
+  const deps = libraryDeps({
+    n8n: async (call) =>
+      call.path === LIB_QUERIES_PATH
+        ? { kind: "result", result: { run_id: RUN, status: "succeeded", output: { queries: ["أجر العامل"] } } }
+        : { kind: "result", result: { run_id: RUN, status: "succeeded", output: { answer: "يستحق أجره [S١، S9]." }, citations: [] } },
+  });
+  const r = await startRunWith(client as never, deps, LAWYER, QUICK_BODY);
+  assert.equal(r.status, 200);
+  const out = r.body.output as Record<string, unknown>;
+  assert.equal(out.answer, "يستحق أجره [S1][S9].");
+  assert.equal(out.ungrounded, undefined, "a cited answer is not flagged");
+  // Only the source this run sent counts (S9 was never sent).
+  assert.deepEqual((r.body.citations as Array<{ sid: string }>).map((c) => c.sid), ["S1"]);
+});
+
+test("l16 (0 tokens / 422 no_sources / 502 no_queries): the search writer's tokens stay on the run and its failure is named", async () => {
+  const usage = { model: "gemini-3.5-flash-lite", input_tokens: 300, output_tokens: 40, cache_read_tokens: 0 };
+  {
+    // Searches written, nothing found: 422 no_sources, the writer's tokens stored before the refund.
+    const { client, log } = modelDb({ model: AI_MODEL_DEFAULT });
+    const deps = libraryDeps({
+      n8n: async () => ({ kind: "result", result: { run_id: RUN, status: "succeeded", output: { queries: ["أجر العامل"] }, usage } }),
+      retrieve: async () => ({ sources: [], map: {} }),
+    });
+    const r = await startRunWith(client as never, deps, LAWYER, QUICK_BODY);
+    assert.equal(r.status, 422);
+    assert.equal(r.body.code, "no_sources");
+    const stored = log.find((q) => q.table === "ai_runs" && q.op === "update");
+    assert.deepEqual((stored?.payload as Record<string, unknown>).usage, usage);
+    assert.equal((stored?.payload as Record<string, unknown>).model, "gemini-3.5-flash-lite");
+    assert.ok(log.indexOf(stored!) < log.indexOf(failCalls(log)[0]), "stored before the refund");
+    assert.match(String((failCalls(log)[0].payload as Record<string, unknown>).p_message), /no library text matched: أجر العامل$/);
+  }
+  {
+    // The writer's model gave no text: 502 no_queries, its code and reason on the run, its tokens kept.
+    const { client, log } = modelDb({ model: AI_MODEL_DEFAULT });
+    const deps = libraryDeps({
+      n8n: async () => ({
+        kind: "result",
+        result: { run_id: RUN, status: "failed", output: null, usage, error: { code: "output_truncated", message: "the model returned no text (finish: MAX_TOKENS, thinking tokens: 200)" } },
+      }),
+      retrieve: async () => ({ sources: [], map: {} }),
+    });
+    const r = await startRunWith(client as never, deps, { ...LAWYER }, { ...QUICK_BODY, input: { question: "ما حكم الفصل؟" } });
+    assert.equal(r.status, 502);
+    assert.deepEqual(failCalls(log).map(failCode), ["no_queries"]);
+    assert.match(String((failCalls(log)[0].payload as Record<string, unknown>).p_message), /^search writer: output_truncated: the model returned no text \(finish: MAX_TOKENS/);
+    assert.ok(log.some((q) => q.table === "ai_runs" && q.op === "update" && (q.payload as Record<string, unknown>).usage), "the tokens are kept");
+  }
+  {
+    // n8n unreachable for the writer, but an embedding finds nothing either: no_sources names the writer's failure.
+    const { client, log } = modelDb({ model: AI_MODEL_DEFAULT });
+    const deps = libraryDeps({
+      n8n: async () => ({ kind: "failed", code: "n8n_http", detail: "HTTP 404" }),
+      embedQuery: async () => ({ modelId: "m", literal: "[0.1]" }),
+      retrieve: async () => ({ sources: [], map: {} }),
+    });
+    const r = await startRunWith(client as never, deps, LAWYER, QUICK_BODY);
+    assert.equal(r.status, 422);
+    assert.match(String((failCalls(log)[0].payload as Record<string, unknown>).p_message), /\(search writer: n8n_http: HTTP 404\)$/);
+    assert.ok(!log.some((q) => q.table === "ai_runs" && q.op === "update"), "no tokens, nothing stored");
+  }
+});
+
+test("l16 E-S8: a drafted memo that fails the purity gate is refunded, never stored; a clean one is stored", async () => {
+  const sources = { S1: { kind: "article", id: "labor__art-77", title: "نظام العمل — المادة ٧٧", url: "/laws/labor#labor__art-77" } };
+  const running = { id: RUN, tool: "legal-drafter", status: "running", class: "job", source_ids: sources, input: { phase: "draft", kind: "claim" }, usage: null };
+  const memo = (body: string) => ({
+    title: "لائحة دعوى",
+    sections: [{ heading: "الوقائع", body: "وقائع الدعوى [S1]." }, { heading: "الأسانيد", body }],
+    requests: ["إلزام المدعى عليه"],
+    cited: [],
+  });
+  {
+    const { client, log } = db({ run: running });
+    const r = await callbackWith(client as never, { run_id: RUN, status: "succeeded", output: memo("<think>خطة</think> نص [S1]"), citations: ["S1"] });
+    assert.equal(r.body.final, "failed");
+    assert.deepEqual(failCalls(log).map(failCode), ["purity_blocked"]);
+    assert.match(String((failCalls(log)[0].payload as Record<string, unknown>).p_message), /thinking_tags/);
+    assert.ok(!log.some((q) => q.table === "ai_runs" && q.op === "update" && (q.payload as Record<string, unknown>).output), "the memo is never stored");
+  }
+  {
+    const { client, log } = db({ run: running });
+    const r = await callbackWith(client as never, { run_id: RUN, status: "succeeded", output: memo("الأسانيد [S1] ومكان التاريخ [....]."), citations: ["S1"] });
+    assert.equal(r.body.final, "succeeded");
+    assert.equal(failCalls(log).length, 0);
+  }
 });

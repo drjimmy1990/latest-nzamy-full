@@ -49,6 +49,7 @@ function db(over?: FakeHandler) {
 }
 
 const input = (over: Partial<CheckoutInput> = {}): CheckoutInput => ({
+  vatPercent: 15,
   user: { id: USER, email: "demo@example.test" },
   itemId: "lawyer-founder-2026",
   billing: "once",

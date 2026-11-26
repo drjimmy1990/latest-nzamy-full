@@ -15,6 +15,14 @@ import {
   couponExpectedUpdatedAt,
   isCouponId,
 } from "@/lib/payments/couponAdminRules";
+import {
+  POINTS_GRANT_INVALID_AR,
+  PLAN_GRANT_INVALID_AR,
+  couponPoints,
+  grantablePlan,
+  highCouponIssue,
+  withPlatformOnlyKinds,
+} from "@/lib/payments/couponGrantRules";
 
 /**
  * PATCH /api/v1/admin/coupons/[id] — Update a coupon (e.g. enable/disable).
@@ -56,6 +64,13 @@ import {
  * own read only (a change while saving). A bad id is a 404 before any read;
  * a non-object body or a bad date is a 400 (startsAt / expiresAt as in POST:
  * a date-only value is that day in Riyadh, couponDateIso).
+ *
+ * Batch l16 (owner س٢١٣, couponGrantRules.ts): the row the save would leave
+ * is checked — an ACTIVE code above 25 %, or a free-plan / points code, needs
+ * the super admin, a purpose, an end date and a use limit (switching one off
+ * is never refused); a cap of 100 % always excludes services; planGranted /
+ * planBilling (a plan on sale and one of its billings) and pointsGranted
+ * (1–100,000) are checked like a create.
  *
  * Owner ٢١٠: PATCH needs a staff role with settings.write, DELETE one with
  * coupons.delete; each successful change is audited.
@@ -147,7 +162,23 @@ export async function PATCH(
       updateData.discount_value = Number(body.value) || 0;
     }
     if (body.pointsGranted !== undefined) {
-      updateData.points_granted = Number(body.pointsGranted) || 0;
+      if (prior.discount_type === "points_grant") {
+        const points = couponPoints(body.pointsGranted);
+        if (points === null) return NextResponse.json({ error: POINTS_GRANT_INVALID_AR }, { status: 400 });
+        updateData.points_granted = points;
+      } else {
+        updateData.points_granted = Number(body.pointsGranted) || 0;
+      }
+    }
+    // l16 (A-07): the granted plan and its billing, kept in metadata.grant_billing
+    let grantBilling: unknown;
+    if (prior.discount_type === "plan_upgrade" && (body.planGranted !== undefined || body.planBilling !== undefined)) {
+      const priorMeta = (prior.metadata as Record<string, unknown> | null) ?? {};
+      const planId = body.planGranted !== undefined ? body.planGranted : prior.plan_granted;
+      grantBilling = body.planBilling !== undefined ? body.planBilling : priorMeta.grant_billing;
+      const plan = grantablePlan(planId, grantBilling);
+      if (!plan) return NextResponse.json({ error: PLAN_GRANT_INVALID_AR }, { status: 400 });
+      updateData.plan_granted = plan.id;
     }
     if (body.usageLimit !== undefined) {
       const n = Number(body.usageLimit);
@@ -179,10 +210,28 @@ export async function PATCH(
     }
     const nextStatus =
       typeof body.status === "string" ? body.status : nextActive === undefined ? null : nextActive ? "active" : "disabled";
-    const metadata = buildCouponPatchMetadata(prevMeta, flags.metadata, nextStatus);
+    const grantFlags = grantBilling !== undefined ? { ...(flags.metadata ?? prevMeta), grant_billing: grantBilling } : flags.metadata;
+    const metadata = buildCouponPatchMetadata(prevMeta, grantFlags, nextStatus);
     if (metadata) {
       updateData.metadata = metadata;
     }
+
+    // l16 (س٢١٣ ب): a cap that ends at 100 % never reaches a service
+    if ("max_discount_pct" in updateData || "excluded_kinds" in updateData) {
+      const cap = "max_discount_pct" in updateData ? updateData.max_discount_pct : prior.max_discount_pct;
+      const kinds = Array.isArray(updateData.excluded_kinds)
+        ? (updateData.excluded_kinds as string[])
+        : Array.isArray(prior.excluded_kinds)
+          ? (prior.excluded_kinds as string[])
+          : null;
+      if (kinds) {
+        const next = withPlatformOnlyKinds(cap, kinds);
+        if (next.length !== kinds.length || "excluded_kinds" in updateData) updateData.excluded_kinds = next;
+      }
+    }
+    // l16 (س٢١٣ أ): the row this save leaves, if it is an active management code
+    const high = highCouponIssue({ ...prior, ...updateData }, gate.role);
+    if (high) return NextResponse.json({ error: high }, { status: 400 });
 
     const changed = Object.keys(updateData);
     if (changed.length === 0) {

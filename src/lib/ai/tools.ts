@@ -65,6 +65,15 @@ export interface AiToolSpec {
    */
   consultantAllowed?: true;
   /**
+   * Owner س٢١٤ (25 Nov 2026, batch l16): a professional DRAFTING tool — its
+   * output is a document the lawyer files, signs or sends (a pleading, a
+   * contract, an opinion, a formal letter). It runs only once the account's
+   * licence is verified (aiToolsConfig.toolNeedsLicence, runCore). The
+   * analysis tools (case brief, simulator, strength, memo check, assistant,
+   * board card) do not carry it. Never on a tool open to individuals.
+   */
+  licenceRequired?: true;
+  /**
    * The price in points, from the validated input (metered tools read `pages`).
    * `priorSectionEdits`: the memo's section edits so far, read by runCore from
    * the conversation's runs for a `sectionEdit` run only (owner ٤١٠).
@@ -1889,6 +1898,7 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     tier: "fast",
     roles: LAWYER_FIRM_ROLES,
     consultantBlocked: false,
+    licenceRequired: true, // owner س٢١٤ (l16): a drafting tool
     price: () => 5,
     dailyLimit: 40,
     defaultMode: "off",
@@ -1904,6 +1914,7 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     roles: LAWYER_FIRM_ROLES,
     // CONSULTANT_BLOCKED_PREFIXES has /ai/najiz-optimizer (Art. 18).
     consultantBlocked: true,
+    licenceRequired: true, // owner س٢١٤ (l16): a drafting tool
     // Owner ٤١٦ (7 Nov 2026): the AI condense is 15 points; the rule-based
     // cleanup on the page stays free. Every label reads it from here
     // (toolPointsDisplay.ts).
@@ -2113,6 +2124,7 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     // Owner ٤١٧ (8 Nov 2026) + controller ruling: lawyers and law firms only.
     roles: LAWYER_FIRM_ROLES,
     consultantBlocked: false,
+    licenceRequired: true, // owner س٢١٤ (l16): a drafting tool
     price: () => CONTRACT_DRAFT_PRICE,
     dailyLimit: 5,
     defaultMode: "off",
@@ -2148,6 +2160,7 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     // Owner ١٤٦ (batch l12): closed to the consultant until his account type
     // opens; a paid term already running keeps it to its end.
     consultantBlocked: true,
+    licenceRequired: true, // owner س٢١٤ (l16): a drafting tool
     price: () => LEGAL_CONSULT_PRICE,
     dailyLimit: 5,
     defaultMode: "off",
@@ -2163,6 +2176,7 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     tier: "deep",
     roles: LEGAL_OPINION_ROLES,
     consultantBlocked: true,
+    licenceRequired: true, // owner س٢١٤ (l16): a drafting tool
     price: () => LEGAL_LETTER_PRICE,
     dailyLimit: 5,
     defaultMode: "off",
@@ -2181,6 +2195,7 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     // the legal opinion (a paid term already running keeps it); contract review
     // on the same page stays open to him.
     consultantBlocked: true,
+    licenceRequired: true, // owner س٢١٤ (l16): a drafting tool
     price: () => CONTRACTS_PRO_PRICE,
     dailyLimit: 5,
     defaultMode: "off",
@@ -2198,6 +2213,7 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     tier: "deep",
     roles: CONTRACTS_PRO_ROLES,
     consultantBlocked: false,
+    licenceRequired: true, // owner س٢١٤ (l16): a drafting tool
     price: () => CONTRACT_REVIEW_PRICE,
     dailyLimit: 5,
     defaultMode: "off",
@@ -2217,6 +2233,7 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     // Owner ٤١٧ (8 Nov 2026): «مفاوض العقود» is for lawyers and law firms only.
     roles: LAWYER_FIRM_ROLES,
     consultantBlocked: false,
+    licenceRequired: true, // owner س٢١٤ (l16): a drafting tool
     price: () => CONTRACT_NEGOTIATOR_PRICE,
     dailyLimit: 5,
     defaultMode: "off",
@@ -2232,6 +2249,7 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     roles: LAWYER_FIRM_ROLES,
     // Pleadings: a consultant does not plead (Art. 18 of نظام المحاماة).
     consultantBlocked: true,
+    licenceRequired: true, // owner س٢١٤ (l16): a drafting tool
     // Charged once, on the analysis; the draft that follows it is free. A
     // section edit (owner ١٦٦, batch l13): included in the memo price up to the
     // admin's number (5), refused after it — never charged (sectionEdits.ts).

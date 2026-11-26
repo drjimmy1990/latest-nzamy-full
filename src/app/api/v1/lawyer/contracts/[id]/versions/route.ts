@@ -1,5 +1,5 @@
 import { NextResponse, NextRequest } from "next/server";
-import { assertRole } from "@/lib/auth/assertRole";
+import { assertCaseWorker } from "@/lib/auth/assertCaseWorker";
 import { createServiceClient } from "@/lib/supabase/server";
 import { readStoredObjectHead } from "@/lib/storedObjectHead";
 import { validateContractVersionFile } from "@/lib/services/contractVersionFile";
@@ -20,7 +20,7 @@ import { VERSION_SELECT, dbErrorResponse, toVersionDto, profileNames, type Versi
  */
 export async function GET(_request: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
-    const auth = await assertRole(["lawyer", "firm"]);
+    const auth = await assertCaseWorker();
     if (!auth.ok) return auth.response;
     const { supabase } = auth;
     const { id } = await context.params;
@@ -62,7 +62,7 @@ interface VersionBody {
  */
 export async function POST(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
-    const auth = await assertRole(["lawyer", "firm"]);
+    const auth = await assertCaseWorker();
     if (!auth.ok) return auth.response;
     const { user, supabase } = auth;
     const { id } = await context.params;

@@ -355,7 +355,7 @@ function previewDb(row: Record<string, unknown> | null = ROW, userType = "indivi
 
 test("validate: the preview has the checkout's numbers (VAT on the discounted net) and writes nothing", async () => {
   const { client, log } = previewDb();
-  const r = await validateCouponWith({ admin: client, now: () => NOW }, { userId: USER, code: "PLAN50", itemId: "ind-preventive", billing: "yearly" });
+  const r = await validateCouponWith({ admin: client, now: () => NOW }, { userId: USER, code: "PLAN50", itemId: "ind-preventive", billing: "yearly", vatPercent: 15 });
   assert.deepEqual(r, {
     status: 200,
     body: { code: "PLAN50", quote: { listNet: 149000, discount: 5000, net: 144000, vat: 21600, total: 165600 } },
@@ -366,22 +366,22 @@ test("validate: the preview has the checkout's numbers (VAT on the discounted ne
 test("validate: unknown code, wrong audience item and top-up answer refusals; no profile is 503", async () => {
   {
     const { client } = previewDb(null);
-    const r = await validateCouponWith({ admin: client, now: () => NOW }, { userId: USER, code: "NOPE1", itemId: "ind-preventive", billing: "yearly" });
+    const r = await validateCouponWith({ admin: client, now: () => NOW }, { userId: USER, code: "NOPE1", itemId: "ind-preventive", billing: "yearly", vatPercent: 15 });
     assert.deepEqual(r, { status: 400, body: { error: "كود الخصم غير صالح أو منتهي الصلاحية" } });
   }
   {
     const { client } = previewDb(ROW, "lawyer");
-    const r = await validateCouponWith({ admin: client, now: () => NOW }, { userId: USER, code: "PLAN50", itemId: "ind-preventive", billing: "yearly" });
+    const r = await validateCouponWith({ admin: client, now: () => NOW }, { userId: USER, code: "PLAN50", itemId: "ind-preventive", billing: "yearly", vatPercent: 15 });
     assert.equal(r.status, 400);
   }
   {
     const { client } = previewDb();
-    const r = await validateCouponWith({ admin: client, now: () => NOW }, { userId: USER, code: "PLAN50", itemId: "topup-250", billing: "once" });
+    const r = await validateCouponWith({ admin: client, now: () => NOW }, { userId: USER, code: "PLAN50", itemId: "topup-250", billing: "once", vatPercent: 15 });
     assert.deepEqual(r, { status: 400, body: { error: "كود الخصم لا ينطبق على هذا المنتج" } });
   }
   {
     const { client } = fakeDb(() => ({ data: null }));
-    const r = await validateCouponWith({ admin: client, now: () => NOW }, { userId: USER, code: "PLAN50", itemId: "ind-preventive", billing: "yearly" });
+    const r = await validateCouponWith({ admin: client, now: () => NOW }, { userId: USER, code: "PLAN50", itemId: "ind-preventive", billing: "yearly", vatPercent: 15 });
     assert.equal(r.status, 503);
   }
 });
@@ -393,7 +393,7 @@ test("validate ٣٠٣: during the launch campaign a launch-priced cycle takes no
     const { client } = previewDb(ROW_NO_MIN, "firm");
     const r = await validateCouponWithBook(
       { admin: client, now: () => new Date("2026-12-01T09:00:00Z") },
-      { userId: USER, code: "PLAN50", itemId: "firm-basic", billing: "yearly" },
+      { userId: USER, code: "PLAN50", itemId: "firm-basic", billing: "yearly", vatPercent: 15 },
     );
     assert.deepEqual(r, { status: 400, body: { error: "كود الخصم لا ينطبق على هذا المنتج" } });
   }
@@ -401,7 +401,7 @@ test("validate ٣٠٣: during the launch campaign a launch-priced cycle takes no
     const { client } = previewDb(ROW_NO_MIN, "firm");
     const r = await validateCouponWithBook(
       { admin: client, now: () => new Date("2027-02-01T09:00:00Z") },
-      { userId: USER, code: "PLAN50", itemId: "firm-basic", billing: "yearly" },
+      { userId: USER, code: "PLAN50", itemId: "firm-basic", billing: "yearly", vatPercent: 15 },
     );
     assert.equal(r.status, 200);
     assert.equal((r.body as { quote: { listNet: number } }).quote.listNet, 990000);
@@ -411,7 +411,7 @@ test("validate ٣٠٣: during the launch campaign a launch-priced cycle takes no
     const { client } = previewDb(ROW_NO_MIN);
     const r = await validateCouponWithBook(
       { admin: client, now: () => new Date("2026-12-01T09:00:00Z") },
-      { userId: USER, code: "PLAN50", itemId: "ind-ai", billing: "yearly" },
+      { userId: USER, code: "PLAN50", itemId: "ind-ai", billing: "yearly", vatPercent: 15 },
     );
     assert.equal(r.status, 200);
     assert.equal((r.body as { quote: { listNet: number } }).quote.listNet, 24900);
@@ -610,7 +610,7 @@ function pendingPreviewDb(openRows: Array<Record<string, unknown>>) {
     return {};
   });
 }
-const PREVIEW = { userId: USER, code: "PLAN50", itemId: "ind-preventive", billing: "yearly" as const };
+const PREVIEW = { userId: USER, code: "PLAN50", itemId: "ind-preventive", billing: "yearly" as const, vatPercent: 15 };
 
 test("validate: the code on another payable open order answers the pending sentence; an expired one does not block the preview and nothing is closed", async () => {
   const fresh = { id: "x", item_id: "lib-q1", status: "initiated", created_at: new Date(NOW.getTime() - 60_000).toISOString(), moyasar_intent_id: "pi", moyasar_payment_id: null };

@@ -21,6 +21,9 @@ export const COUPON_PATCH_KEYS = [
   "value",
   "minOrderAmount",
   "pointsGranted",
+  // l16 (A-07): a free-plan code's plan and billing
+  "planGranted",
+  "planBilling",
   "usageLimit",
   "startsAt",
   "expiresAt",

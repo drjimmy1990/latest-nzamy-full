@@ -117,19 +117,28 @@ function fakeAdmin(opts: {
   return { admin: admin as unknown as Parameters<typeof suspendAccountWith>[0], calls };
 }
 
-const ARGS = { userId: "u-1", actorId: "admin-1", nowIso: "2026-11-17T20:00:00Z" };
+const ARGS = { userId: "u-1", actorId: "admin-1", nowIso: "2026-11-17T20:00:00Z", endsAt: "2026-11-20T20:00:00Z" };
 
 test("suspend: ONE GoTrue update carries the ban and the gates' copy, then the sessions end", async () => {
   const { admin, calls } = fakeAdmin({ rpc: { admin_revoke_user_sessions: { data: 2 } } });
   const r = await suspendAccountWith(admin, ARGS);
   assert.deepEqual(r, { ok: true, sessions: { state: "ended", count: 2 } });
   assert.deepEqual(calls.map((c) => c.kind), ["getUserById", "updateUserById", "rpc"]);
+  // Owner س٢١٥: the ban lasts exactly until the end (72 h = 4320 minutes), and
+  // the copy carries the same end as `until` — never the 100-year ban.
   assert.deepEqual(calls[1].args, ["u-1", {
-    ban_duration: SUSPENSION_BAN_DURATION,
-    app_metadata: { provider: "email", account_suspension: { status: "suspended", at: ARGS.nowIso, by: "admin-1" } },
+    ban_duration: "4320m",
+    app_metadata: { provider: "email", account_suspension: { status: "suspended", at: ARGS.nowIso, by: "admin-1", until: ARGS.endsAt } },
   }]);
+  assert.notEqual((calls[1].args[1] as { ban_duration: string }).ban_duration, SUSPENSION_BAN_DURATION);
   assert.deepEqual(calls[2].args, ["admin_revoke_user_sessions", { p_user: "u-1" }]);
-  assert.equal(SUSPENSION_BAN_DURATION, "876000h");
+});
+
+test("suspend: an end that is not a time writes nothing (no open-ended ban)", async () => {
+  const { admin, calls } = fakeAdmin({});
+  const r = await suspendAccountWith(admin, { ...ARGS, endsAt: "soon" });
+  assert.equal(r.ok, false);
+  assert.equal(calls.length, 0);
 });
 
 test("suspend: a failed ban is a failed suspension, and nothing else runs", async () => {

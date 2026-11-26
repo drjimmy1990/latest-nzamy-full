@@ -4,8 +4,8 @@ import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback, use
 import { useParams, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Scales, Check, Copy, FileText, Lock, Stack, ArrowRight,
-  Plus, Minus, BookOpen, Bookmark
+  Check, Copy, FileText, Lock, Stack, ArrowRight,
+  Plus, Minus, BookOpen, Bookmark, Gavel
 } from "@phosphor-icons/react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
@@ -840,7 +840,7 @@ export default function JudicialPrinciplesPage() {
       <div className={`min-h-screen flex flex-col ${isDark ? "bg-[#0c0f12] text-white" : "bg-gray-50 text-gray-900"}`} dir="rtl">
         <Navbar />
         <div className="flex-1 flex flex-col items-center justify-center p-8 pt-32 text-center">
-          <Scales size={48} className={shown.kind === "load_error" ? "text-red-500 mb-4" : "text-[#C8A762] mb-4"} />
+          <Gavel size={48} className={shown.kind === "load_error" ? "text-red-500 mb-4" : "text-[#C8A762] mb-4"} />
           <h1 className="text-xl font-black mb-2">{shown.titleAr}</h1>
           <p className="text-xs text-slate-500 dark:text-zinc-400 mb-4" role={shown.kind === "load_error" ? "alert" : undefined}>
             {shown.bodyAr}
@@ -883,7 +883,7 @@ export default function JudicialPrinciplesPage() {
             <div>
               {isCourtKnown(null) && (
                 <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#C8A762]/10 border border-[#C8A762]/20 text-[#C8A762] text-xs font-bold mb-2">
-                  <Scales size={12} weight="fill" />
+                  <Gavel size={12} weight="fill" />
                   {getCourtOrIssuer(null)}
                 </div>
               )}
@@ -1237,7 +1237,7 @@ export default function JudicialPrinciplesPage() {
                                   : "border-slate-100 hover:border-slate-200 hover:bg-slate-50 text-slate-700 hover:text-[#0B3D2E]"
                               }`}
                             >
-                              <Scales size={13} className="text-[#C8A762] flex-shrink-0 mt-0.5" />
+                              <Gavel size={13} className="text-[#C8A762] flex-shrink-0 mt-0.5" />
                               <span className="leading-tight">{doc.title}</span>
                             </Link>
                           ))}

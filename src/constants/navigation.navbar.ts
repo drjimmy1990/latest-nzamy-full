@@ -92,6 +92,32 @@ export const LAWYER_NAV: NavItem[] = [
   { label: "المكتبة القانونية", labelEn: "Legal Library", href: "/laws" },
 ];
 
+/**
+ * l16 (A-14, owner 25 Nov §1.4.1): the INDEPENDENT legal consultant's top
+ * bar — the library and the client side of the market only, never the
+ * lawyer's pleading or office links. Every href is on the consultant
+ * allowlist (consultantScope.ts; navigation.navbar.test.ts fails otherwise).
+ */
+export const CONSULTANT_NAV: NavItem[] = [
+  { label: "لوحة التحكم", labelEn: "Dashboard", href: "/dashboard/lawyer" },
+  { label: "المكتبة القانونية", labelEn: "Legal Library", href: "/laws" },
+  { label: "مكتبتي", labelEn: "My Library", href: "/laws/my" },
+  // l16 review: /services — the request wizard that reaches the Nezamy team,
+  // open to a consultant; /marketplace/* redirects there while the beta's
+  // single-provider mode is on (src/app/marketplace/layout.tsx).
+  { label: "اطلب خدمة", labelEn: "Request a service", href: "/services" },
+  { label: "الباقات", labelEn: "Plans", href: "/pricing" },
+];
+
+/**
+ * The top bar of a session: the independent consultant (a lawyer session
+ * with practice_kind exactly 'consultant' and no active firm membership)
+ * gets CONSULTANT_NAV, everyone else getNavByUserType.
+ */
+export function getNavForSession(userType: UserType, independentConsultant: boolean): NavItem[] {
+  return userType === "lawyer" && independentConsultant ? CONSULTANT_NAV : getNavByUserType(userType);
+}
+
 // ── Firm Nav (شركة محاماة) ───────────────────────────────────────────────────
 export const FIRM_NAV: NavItem[] = [
   { label: "القضايا",   labelEn: "Cases",     href: "/dashboard/firm/cases" },
@@ -207,9 +233,10 @@ export const ADMIN_NAV: NavItem[] = [
   {
     label: "الإعدادات", labelEn: "Settings", href: "#settings",
     children: [
-      // «قريباً» (owner ١١٥): the page showed fixed log lines and renders
-      // DashboardComingSoon now.
-      { label: "إعدادات النظام", labelEn: "System Settings", href: "/dashboard/admin/system",   icon: "Gear", badge: "قريباً" },
+      // l16 (C19, owner package §٣.٤-1): this row linked the «قريباً» page
+      // /dashboard/admin/system (fixed log lines once, DashboardComingSoon
+      // since owner ١١٥); it now opens the real platform settings.
+      { label: "إعدادات المنصة", labelEn: "Platform Settings", href: "/dashboard/admin/settings", icon: "Gear" },
       { label: "الأمان والصلاحيات", labelEn: "Security",    href: "/dashboard/admin/security", icon: "ShieldCheck" },
     ],
   },

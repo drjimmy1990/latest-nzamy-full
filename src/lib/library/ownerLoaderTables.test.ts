@@ -215,3 +215,9 @@ test("20261130_30 (owner file 19 Nov §1.9): chapters and articles REQUIRE regul
     assert.deepEqual(t?.stripKeys, [], name);
   }
 });
+
+test("batch l16 (B-49, 20261202_50): decrees_circulars.summary_status is REQUIRED before the first write, never stripped", () => {
+  const t = OWNER_LOADER_TABLES.find((x) => x.name === "decrees_circulars");
+  assert.ok(t?.requiredColumns?.includes("summary_status"));
+  assert.ok(!t?.stripKeys.includes("summary_status"));
+});

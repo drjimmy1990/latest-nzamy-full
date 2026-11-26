@@ -34,6 +34,15 @@ const SCOPES = [
   "constants/adminNavItems.ts",
   // l14 (file 11 row 43): the principle card in the /laws results list.
   "app/laws/components/ListItems.tsx",
+  // l16 (owner package 25-Nov §2.8 (1), B-18): the library reader and its lists.
+  "components/laws/DraftDrawer.tsx",
+  "app/laws/[slug]/_article-components.tsx",
+  "app/laws/[slug]/page.tsx",
+  "app/precedents/[slug]/page.tsx",
+  "app/laws/components/LawsTabContent.tsx",
+  "app/laws/components/PrecedentsTabContent.tsx",
+  "app/laws/components/PaywallModal.tsx",
+  "constants/lawsLibraryData.ts",
 ];
 
 test("no Scales icon on the AI tools, their menus, the drafter or the canvas", () => {

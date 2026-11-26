@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Crown, Lock, X, ArrowLeft } from "@phosphor-icons/react";
 import { bookPriceText } from "@/lib/pricing/priceBook";
-import { VAT_NOTICE } from "@/lib/pricing/vatNotice";
+import { VatNoticeText } from "@/components/pricing/VatNoticeText";
 import { activeCampaign, campaignFromApi, type Campaign } from "@/lib/pricing/campaigns";
 import { useLibraryAccountLocked } from "@/lib/library/useLibraryFullAccess";
 import { LIBRARY_ACCOUNT_LOCKED_AR } from "@/lib/library/accountAccess";
@@ -85,7 +85,8 @@ export function LibrarySubscribeCard({ title, onClose, className = "" }: { title
       </p>
       <p className="mb-4 text-sm font-bold text-slate-900 dark:text-white">
         {price} ر.س سنوياً
-        <span className="mr-2 text-xs font-normal text-slate-500 dark:text-zinc-400">{VAT_NOTICE.exclusive.ar}</span>
+        {/* l16 (A-01): the 15 % sentence only once the platform's VAT number is saved */}
+        <VatNoticeText className="mr-2 text-xs font-normal text-slate-500 dark:text-zinc-400" />
       </p>
       {founder && (
         <a

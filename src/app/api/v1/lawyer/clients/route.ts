@@ -1,5 +1,5 @@
 import { NextResponse, NextRequest } from "next/server";
-import { assertRole } from "@/lib/auth/assertRole";
+import { assertCaseWorker } from "@/lib/auth/assertCaseWorker";
 import { createServiceClient } from "@/lib/supabase/server";
 import {
   type ClientType, type ClientFlag, type ClientStatus,
@@ -181,7 +181,7 @@ function profileToDto(row: ProfileRow, stats: Stats) {
  */
 export async function GET() {
   try {
-    const auth = await assertRole(["lawyer", "firm"]);
+    const auth = await assertCaseWorker();
     if (!auth.ok) return auth.response;
     const { user, supabase } = auth;
     const uid = user.id;
@@ -375,7 +375,7 @@ function dbErrorResponse(error: { code?: string; message?: string } | null | und
  */
 export async function POST(request: NextRequest) {
   try {
-    const auth = await assertRole(["lawyer", "firm"]);
+    const auth = await assertCaseWorker();
     if (!auth.ok) return auth.response;
     const { user, supabase } = auth;
 

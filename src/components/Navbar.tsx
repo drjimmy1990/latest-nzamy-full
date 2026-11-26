@@ -13,7 +13,8 @@ import * as PhosphorIcons from "@phosphor-icons/react";
 import Image from "next/image";
 import { useTheme } from "./ThemeProvider";
 import { useUser, logout } from "@/hooks/useUser";
-import { getNavByUserType, getDashboardRoute, getRoleLabel, isMegaMenu, type NavItem } from "@/constants/navigation";
+import { getNavForSession, getDashboardRoute, getRoleLabel, isMegaMenu, type NavItem } from "@/constants/navigation";
+import { isIndependentConsultantSession } from "@/lib/auth/consultantScope";
 import Link from "next/link";
 import { useNotifications } from "@/hooks/useNotifications";
 import { isNavbarTransparent, isPastSolidThreshold } from "./navbarChrome";
@@ -452,7 +453,7 @@ export default function Navbar() {
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
   const [avatarOpen, setAvatarOpen] = useState(false);
   const { theme, lang, toggleTheme, toggleLang } = useTheme();
-  const { isLoggedIn, userType, name, affiliation } = useUser();
+  const { isLoggedIn, userType, name, affiliation, practiceKind, firmMembership } = useUser();
   const isAr = lang === "ar";
   const mobileSectionIds = useId();
 
@@ -488,7 +489,10 @@ export default function Navbar() {
   // below stays the real role — a view is not a role.
   const { storedView: adminStoredView } = useAdminView(pathname ?? "/", isLoggedIn && userType === "admin");
   const navUserType = resolveNavbarUserType({ pathname: pathname ?? "/", sessionUserType: userType, storedView: adminStoredView });
-  const ACTIVE_NAV = getNavByUserType(isLoggedIn ? navUserType : null);
+  // l16 (A-14): the independent consultant's own top bar — his real session
+  // only (an admin's view of the lawyer side keeps the lawyer links)
+  const independentConsultant = isLoggedIn && userType === "lawyer" && isIndependentConsultantSession(userType, practiceKind, !!firmMembership);
+  const ACTIVE_NAV = getNavForSession(isLoggedIn ? navUserType : null, independentConsultant);
   const dashboardHref = getDashboardRoute(navUserType);
 
   // ── Keyboard + click-away handlers ──

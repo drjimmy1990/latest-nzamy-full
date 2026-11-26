@@ -54,7 +54,9 @@ const DRAFTER_HREF = "/ai/draft";
 const CONTRACTS_HREF = "/ai/contracts";
 const CLIENT_CONTRACT_DRAFTING_HREF = "/dashboard/client/requests/new?type=general";
 const CONTRACT_SERVICES_HREF = "/services/contracts";
-const REFUSAL_LINKS: ReadonlySet<string> = new Set([DRAFTER_HREF, CONTRACTS_HREF, CLIENT_CONTRACT_DRAFTING_HREF, CONTRACT_SERVICES_HREF]);
+/** draftingRequest.SIMPLE_CONTRACT_HREF — owner س٢٦: the simplified drafter first. */
+const SIMPLE_CONTRACT_HREF = "/ai/simple-contract";
+const REFUSAL_LINKS: ReadonlySet<string> = new Set([DRAFTER_HREF, CONTRACTS_HREF, CLIENT_CONTRACT_DRAFTING_HREF, CONTRACT_SERVICES_HREF, SIMPLE_CONTRACT_HREF]);
 
 function newKey(): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") return crypto.randomUUID();

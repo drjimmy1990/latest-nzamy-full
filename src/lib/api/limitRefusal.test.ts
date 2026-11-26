@@ -50,9 +50,12 @@ test("each token 20261126_50 raises maps to its sentence, a 403 and its link", (
   }
 });
 
-test("the owner's words: 5 cases, 10 clients, «اكتملت مقاعد المكتب», «لزيادة المقاعد تواصل معنا»", () => {
-  assert.match(PLAN_LIMIT_AR.cases, /٥ قضايا نشطة/);
-  assert.match(PLAN_LIMIT_AR.clients, /١٠ موكلين/);
+test("the owner's words: cases and clients are «إدارة المكتب» (س٢١٢), «اكتملت مقاعد المكتب», «لزيادة المقاعد تواصل معنا»", () => {
+  // a database token cannot tell a lawyer from a firm: both plans are named
+  assert.equal(PLAN_LIMIT_AR.cases, "إضافة القضايا وإدارتها متاحة في باقة «إدارة المكتب» للمحامي أو باقة المكتب («مكتب المحاماة» أو «شركة المحاماة»).");
+  assert.equal(PLAN_LIMIT_AR.clients, "إضافة الموكلين وإدارتهم متاحة في باقة «إدارة المكتب» للمحامي أو باقة المكتب («مكتب المحاماة» أو «شركة المحاماة»).");
+  // no number is promised: the free allowance is a database constant (0 / 0 by default)
+  assert.doesNotMatch(PLAN_LIMIT_AR.cases + PLAN_LIMIT_AR.clients, /[0-9٠-٩]/);
   assert.match(FIRM_SEATS_FULL_AR, /^اكتملت مقاعد المكتب/);
   assert.equal(FIRM_SEATS_LINK_AR, "لزيادة المقاعد تواصل معنا");
   // the seat link reuses the pricing cards' sales link — extra seats are not sold online
@@ -68,7 +71,19 @@ test("anything else is not a limit refusal (and the demo tokens stay the demo's)
   assert.equal(demoRefusal(pg("plan_limit:cases")), null);
 });
 
-test("the SQL raises exactly these tokens, and the limits are 5 / 10 and 5 / 15", () => {
+test("20261206_70: the free allowance is one constant, 0 / 0, and the storage token is raised", () => {
+  const sql = readFileSync(join(repo, "supabase/migrations/20261206_70_roles_office_plan.sql"), "utf8");
+  assert.equal((sql.match(/select 0, 0;/g) ?? []).length, 1);
+  assert.ok(sql.includes("raise exception 'storage_quota_full'"));
+  const r = limitRefusal(pg("storage_quota_full"));
+  assert.ok(r);
+  assert.equal(r.status, 403);
+  assert.equal(r.linkHref, PLAN_LIMIT_UPGRADE_HREF);
+  assert.match(r.message, /سعة الحساب المجاني/);
+  assert.deepEqual(limitLinkForMessage(r.message), { href: PLAN_LIMIT_UPGRADE_HREF, label: PLAN_LIMIT_LINK_AR });
+});
+
+test("the SQL raises exactly these tokens, and the limits were 5 / 10 (20261126_50) and 5 / 15", () => {
   const sql = readFileSync(join(repo, "supabase/migrations/20261126_50_accounts_limits.sql"), "utf8");
   for (const token of ["plan_limit:cases", "plan_limit:clients", "firm_seats_full"]) {
     assert.ok(sql.includes(`raise exception '${token}'`), token);

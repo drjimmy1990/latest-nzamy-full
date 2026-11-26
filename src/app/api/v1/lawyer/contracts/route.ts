@@ -1,6 +1,6 @@
 import { NextResponse, NextRequest } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { assertRole } from "@/lib/auth/assertRole";
+import { assertCaseWorker } from "@/lib/auth/assertCaseWorker";
 import { requireVerifiedProvider } from "@/lib/auth/verifiedProviderServer";
 import { parseIsoDate } from "@/lib/services/deadlineEngine";
 import {
@@ -37,7 +37,7 @@ const COMMERCIAL_REGISTER_RE = /^[0-9]{10}$/;
  */
 export async function GET(request: NextRequest) {
   try {
-    const auth = await assertRole(["lawyer", "firm"]);
+    const auth = await assertCaseWorker();
     if (!auth.ok) return auth.response;
     const { supabase } = auth;
 
@@ -207,7 +207,7 @@ async function insertParties(
  */
 export async function POST(request: NextRequest) {
   try {
-    const auth = await assertRole(["lawyer", "firm"]);
+    const auth = await assertCaseWorker();
     if (!auth.ok) return auth.response;
     const { user, supabase } = auth;
     // R9b (l11): an unverified account creates no contract (403, Arabic).

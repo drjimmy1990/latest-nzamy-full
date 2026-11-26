@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { assertRole } from "@/lib/auth/assertRole";
+import { assertCaseWorker } from "@/lib/auth/assertCaseWorker";
 import { createServiceClient } from "@/lib/supabase/server";
 import { hashNationalId } from "@/lib/services/clientIdentityHash";
 import { decryptPartyId, encryptPartyId, readPartyIdKey } from "@/lib/services/contractPartyIdCrypto";
@@ -59,7 +59,7 @@ async function logAccess(
 
 /** The session-visible contract and whether the caller wrote it. */
 async function authorGate(id: string) {
-  const auth = await assertRole(["lawyer", "firm"]);
+  const auth = await assertCaseWorker();
   if (!auth.ok) return { response: auth.response } as const;
   const { user, supabase } = auth;
   if (!id || id.length > 100) {
