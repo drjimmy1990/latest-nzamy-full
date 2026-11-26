@@ -29,8 +29,11 @@ function hrefsOf(groups: SidebarGroup[]): string[] {
   return out;
 }
 
+// The role lists are checked on the menu WITH its «قريباً» rows (keepUnbuilt):
+// owner ق٢٦-١ hides those from the menu drawn (navigation.comingSoon.test.ts),
+// which is a separate rule from which rows a role may have.
 function firmSidebar(role: AffiliationRole | null): string[] {
-  return hrefsOf(getSidebarByUserType("firm", "full", null, [], null, null, role));
+  return hrefsOf(getSidebarByUserType("firm", "full", null, [], null, null, role, false, null, null, null, null, false, true));
 }
 
 const ROLES = Object.keys(FIRM_ROLE_ALLOWED_HREFS).filter((r) => r !== "default") as AffiliationRole[];

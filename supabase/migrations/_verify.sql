@@ -9035,3 +9035,16 @@ select 'l18 phone login: a number confirmed on two accounts finds nobody; the re
                 and position('phone_verified_at is not null' in pg_catalog.pg_get_functiondef(to_regprocedure('public.phone_sign_in_target(text)'))) > 0
                 and position('public.pw_reset_target(' in pg_catalog.pg_get_functiondef(to_regprocedure('public.pw_reset_target_by_phone(text)'))) > 0, false) as ok;
 -- <<< verify:l18_phone_login
+-- >>> verify:l18_access — owner ق٢٦-٢ / ق٢٦-٣ (run 20261208_40)
+select 'l18 access: the library switch opens lawyer + consultant + firm by default, unless an admin saved another choice (run 20261208_40)' as check,
+       coalesce((select ps.updated_by is not null
+                        or ((ps.value -> 'lawyer') = 'true'::jsonb
+                            and (ps.value -> 'consultant') = 'true'::jsonb
+                            and (ps.value -> 'firm') = 'true'::jsonb)
+                   from public.platform_settings ps
+                  where ps.key = 'library_access_by_account_type'), false) as ok;
+select 'l18 access: the free questions setting names the law firm (10 by default; an admin value is kept) (run 20261208_40)' as check,
+       coalesce((select ps.value ? 'firm'
+                   from public.platform_settings ps
+                  where ps.key = 'free_questions_by_account_type'), false) as ok;
+-- <<< verify:l18_access

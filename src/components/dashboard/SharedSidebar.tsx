@@ -21,6 +21,8 @@ import { useClientGroupMembership } from "@/hooks/useClientGroupMembership";
 import { getSidebarByUserType, getRoleLabel, withoutConsultantBlockedItems } from "@/constants/navigation";
 import { comingSoonToolIds } from "@/constants/navigation.comingSoon";
 import { useLiveTools } from "@/hooks/useLiveTools";
+import { useOfficeFeaturesLocked } from "@/hooks/useOfficeFeaturesLocked";
+import { officeLockAudience, withOfficeLocks } from "@/constants/navigation.officeLock";
 import { withAdminAiGroup } from "@/lib/ai/adminAiTools";
 import { useLibraryAccountLocked } from "@/lib/library/useLibraryFullAccess";
 import { withoutLibraryItems } from "@/lib/library/accountAccess";
@@ -41,6 +43,7 @@ import { adminBypassesUiGates, simulatedNavIdentity } from "@/lib/nav/adminSimul
 import {
   SidebarSection,
   CreditsBar,
+  type LockedClickOptions,
 } from "./SidebarComponents";
 
 export default function SharedSidebar() {
@@ -70,6 +73,7 @@ export default function SharedSidebar() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [featureBlocked, setFeatureBlocked] = useState<string | undefined>();
+  const [lockOpts, setLockOpts] = useState<LockedClickOptions>({});
   const { hasGroup: hasClientGroup } = useClientGroupMembership();
   
   // Owner ٢٦٤ (2026-10-25): the lite / full toggle is gone for good —
@@ -124,12 +128,15 @@ export default function SharedSidebar() {
   // A consultant who is an active firm member is not the independent one
   // (the proxy's rule); an admin's simulated view has no membership of its own.
   const navFirmMember = simId ? false : !!firmMembership;
-  const writtenGroups = getSidebarByUserType(...menuArgs, null, navFirmMember);
+  // Owner ق٢٦-١: the menu drawn hides «قريباً» / «قيد التفعيل» rows. The
+  // registry tools to ask tool-status about are read from the menu WITH them
+  // (keepUnbuilt) — a row hidden before the question could never come back.
+  const writtenGroups = getSidebarByUserType(...menuArgs, null, navFirmMember, true);
   // BUG-12: a «قريباً» row whose AI tool the admin has opened for this user
-  // loses the badge (and stays in its own group). Only rows with a
-  // `liveToolId` are asked about; the badge stays on any doubt.
+  // shows, without the badge, in its own group. Only rows with a
+  // `liveToolId` are asked about; on any doubt the row stays hidden.
   const liveTools = useLiveTools(comingSoonToolIds(writtenGroups), isSupabaseMode && !loading && isLoggedIn);
-  const menuGroups = liveTools.size > 0 ? getSidebarByUserType(...menuArgs, liveTools, navFirmMember) : writtenGroups;
+  const menuGroups = getSidebarByUserType(...menuArgs, liveTools.size > 0 ? liveTools : null, navFirmMember);
   // Art. 18: a consultant LAWYER drawn the firm menu (a firm member, N01-29)
   // loses the court tools there too — getSidebarByUserType reads practiceKind
   // for the lawyer menu only. The pages lock him either way; this is the menu.
@@ -140,7 +147,16 @@ export default function SharedSidebar() {
   // locked for the SESSION's account (the server's answer, not the menu's
   // type: a lawyer member drawn the firm menu keeps it).
   const libraryLock = useLibraryAccountLocked(isSupabaseMode && !loading && isLoggedIn);
-  const lockedGroups = libraryLock.locked ? withoutLibraryItems(roleGroups) : roleGroups;
+  const libraryGroups = libraryLock.locked ? withoutLibraryItems(roleGroups) : roleGroups;
+  // Owner ق٢٦-١: a paid office row shows 🔒 while the database says this
+  // account is on the free side (my_office_features_locked); its click opens
+  // the upgrade dialog. Asked only for the lawyer / firm menus, never for an
+  // admin (whose own answer would say nothing about the view he draws).
+  const officeAudience = officeLockAudience(userType);
+  const officeLocked = useOfficeFeaturesLocked(
+    isSupabaseMode && !loading && isLoggedIn && !isRealAdmin && officeAudience !== null,
+  );
+  const lockedGroups = withOfficeLocks(libraryGroups, officeLocked, officeAudience);
   // N2 (batch l12): a real admin in a working view gets every AI tool, the drafter
   // and محترف العقود first, untagged (display only: src/lib/ai/adminAiTools.ts).
   const groups = withAdminAiGroup(lockedGroups, isRealAdmin && adminBypassesUiGates(sessionUserType, adminSim), userType);
@@ -230,8 +246,9 @@ export default function SharedSidebar() {
             groupIndex={i}
             hasClientGroup={hasClientGroup}
             gateReady={gateReady}
-            onLockedClick={(feature) => {
+            onLockedClick={(feature, opts) => {
               setFeatureBlocked(feature);
+              setLockOpts(opts ?? {});
               setUpgradeOpen(true);
             }}
           />
@@ -416,6 +433,8 @@ export default function SharedSidebar() {
         open={upgradeOpen}
         onClose={() => setUpgradeOpen(false)}
         featureBlocked={featureBlocked}
+        continueHref={lockOpts.continueHref}
+        officeAudience={lockOpts.officeAudience}
       />
     </>
   );

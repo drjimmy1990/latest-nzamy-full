@@ -7,7 +7,9 @@ import { LockKey, ArrowLeft, Star } from "@phosphor-icons/react";
 import { motion } from "framer-motion";
 import UpgradeModal from "@/components/UpgradeModal";
 import { UNSOLD_TIERS, LOCKED_NOT_IN_PLAN_AR } from "@/hooks/featureAccess";
-import type { UserTier } from "@/hooks/useUser";
+import { useUser, type UserTier } from "@/hooks/useUser";
+import { getDashboardRoute } from "@/constants/navigation.types";
+import { isSupabaseMode } from "@/lib/services/api";
 
 export function SubscriptionGuard({
   featureKey,
@@ -17,6 +19,11 @@ export function SubscriptionGuard({
   children: ReactNode;
 }) {
   const { can, requiredTier, isDemo } = useSubscription();
+  // Owner ق٢٦-١ / gap fact 6: the way back is the account's own dashboard (it
+  // was /dashboard/business for every account), and the demo note is for the
+  // demo backend only (isDemo is tier === "free", i.e. every real free user).
+  const { userType } = useUser();
+  const backHref = userType ? getDashboardRoute(userType) : "/dashboard";
   const [mounted, setMounted] = useState(false);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
 
@@ -91,7 +98,7 @@ export function SubscriptionGuard({
               </Link>
             )}
             <Link 
-              href="/dashboard/business" 
+              href={backHref}
               className="w-full sm:w-auto flex items-center justify-center gap-2 bg-white/5 hover:bg-white/10 text-white font-medium py-3 px-6 rounded-xl transition-colors"
             >
               <ArrowLeft size={18} />
@@ -99,7 +106,7 @@ export function SubscriptionGuard({
             </Link>
           </div>
 
-          {isDemo && (
+          {isDemo && !isSupabaseMode && (
             <div className="mt-8 p-3 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-400 text-xs text-right">
               <strong>ملاحظة (وضع الديمو):</strong> يمكنك تغيير باقتك من إعدادات حساب الديمو أو تسجيل الدخول بحساب شركة أعلى.
             </div>
