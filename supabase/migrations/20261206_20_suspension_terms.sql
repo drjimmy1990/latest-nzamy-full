@@ -22,8 +22,17 @@
 --   2. public.account_suspension_appeals — one row per appeal from the public
 --      page /account-suspended: freeze, account, message (10..3000), status
 --      'new' | 'rejected' | 'lifted' | 'ended', and the admin's decision.
---      At most one 'new' appeal per suspension. Server-only: RLS on, no
---      policy, no privilege for anon / authenticated.
+--      At most THREE 'new' appeals per suspension, each kept as its own row
+--      (l16 review: the public form asks only for the e-mail, so a single slot
+--      could be taken first by anyone who knows the address and block the
+--      account's real appeal). The cap is a BEFORE INSERT trigger
+--      (account_suspension_appeals_cap) that locks the suspension row and
+--      answers 23505 when three are already waiting — the code's
+--      «already pending» answer. Server-only: RLS on, no policy, no
+--      privilege for anon / authenticated.
+--   2b. account_suspension_freezes gains lift_attempts (int, default 0) and
+--      lift_last_error: the automatic lift counts its failed tries on a row
+--      and stops retrying it after 5 (an admin audit row says so).
 --   3. Verify block — RAISES unless all of the above holds.
 --
 -- HOW TO RUN
@@ -43,11 +52,13 @@
 -- ROLLBACK (by hand):
 --   begin;
 --     drop table if exists public.account_suspension_appeals;
+--     drop function if exists public.account_suspension_appeals_cap();
 --     alter table public.account_suspension_freezes
 --       drop constraint if exists account_suspension_freezes_template_check,
 --       drop constraint if exists account_suspension_freezes_ends_check,
 --       drop constraint if exists account_suspension_freezes_reason_len,
---       drop column if exists ends_at, drop column if exists template, drop column if exists suspend_reason;
+--       drop column if exists ends_at, drop column if exists template, drop column if exists suspend_reason,
+--       drop column if exists lift_attempts, drop column if exists lift_last_error;
 --   commit;
 -- =============================================================================
 
@@ -119,13 +130,68 @@ create table if not exists public.account_suspension_appeals (
   decision_note text check (decision_note is null or char_length(decision_note) <= 1000)
 );
 
-create unique index if not exists account_suspension_appeals_one_new
-  on public.account_suspension_appeals (freeze_id) where status = 'new';
+-- l16 review: up to three waiting appeals per suspension (was a one-new
+-- unique index — dropped here, so a re-run on a database that has it is fine)
+drop index if exists public.account_suspension_appeals_one_new;
 create index if not exists account_suspension_appeals_user_idx
   on public.account_suspension_appeals (user_id, created_at desc);
+create index if not exists account_suspension_appeals_freeze_new_idx
+  on public.account_suspension_appeals (freeze_id) where status = 'new';
 
 comment on table public.account_suspension_appeals is
-  'س٢١٥ (20261206_20): appeals against an admin suspension, sent from /account-suspended. At most one new appeal per suspension. Service role only.';
+  'س٢١٥ (20261206_20): appeals against an admin suspension, sent from /account-suspended. At most three new appeals per suspension (trigger account_suspension_appeals_cap), each its own row. Service role only.';
+
+create or replace function public.account_suspension_appeals_cap()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $fn$
+begin
+  if new.status is distinct from 'new' then
+    return new;
+  end if;
+  -- one writer at a time per suspension: the count and the insert never interleave
+  perform 1 from public.account_suspension_freezes f where f.id = new.freeze_id for update;
+  if (select count(*) from public.account_suspension_appeals a
+       where a.freeze_id = new.freeze_id and a.status = 'new'
+         and a.id is distinct from new.id) >= 3 then
+    raise exception 'account_suspension_appeals: three appeals already wait on this suspension'
+      using errcode = '23505';
+  end if;
+  return new;
+end
+$fn$;
+
+comment on function public.account_suspension_appeals_cap() is
+  'l16 review (20261206_20): at most three waiting (new) appeals per suspension — 23505 beyond that. Locks the suspension row so two inserts cannot both pass.';
+
+revoke all on function public.account_suspension_appeals_cap() from public;
+do $g$
+begin
+  if exists (select 1 from pg_catalog.pg_roles where rolname = 'anon') then
+    revoke all on function public.account_suspension_appeals_cap() from anon;
+  end if;
+  if exists (select 1 from pg_catalog.pg_roles where rolname = 'authenticated') then
+    revoke all on function public.account_suspension_appeals_cap() from authenticated;
+  end if;
+end
+$g$;
+
+drop trigger if exists trg_account_suspension_appeals_cap on public.account_suspension_appeals;
+create trigger trg_account_suspension_appeals_cap
+  before insert or update of status on public.account_suspension_appeals
+  for each row execute function public.account_suspension_appeals_cap();
+
+-- ── 2b. the automatic lift's attempts (l16 review) ──────────────────────────
+alter table public.account_suspension_freezes
+  add column if not exists lift_attempts   int not null default 0,
+  add column if not exists lift_last_error text;
+
+comment on column public.account_suspension_freezes.lift_attempts is
+  'l16 review (20261206_20): failed tries of /api/v1/cron/suspension-lift on this row; it stops at 5 and writes an admin audit row (suspension_auto_lift_stuck).';
+comment on column public.account_suspension_freezes.lift_last_error is
+  'l16 review (20261206_20): the last failure of the automatic lift on this row (a short code, no personal data).';
 
 alter table public.account_suspension_appeals enable row level security;
 revoke all on public.account_suspension_appeals from public, anon, authenticated;
@@ -139,7 +205,7 @@ declare
   r text;
   c text;
 begin
-  foreach col in array array['ends_at', 'template', 'suspend_reason'] loop
+  foreach col in array array['ends_at', 'template', 'suspend_reason', 'lift_attempts', 'lift_last_error'] loop
     if not exists (select 1 from information_schema.columns
                     where table_schema = 'public' and table_name = 'account_suspension_freezes' and column_name = col) then
       missing := missing || format(' account_suspension_freezes.%s is missing;', col);
@@ -162,8 +228,13 @@ begin
     if exists (select 1 from pg_catalog.pg_policy where polrelid = 'public.account_suspension_appeals'::regclass) then
       missing := missing || ' account_suspension_appeals has a policy;';
     end if;
-    if to_regclass('public.account_suspension_appeals_one_new') is null then
-      missing := missing || ' the one-new-appeal index is missing;';
+    if to_regclass('public.account_suspension_appeals_one_new') is not null then
+      missing := missing || ' the old one-new-appeal unique index is still there;';
+    end if;
+    if not exists (select 1 from pg_catalog.pg_trigger
+                    where tgrelid = 'public.account_suspension_appeals'::regclass
+                      and tgname = 'trg_account_suspension_appeals_cap' and tgenabled <> 'D') then
+      missing := missing || ' the three-appeal cap trigger is missing;';
     end if;
   end if;
 
@@ -182,7 +253,7 @@ begin
   if missing <> '' then
     raise exception '20261206_20 l16_suspension_terms verify FAILED:%', missing;
   end if;
-  raise notice 'l16_suspension_terms verify: OK — suspensions carry an end, a template and a reason; appeals are server-only (one new appeal per suspension); % open suspension(s) without an end (from before this file)',
+  raise notice 'l16_suspension_terms verify: OK — suspensions carry an end, a template and a reason; appeals are server-only (up to three waiting appeals per suspension); % open suspension(s) without an end (from before this file)',
     (select count(*) from public.account_suspension_freezes where lifted_at is null and ends_at is null and reason = 'admin');
 end
 $verify$;

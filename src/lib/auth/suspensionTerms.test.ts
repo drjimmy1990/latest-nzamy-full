@@ -28,7 +28,10 @@ import { ACCOUNT_SUSPENSION_KEY, isSuspendedUser, suspensionUntil, suspendedAppM
 import {
   closeAppealsWith,
   insertAppealWith,
+  isStillDueWith,
+  LIFT_MAX_ATTEMPTS,
   readDueSuspensionsWith,
+  recordLiftFailureWith,
   recordSuspensionTermsWith,
 } from "../accountSuspension/suspensionServer.ts";
 import { buildAdminAuditRow } from "./adminAuditRow.ts";
@@ -143,7 +146,7 @@ function fakeDb(answers: Record<string, Array<{ data?: unknown; error?: { code?:
       const queue = answers[table] ?? [];
       const answer = queue.shift() ?? { data: null, error: null };
       const chain: Record<string, unknown> = {};
-      for (const op of ["select", "update", "insert", "eq", "is", "not", "lte", "order", "limit", "in", "maybeSingle"]) {
+      for (const op of ["select", "update", "insert", "eq", "ilike", "is", "not", "lte", "lt", "order", "limit", "in", "maybeSingle"]) {
         chain[op] = (...args: unknown[]) => {
           entry.ops.push([op, args]);
           return chain;
@@ -165,6 +168,13 @@ test("insertAppealWith: recorded only for an account with an open suspension; th
   assert.deepEqual(await insertAppealWith(ok.db, { email: "a@b.co", message: "نص الاعتراض هنا" }), { state: "recorded" });
   const insert = ok.calls.find((c) => c.table === "account_suspension_appeals")!.ops.find(([op]) => op === "insert");
   assert.deepEqual(insert?.[1][0], { freeze_id: "f-1", user_id: "u-1", message: "نص الاعتراض هنا" });
+  // l16 review: the address is matched without regard to case, as a literal
+  const lookup = ok.calls.find((c) => c.table === "profiles")!.ops;
+  assert.deepEqual(lookup.find(([op]) => op === "ilike")?.[1], ["email", "a@b.co"]);
+  assert.equal(lookup.some(([op]) => op === "eq"), false, "no case-sensitive match");
+  const wild = fakeDb({ profiles: [{ data: null }] });
+  await insertAppealWith(wild.db, { email: "a_b%c@d.co", message: "نص الاعتراض هنا" });
+  assert.deepEqual(wild.calls[0].ops.find(([op]) => op === "ilike")?.[1], ["email", String.raw`a\_b\%c@d.co`]);
 
   const noAccount = fakeDb({ profiles: [{ data: null }] });
   assert.deepEqual(await insertAppealWith(noAccount.db, { email: "x@y.co", message: "نص الاعتراض هنا" }), { state: "no_suspension" });
@@ -200,16 +210,44 @@ test("recordSuspensionTermsWith writes end, template and reason on the OPEN free
 
 test("readDueSuspensionsWith: open rows whose end has passed, oldest first", async () => {
   const { db, calls } = fakeDb({
-    account_suspension_freezes: [{ data: [{ id: "f-1", user_id: "u-1", ends_at: "2026-11-26T08:00:00Z" }, { id: 3 }] }],
+    account_suspension_freezes: [{ data: [{ id: "f-1", user_id: "u-1", ends_at: "2026-11-26T08:00:00Z", lift_attempts: 2 }, { id: 3 }] }],
   });
   const r = await readDueSuspensionsWith(db, "2026-11-26T09:00:00Z", 50);
-  assert.deepEqual(r, { state: "ok", rows: [{ freezeId: "f-1", userId: "u-1", endsAt: "2026-11-26T08:00:00Z" }] });
+  assert.deepEqual(r, { state: "ok", rows: [{ freezeId: "f-1", userId: "u-1", endsAt: "2026-11-26T08:00:00Z", liftAttempts: 2 }] });
   const ops = calls[0].ops;
+  assert.deepEqual(ops.find(([op]) => op === "lt")?.[1], ["lift_attempts", LIFT_MAX_ATTEMPTS], "a row the job gave up on is not picked up again");
   assert.deepEqual(ops.find(([op]) => op === "is")?.[1], ["lifted_at", null]);
   assert.deepEqual(ops.find(([op]) => op === "lte")?.[1], ["ends_at", "2026-11-26T09:00:00Z"]);
   assert.deepEqual(ops.find(([op]) => op === "order")?.[1], ["ends_at", { ascending: true }]);
   const missing = fakeDb({ account_suspension_freezes: [{ error: { code: "42703" } }] });
   assert.deepEqual(await readDueSuspensionsWith(missing.db, "t", 5), { state: "migration_missing" });
+});
+
+test("l16 review: the automatic lift re-checks the row and counts its failures", async () => {
+  const row = { freezeId: "f-1", userId: "u-1", endsAt: "2026-11-26T08:00:00Z", liftAttempts: 1 };
+  const now = Date.parse("2026-11-26T09:00:00Z");
+  const same = fakeDb({ account_suspension_freezes: [{ data: { id: "f-1", ends_at: "2026-11-26T08:00:00Z" } }] });
+  assert.equal(await isStillDueWith(same.db, row, now), true);
+  const extended = fakeDb({ account_suspension_freezes: [{ data: { id: "f-1", ends_at: "2026-11-29T08:00:00Z" } }] });
+  assert.equal(await isStillDueWith(extended.db, row, now), false, "new terms on the same row: not due");
+  const replaced = fakeDb({ account_suspension_freezes: [{ data: { id: "f-2", ends_at: "2026-11-26T08:30:00Z" } }] });
+  assert.equal(await isStillDueWith(replaced.db, row, now), false, "another open row: not this run's");
+  const gone = fakeDb({ account_suspension_freezes: [{ data: null }] });
+  assert.equal(await isStillDueWith(gone.db, row, now), false);
+
+  const fail = fakeDb({ account_suspension_freezes: [{ data: null }] });
+  assert.equal(await recordLiftFailureWith(fail.db, { freezeId: "f-1", attemptsBefore: 1, error: "ban:500" }), 2);
+  const ops = fail.calls[0].ops;
+  assert.deepEqual(ops.find(([op]) => op === "update")?.[1][0], { lift_attempts: 2, lift_last_error: "ban:500" });
+  assert.deepEqual(ops.find(([op]) => op === "is")?.[1], ["lifted_at", null]);
+  const broken = fakeDb({ account_suspension_freezes: [{ error: { code: "XX000" } }] });
+  assert.equal(await recordLiftFailureWith(broken.db, { freezeId: "f-1", attemptsBefore: 0, error: "x" }), null);
+
+  const route = code(read("app/api/v1/cron/suspension-lift/route.ts"));
+  const checkAt = route.indexOf("await isStillDueWith(admin, row,");
+  const liftAt = route.indexOf("await liftSuspensionWith(admin,");
+  assert.ok(checkAt > -1 && checkAt < liftAt, "the row is re-checked before the ban is lifted");
+  assert.ok(route.includes('action: "suspension_auto_lift_stuck"'), "giving up is written to the admin audit log");
 });
 
 test("closeAppealsWith closes only the waiting appeals", async () => {

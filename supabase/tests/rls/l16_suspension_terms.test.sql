@@ -64,7 +64,8 @@ begin
   raise notice 'T1 OK: terms stored; template / end / reason checks refuse bad values';
 end $$;
 
--- T2: appeals — one waiting appeal per suspension, message length checked.
+-- T2: appeals — up to three waiting appeals per suspension (l16 review), each
+-- its own row; message length checked.
 do $$
 declare
   f uuid := (select id from public.account_suspension_freezes
@@ -72,10 +73,18 @@ declare
 begin
   insert into public.account_suspension_appeals (freeze_id, user_id, message)
   values (f, '00000000-0000-0000-0000-00000000a001', 'أعترض على الإيقاف لأنه خطأ');
+  -- someone else who knows the address filed first: the real appeal still lands
+  insert into public.account_suspension_appeals (freeze_id, user_id, message)
+  values (f, '00000000-0000-0000-0000-00000000a001', 'اعتراض ثانٍ أثناء انتظار الأول');
+  insert into public.account_suspension_appeals (freeze_id, user_id, message)
+  values (f, '00000000-0000-0000-0000-00000000a001', 'اعتراض ثالث أثناء انتظار الأولين');
+  if (select count(*) from public.account_suspension_appeals where freeze_id = f and status = 'new') <> 3 then
+    raise exception 'T2 FAIL: three waiting appeals are not three rows';
+  end if;
   begin
     insert into public.account_suspension_appeals (freeze_id, user_id, message)
-    values (f, '00000000-0000-0000-0000-00000000a001', 'اعتراض ثانٍ أثناء انتظار الأول');
-    raise exception 'T2 FAIL: a second waiting appeal was accepted';
+    values (f, '00000000-0000-0000-0000-00000000a001', 'اعتراض رابع أثناء انتظار الثلاثة');
+    raise exception 'T2 FAIL: a fourth waiting appeal was accepted';
   exception when unique_violation then null;
   end;
   update public.account_suspension_appeals set status = 'rejected', decided_at = now() where freeze_id = f;
@@ -92,7 +101,7 @@ begin
     raise exception 'T2 FAIL: an unknown appeal status was accepted';
   exception when check_violation then null;
   end;
-  raise notice 'T2 OK: one waiting appeal per suspension; length and status checked';
+  raise notice 'T2 OK: up to three waiting appeals per suspension, a fourth refused (23505); length and status checked';
 end $$;
 
 -- T3: the due read the automatic lift uses, and the existing lift still works.
@@ -121,6 +130,9 @@ begin
   if n <> 0 then raise exception 'T3 FAIL: a lifted suspension is still due'; end if;
   if (select lifted_by from public.account_suspension_freezes where id = f) is not null then
     raise exception 'T3 FAIL: an automatic lift should leave lifted_by empty';
+  end if;
+  if (select lift_attempts from public.account_suspension_freezes where id = f) is distinct from 0 then
+    raise exception 'T3 FAIL: lift_attempts does not start at 0';
   end if;
   raise notice 'T3 OK: due only once ended; account_freeze_lift closes it (lifted_by null = automatic)';
 end $$;

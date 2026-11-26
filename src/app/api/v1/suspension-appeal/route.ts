@@ -9,9 +9,11 @@ import { insertAppealWith } from "@/lib/accountSuspension/suspensionServer";
  * sign in (GoTrue refuses it), so the form on /account-suspended asks for the
  * account's e-mail instead of a session.
  *
- * When the e-mail is an account with an open suspension, one appeal is
- * recorded on it (public.account_suspension_appeals, 20261206_20; a second
- * one while the first waits is ignored). The answer is the SAME whether or not
+ * When the e-mail (matched without regard to case) is an account with an
+ * open suspension, the appeal is recorded on it as its own row
+ * (public.account_suspension_appeals, 20261206_20; up to three may wait at
+ * once — l16 review — so an appeal someone else filed first never blocks the
+ * account's own; a fourth while three wait is ignored). The answer is the SAME whether or not
  * the e-mail matched — the form never tells anyone whether an address is an
  * account or whether it is suspended. The administration sees the appeal on
  * the account's page and answers it there (lift, or reject with a note).
