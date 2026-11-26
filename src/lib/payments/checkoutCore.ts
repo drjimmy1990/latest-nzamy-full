@@ -188,7 +188,10 @@ export const CHECKOUT_FAILED_AR = "تعذّر بدء عملية الدفع، ح�
 export const AUDIENCE_REFUSED_AR = "هذه الباقة غير متاحة لنوع حسابك";
 /** l14: an independent consultant's account is library-only (owner, 23 Nov). */
 export const CONSULTANT_PLAN_REFUSED_AR = "حساب المستشار القانوني المستقل للمكتبة وحدها، فلا تُشترى له «إدارة المكتب». وتبقى باقات المكتبة متاحة لك.";
-const CONSULTANT_REFUSED_PLAN_IDS: ReadonlySet<string> = new Set(["lawyer-pro", "lawyer-bundle"]);
+/** l16 (A-17): the consultant check could not be read — the office plans are never sold on a guess. */
+export const CONSULTANT_CHECK_FAILED_AR = "تعذّر التحقق من صلاحية الحساب الآن، حاول مرة أخرى بعد قليل";
+/** The plans an independent consultant may not buy (also read by the /checkout page pre-check and the pricing cards). */
+export const CONSULTANT_REFUSED_PLAN_IDS: ReadonlySet<string> = new Set(["lawyer-pro", "lawyer-bundle"]);
 export const UNKNOWN_ITEM_AR = "هذا المنتج غير متاح للدفع الإلكتروني";
 export const BILLING_NOT_OFFERED_AR = "مدة الاشتراك هذه غير متاحة لهذا المنتج";
 export { NOT_FOR_SALE_AR };
@@ -527,9 +530,13 @@ export async function startCheckoutWith(deps: CheckoutDeps, input: CheckoutInput
   // independent consultant (practice_kind 'consultant', no active firm
   // membership — readConsultantStanding, the proxy's rule) cannot buy «إدارة
   // المكتب» or the office + library bundle; the library itself stays open to
-  // him. A read that fails counts as an advocate (the existing rule).
+  // him. Batch l16 (A-17 / E-06, owner 25 Nov «Fail-Closed»): a practice_kind
+  // read that fails is NOT an advocate here — 503, nothing written, the same
+  // rule as the proxy's API branch. (Elsewhere a blip still reads as an
+  // advocate, so a real lawyer is never locked out of his workspace.)
   if (userType === "lawyer" && CONSULTANT_REFUSED_PLAN_IDS.has(known.id)) {
     const standing = await readConsultantStanding(admin, user.id);
+    if (standing.readFailed) return fail(503, CONSULTANT_CHECK_FAILED_AR);
     if (standing.scopeKind === "consultant") return fail(403, CONSULTANT_PLAN_REFUSED_AR);
   }
 

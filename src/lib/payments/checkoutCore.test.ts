@@ -14,6 +14,7 @@ import { COUPON_PENDING_AR } from "./couponServer.ts";
 import {
   AUDIENCE_REFUSED_AR,
   CONSULTANT_PLAN_REFUSED_AR,
+  CONSULTANT_CHECK_FAILED_AR,
   CHECKOUT_FAILED_AR,
   NOT_FOR_SALE_AR,
   startCheckoutWith as startCheckoutWithBook,
@@ -1571,4 +1572,19 @@ test("l14: an independent consultant cannot buy «إدارة المكتب» or t
     const r = await startCheckoutWith({ admin: ok.client, client: moyasar().client, now: () => NOW }, input({ itemId: "lawyer-pro", billing: "yearly" }));
     assert.notEqual((r.body as { error?: string } | null)?.error, CONSULTANT_PLAN_REFUSED_AR, `${kind} member=${member}`);
   }
+});
+
+test("l16 A-17: a practice_kind read that fails is 503 for the office plans (fail-closed), never an advocate; other items are not asked", async () => {
+  for (const itemId of ["lawyer-pro", "lawyer-bundle"]) {
+    const broken = db("lawyer", (q) => (q.table === "lawyer_profiles" ? { data: null, error: { code: "08006", message: "down" } } : undefined));
+    const m = moyasar();
+    const r = await startCheckoutWith({ admin: broken.client, client: m.client, now: () => NOW }, input({ itemId, billing: "yearly" }));
+    assert.deepEqual(r, { status: 503, body: { error: CONSULTANT_CHECK_FAILED_AR } }, itemId);
+    assert.equal(inserts(broken.log).length, 0, "no order on a failed check");
+    assert.equal(m.intents.length, 0);
+  }
+  // a missing column (42703) is not a failed read: the advocate rule stays
+  const old = db("lawyer", (q) => (q.table === "lawyer_profiles" ? { data: null, error: { code: "42703", message: "no column" } } : undefined));
+  const r = await startCheckoutWith({ admin: old.client, client: moyasar().client, now: () => NOW }, input({ itemId: "lawyer-pro", billing: "yearly" }));
+  assert.notEqual(r.status, 503);
 });
