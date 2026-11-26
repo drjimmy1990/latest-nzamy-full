@@ -14,8 +14,12 @@
 
 import { createHmac, randomInt } from "node:crypto";
 
-/** "phone": the WhatsApp sign-up code of every new account (batch l15, src/lib/phoneOtp/). */
-export type OtpPurpose = "identity" | "email" | "phone";
+/**
+ * "phone": the WhatsApp sign-up code of every new account (batch l15, src/lib/phoneOtp/).
+ * "password_reset": the WhatsApp password-reset code (batch l17, src/lib/passwordReset/) —
+ * a different purpose, so its hash can never equal a sign-up code's.
+ */
+export type OtpPurpose = "identity" | "email" | "phone" | "password_reset";
 export type OtpChannel = "whatsapp" | "sms" | "email";
 
 export const OTP_LENGTH = 6;

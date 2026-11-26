@@ -8962,3 +8962,32 @@ select 'l16 review: an account-type conversion puts the licence verification bac
        coalesce(position('set verification_status = ''pending'''
                          in pg_catalog.pg_get_functiondef(to_regprocedure('public.admin_change_account_type(uuid,text,text,uuid)'))) > 0, false) as ok;
 -- <<< verify:l16_review
+-- >>> verify:l17_pwreset — supabase/tests/rls/l17_pwreset.test.sql
+-- Batch l17: «نسيت كلمة المرور» by a WhatsApp code to the confirmed mobile. 20261207_10 runs BEFORE
+-- the deploy. Before it runs the checks below answer ok = false («run 20261207_10»).
+select 'l17 pwreset: the reset codes table is server-only (RLS on, no policy, no anon/authenticated privilege) (run 20261207_10)' as check,
+       coalesce((select c.relrowsecurity
+                        and not exists (select 1 from pg_catalog.pg_policy p where p.polrelid = c.oid)
+                        and not has_table_privilege('anon', c.oid, 'SELECT')
+                        and not has_table_privilege('anon', c.oid, 'INSERT')
+                        and not has_table_privilege('authenticated', c.oid, 'SELECT')
+                        and not has_table_privilege('authenticated', c.oid, 'INSERT')
+                        and not has_table_privilege('authenticated', c.oid, 'UPDATE')
+                        and not has_table_privilege('authenticated', c.oid, 'DELETE')
+                   from pg_catalog.pg_class c where c.oid = to_regclass('public.password_reset_challenges')), false) as ok;
+select 'l17 pwreset: pw_reset_target / pw_reset_issue / pw_reset_verify are SECURITY DEFINER with an empty search_path, service_role only (run 20261207_10)' as check,
+       coalesce((select count(*) = 3
+                        and bool_and(p.prosecdef
+                                     and p.proconfig @> array['search_path=""']
+                                     and not has_function_privilege('anon', p.oid, 'EXECUTE')
+                                     and not has_function_privilege('authenticated', p.oid, 'EXECUTE')
+                                     and has_function_privilege('service_role', p.oid, 'EXECUTE'))
+                   from pg_catalog.pg_proc p
+                  where p.oid in (to_regprocedure('public.pw_reset_target(text)'),
+                                  to_regprocedure('public.pw_reset_issue(uuid,text,text,text)'),
+                                  to_regprocedure('public.pw_reset_verify(uuid,text,text,text)'))), false) as ok;
+select 'l17 pwreset: a reset code never touches the sign-up codes, and a hit needs the number still confirmed (run 20261207_10)' as check,
+       coalesce(position('phone_otp_challenges' in pg_catalog.pg_get_functiondef(to_regprocedure('public.pw_reset_verify(uuid,text,text,text)'))) = 0
+                and position('phone_verified_at is not null' in pg_catalog.pg_get_functiondef(to_regprocedure('public.pw_reset_verify(uuid,text,text,text)'))) > 0
+                and position('password_reset_challenges' in pg_catalog.pg_get_functiondef(to_regprocedure('public.phone_otp_verify(uuid,text,text,text)'))) = 0, false) as ok;
+-- <<< verify:l17_pwreset
