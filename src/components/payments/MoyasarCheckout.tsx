@@ -11,19 +11,26 @@ import { CHECKOUT_CAPTCHA_CODE, CHECKOUT_CAPTCHA_REFUSED_AR, CHECKOUT_TURNSTILE_
 import { canSubmitWithCaptcha } from "@/lib/auth/captcha";
 import { trackEvent } from "@/lib/analytics/track";
 import { attachLatinDigitsCapture, toLatinDigits } from "@/lib/forms/latinDigits";
+import { checkoutRefusalNoticeAr, failureReason } from "@/lib/payments/gatewayErrorAr";
+import { GRANT_CODE_AT_CHECKOUT_CODE } from "@/lib/payments/couponRules";
+import { redeemDoneAr } from "@/lib/payments/freeActivationView";
 import { useTheme } from "@/components/ThemeProvider";
 import { useTurnstile } from "@/components/auth/useTurnstile";
 import { TurnstileWidget } from "@/components/auth/TurnstileWidget";
 import {
   checkoutRequestBody,
   COUPON_REPLACES_FOUNDER_AR,
+  FREE_ACTIVATION_BUTTON_AR,
+  FREE_ACTIVATION_NOTE_AR,
+  freeActivationReceiptHref,
+  parseFreeActivation,
+  type FreeActivationDone,
   FOUNDER_BEATS_COUPON_AR,
   intentNeedsRefresh,
   moyasarInitConfig,
   parseCheckoutResponse,
   parseCouponPreview,
   type CouponPreview,
-  quoteVatNotice,
   refreshDecision,
 } from "@/lib/payments/checkoutView";
 
@@ -52,8 +59,12 @@ import {
  *      POST /api/v1/coupons/validate for the server's figures and shows the
  *      discount line; «متابعة الدفع» then sends the code with the checkout,
  *      which applies it inside the order (the same rule — the preview is the
- *      charge). The field locks once the intent exists; a refreshed intent
- *      sends the same code.
+ *      charge). A refreshed intent sends the same code. Batch l18 (LIVE-11):
+ *      the field stays on screen beside the open form; changing or removing
+ *      the code there drops the held checkout (dropHeldCheckout) and the next
+ *      «متابعة الدفع» starts a new order with the new code.
+ *   4b. Batch l18 (LIVE-14): a refusal's reason is shown in Arabic above
+ *      «متابعة الدفع» (gatewayErrorAr.ts), never hidden behind a vague notice.
  *   6. The founder membership (owner ١٦): when the page passes
  *      founderTermsVersion, an UNCHECKED checkbox «قرأتُ شروط باقة المحامي
  *      المؤسس وأوافق عليها» with a link to /founder-terms (new tab) sits
@@ -83,12 +94,16 @@ type Phase =
   | { kind: "idle" }
   | { kind: "starting" }
   | { kind: "ready"; resp: CheckoutResponse }
-  | { kind: "error"; message: string; audience: boolean };
+  // l18 (ق٢٦-١١): a code that covers the whole price was activated at 0 SAR
+  | { kind: "activated"; done: FreeActivationDone }
+  | { kind: "error"; message: string; audience: boolean; verifyHref?: string | null };
 
 // `audience`: a final refusal — 403 (account type) or 410 (no longer sold).
+// `verifyHref` (l18, ق٢٦-٩): the licence is not verified yet — where to finish it.
 type StartResult =
   | { ok: true; resp: CheckoutResponse }
-  | { ok: false; message: string; audience: boolean };
+  | { ok: true; free: FreeActivationDone }
+  | { ok: false; message: string; audience: boolean; verifyHref?: string | null };
 
 type MoyasarApi = { init: (config: object) => void; setAmount?: (amount: number) => void };
 
@@ -97,6 +112,8 @@ const FORM_FAILED_AR = "تعذّر تحميل نموذج الدفع، حدّث �
 const REFRESH_FAILED_AR = "انتهت مهلة جلسة الدفع ولم نتمكّن من تجديدها، حدّث الصفحة وحاول مرة أخرى";
 const TOTAL_CHANGED_AR = "تغيّر المبلغ المستحق منذ عرضه. راجع الإجمالي الجديد أعلاه ثم اضغط زر الدفع مرة أخرى.";
 const NEW_CHECKOUT_AR = "لم يكتمل الدفع بجلسة الدفع هذه. اضغط «متابعة الدفع» لبدء محاولة جديدة.";
+/** l18 (LIVE-11): the code changed while the payment form was open — that session is dropped. */
+const COUPON_CHANGED_AR = "تغيّر كود الخصم، فأُغلق نموذج الدفع السابق. راجع المبلغ ثم اضغط «متابعة الدفع».";
 
 async function startCheckout(
   itemId: string,
@@ -124,6 +141,9 @@ async function startCheckout(
     body = null;
   }
   if (res.ok) {
+    // l18 (ق٢٦-١١): a code that covers the whole price answers the activation, not an intent
+    const free = parseFreeActivation(body);
+    if (free) return { ok: true, free };
     const resp = parseCheckoutResponse(body);
     return resp ? { ok: true, resp } : { ok: false, message: START_FAILED_AR, audience: false };
   }
@@ -134,10 +154,12 @@ async function startCheckout(
     return { ok: false, message: serverCopy ?? CHECKOUT_CAPTCHA_REFUSED_AR, audience: false };
   }
   if (res.status === 410) return { ok: false, message: serverCopy ?? NOT_FOR_SALE_AR, audience: true };
+  const verifyHref = (body as { verifyHref?: unknown } | null)?.verifyHref;
   return {
     ok: false,
     message: serverCopy ?? START_FAILED_AR,
     audience: res.status === 403,
+    ...(typeof verifyHref === "string" && verifyHref.startsWith("/") ? { verifyHref } : {}),
   };
 }
 
@@ -148,7 +170,7 @@ function loginHref(): string {
 
 const COUPON_CHECK_FAILED_AR = "تعذّر التحقق من كود الخصم، حاول مرة أخرى بعد قليل";
 
-type CouponCheck = { ok: true; preview: CouponPreview } | { ok: false; message: string } | "signed-out";
+type CouponCheck = { ok: true; preview: CouponPreview } | { ok: false; message: string; grantCode?: true } | "signed-out";
 
 async function checkCoupon(code: string, itemId: string, billing: Billing): Promise<CouponCheck> {
   let res: Response;
@@ -174,7 +196,47 @@ async function checkCoupon(code: string, itemId: string, billing: Billing): Prom
     return preview ? { ok: true, preview } : { ok: false, message: COUPON_CHECK_FAILED_AR };
   }
   const error = (body as { error?: unknown } | null)?.error;
-  return { ok: false, message: typeof error === "string" && error ? error : COUPON_CHECK_FAILED_AR };
+  const message = typeof error === "string" && error ? error : COUPON_CHECK_FAILED_AR;
+  // l18 (LIVE-13): a free-plan / points code — activated here through the code box
+  if (res.status === 409 && (body as { code?: unknown } | null)?.code === GRANT_CODE_AT_CHECKOUT_CODE) return { ok: false, message, grantCode: true };
+  return { ok: false, message };
+}
+
+const REDEEM_FAILED_AR = "تعذّر تفعيل الكود الآن، حاول مرة أخرى بعد قليل";
+
+type RedeemResult = { ok: true; message: string; receiptHref: string | null } | { ok: false; message: string } | "signed-out";
+
+/** l18 (LIVE-13): POST /api/v1/coupons/redeem — the same box as /dashboard/billing (RedeemCodeBox). */
+async function redeemCode(code: string): Promise<RedeemResult> {
+  let res: Response;
+  try {
+    res = await fetch("/api/v1/coupons/redeem", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code }),
+      cache: "no-store",
+    });
+  } catch {
+    return { ok: false, message: REDEEM_FAILED_AR };
+  }
+  if (res.status === 401) return "signed-out";
+  let body: Record<string, unknown> | null = null;
+  try {
+    body = (await res.json()) as Record<string, unknown>;
+  } catch {
+    body = null;
+  }
+  if (!res.ok || !body) {
+    const error = body?.error;
+    return { ok: false, message: typeof error === "string" && error ? error : REDEEM_FAILED_AR };
+  }
+  if (body.kind === "discount") return { ok: false, message: typeof body.note === "string" ? body.note : REDEEM_FAILED_AR };
+  const id = typeof body.redemptionId === "string" ? body.redemptionId : null;
+  return {
+    ok: true,
+    message: redeemDoneAr(body as { kind: string; points?: number; labelAr?: string; billing?: string; receiptNumber?: string }),
+    receiptHref: id ? freeActivationReceiptHref(id) : null,
+  };
 }
 
 const NOTICE_CLASS =
@@ -212,6 +274,9 @@ export default function MoyasarCheckout({
   const [coupon, setCoupon] = useState<CouponPreview | null>(null);
   const [couponMessage, setCouponMessage] = useState<string | null>(null);
   const [couponChecking, setCouponChecking] = useState(false);
+  /** l18 (LIVE-13): the typed code is a free-plan / points code — offered «تفعيل الكود». */
+  const [grantCode, setGrantCode] = useState<string | null>(null);
+  const [redeemed, setRedeemed] = useState<{ message: string; receiptHref: string | null } | null>(null);
   /** The applied code, read by the intent refresh (it must send the same one). */
   const couponCode = useRef<string | null>(null);
   /** The checkout the form pays with, and when it was received. */
@@ -249,7 +314,13 @@ export default function MoyasarCheckout({
         return;
       }
       if (!result.ok) {
-        setPhase({ kind: "error", message: result.message, audience: result.audience });
+        setPhase({ kind: "error", message: result.message, audience: result.audience, verifyHref: result.verifyHref ?? null });
+        return;
+      }
+      if ("free" in result) {
+        // l18 (ق٢٦-١١): activated at 0 SAR — no form, no card
+        setPhase({ kind: "activated", done: result.free });
+        router.refresh();
         return;
       }
       current.current = { resp: result.resp, at: Date.now() };
@@ -262,9 +333,24 @@ export default function MoyasarCheckout({
     }
   }
 
+  /**
+   * l18 (LIVE-11): the code box stays on screen beside the open payment form.
+   * Changing or removing the code there drops the held checkout, as a
+   * refused payment does (needNewCheckout): the next «متابعة الدفع» makes a
+   * new order with the new code, and the server closes the old one
+   * (checkoutCore step 4, supersedeEarlierOrders).
+   */
+  function dropHeldCheckout() {
+    if (!current.current) return;
+    current.current = null;
+    initialised.current = false;
+    setPhase({ kind: "idle" });
+    setNotice(COUPON_CHANGED_AR);
+  }
+
   async function onApplyCoupon() {
     const code = couponInput.trim().toUpperCase();
-    if (!code || couponChecking || phase.kind !== "idle") return;
+    if (!code || couponChecking || (phase.kind !== "idle" && phase.kind !== "ready")) return;
     setCouponChecking(true);
     setCouponMessage(null);
     try {
@@ -277,23 +363,51 @@ export default function MoyasarCheckout({
         setCoupon(null);
         couponCode.current = null;
         setCouponMessage(checked.message);
+        setGrantCode(checked.grantCode ? code : null);
         return;
       }
+      setGrantCode(null);
       setCoupon(checked.preview);
       // l11 O8: when the founder discount wins, the code is not sent — the
       // charge is the founder discount's, exactly the figures shown
       couponCode.current = checked.preview.founderWins ? null : checked.preview.code;
+      dropHeldCheckout();
     } finally {
       setCouponChecking(false);
     }
   }
 
   function onRemoveCoupon() {
-    if (phase.kind !== "idle" && phase.kind !== "error") return;
+    if (phase.kind === "starting") return;
+    setGrantCode(null);
     setCoupon(null);
     couponCode.current = null;
     setCouponInput("");
     setCouponMessage(null);
+    dropHeldCheckout();
+  }
+
+  /** l18 (LIVE-13): activate a free-plan / points code from the checkout's own box. */
+  async function onRedeemGrantCode() {
+    if (!grantCode || couponChecking) return;
+    setCouponChecking(true);
+    try {
+      const result = await redeemCode(grantCode);
+      if (result === "signed-out") {
+        router.push(loginHref());
+        return;
+      }
+      if (!result.ok) {
+        setCouponMessage(result.message);
+        return;
+      }
+      setGrantCode(null);
+      setCouponMessage(null);
+      setRedeemed({ message: result.message, receiptHref: result.receiptHref });
+      router.refresh();
+    } finally {
+      setCouponChecking(false);
+    }
   }
 
   const ready = phase.kind === "ready" ? phase.resp : null;
@@ -322,6 +436,11 @@ export default function MoyasarCheckout({
         setNotice(fresh.audience ? fresh.message : REFRESH_FAILED_AR);
         return null;
       }
+      // l18: a refresh never turns into a free activation (the held checkout had money to pay)
+      if (!("resp" in fresh)) {
+        setNotice(REFRESH_FAILED_AR);
+        return null;
+      }
       current.current = { resp: fresh.resp, at: Date.now() };
       if (refreshDecision(held.resp, fresh.resp) === "confirm") {
         // Never charge a total the payer has not seen: show it, stop here.
@@ -335,11 +454,12 @@ export default function MoyasarCheckout({
 
     // The form reported a failure: drop the intent; «متابعة الدفع» makes a new checkout
     // (the server closes this buyer's earlier unpaid orders for the item).
-    function needNewCheckout() {
+    // l18 (LIVE-14): the refusal's reason, in Arabic, when the report carries one.
+    function needNewCheckout(reported: unknown) {
       current.current = null;
       initialised.current = false;
       setPhase({ kind: "idle" });
-      setNotice(NEW_CHECKOUT_AR);
+      setNotice(failureReason(reported) ? checkoutRefusalNoticeAr(reported) : NEW_CHECKOUT_AR);
     }
 
     (async () => {
@@ -392,16 +512,18 @@ export default function MoyasarCheckout({
             <span className="font-bold text-[#0B3D2E] dark:text-[#C8A762]" dir="ltr">
               {coupon.code}
             </span>
-            {phase.kind === "idle" || phase.kind === "error" ? (
+            {phase.kind !== "starting" ? (
               <button
                 type="button"
                 onClick={onRemoveCoupon}
                 className="text-xs font-semibold text-zinc-600 underline underline-offset-2 dark:text-zinc-400"
               >
-                إزالة الكود
+                {phase.kind === "ready" ? "تغيير الكود أو إزالته" : "إزالة الكود"}
               </button>
             ) : null}
           </div>
+          {/* l18 (LIVE-11): beside the open form the figures are the summary's below — the code alone here */}
+          {phase.kind === "ready" ? null : (
           <dl className="space-y-1 text-zinc-700 dark:text-zinc-300">
             <div className="flex justify-between gap-4">
               <dt>السعر قبل الخصم</dt>
@@ -416,12 +538,13 @@ export default function MoyasarCheckout({
               <dd>{formatHalalas(coupon.net)}</dd>
             </div>
           </dl>
+          )}
           {coupon.founderWins || coupon.replacesFounder ? (
             <p className="text-xs font-semibold text-emerald-800 dark:text-emerald-300">
               {coupon.founderWins ? FOUNDER_BEATS_COUPON_AR : COUPON_REPLACES_FOUNDER_AR}
             </p>
           ) : null}
-          {coupon.vat === 0 ? null : (
+          {coupon.vat === 0 || phase.kind === "ready" ? null : (
             <p className="text-xs text-zinc-600 dark:text-zinc-400">تُحسب ضريبة القيمة المضافة على المبلغ بعد الخصم.</p>
           )}
         </div>
@@ -431,35 +554,98 @@ export default function MoyasarCheckout({
             id="nz-coupon"
             dir="ltr"
             value={couponInput}
-            onChange={(e) => setCouponInput(toLatinDigits(e.target.value))}
+            onChange={(e) => {
+              setCouponInput(toLatinDigits(e.target.value));
+              setGrantCode(null);
+            }}
             maxLength={32}
             autoComplete="off"
-            disabled={phase.kind !== "idle" || couponChecking}
+            disabled={(phase.kind !== "idle" && phase.kind !== "ready") || couponChecking}
             className="min-w-0 flex-1 rounded-xl border border-zinc-300 bg-white px-3 py-2 uppercase text-zinc-900 dark:border-zinc-600 dark:bg-zinc-950 dark:text-zinc-100"
           />
           <button
             type="button"
             onClick={onApplyCoupon}
-            disabled={phase.kind !== "idle" || couponChecking || couponInput.trim() === ""}
+            disabled={(phase.kind !== "idle" && phase.kind !== "ready") || couponChecking || couponInput.trim() === ""}
             className="shrink-0 rounded-xl border border-[#0B3D2E] px-4 py-2 font-bold text-[#0B3D2E] disabled:opacity-50 dark:border-[#C8A762] dark:text-[#C8A762]"
           >
             {couponChecking ? "جارٍ التحقق…" : "تطبيق"}
           </button>
         </div>
       )}
+      {coupon?.freeActivation && phase.kind !== "ready" ? (
+        <p className="mt-2 text-xs font-semibold text-emerald-800 dark:text-emerald-300">{FREE_ACTIVATION_NOTE_AR}</p>
+      ) : null}
       {couponMessage ? (
-        <p className="mt-2 text-xs font-medium text-red-700 dark:text-red-400" role="alert">
+        <p
+          className={`mt-2 text-xs font-medium ${grantCode ? "text-zinc-700 dark:text-zinc-300" : "text-red-700 dark:text-red-400"}`}
+          role="alert"
+        >
           {couponMessage}
         </p>
       ) : null}
+      {grantCode ? (
+        <button
+          type="button"
+          onClick={onRedeemGrantCode}
+          disabled={couponChecking}
+          className="mt-2 inline-flex items-center justify-center rounded-xl bg-[#0B3D2E] px-4 py-2 text-xs font-bold text-white disabled:opacity-60"
+        >
+          {couponChecking ? "جارٍ التفعيل…" : "تفعيل الكود"}
+        </button>
+      ) : null}
+      {redeemed ? (
+        <div className="mt-2 rounded-xl bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300" role="status">
+          <p>{redeemed.message}</p>
+          {redeemed.receiptHref ? (
+            <Link href={redeemed.receiptHref} className="mt-1 inline-block underline underline-offset-2">
+              عرض إيصال التفعيل المجاني
+            </Link>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   ) : null;
+
+  if (phase.kind === "activated") {
+    const done = phase.done;
+    return (
+      <div className="rounded-2xl border border-emerald-300 bg-emerald-50 p-5 text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200" role="status">
+        <p className="font-bold leading-7">
+          تم تفعيل «{done.labelAr}» مجانًا بالكود <span dir="ltr">{done.couponCode}</span>، دون دفع.
+        </p>
+        <p className="mt-1 text-sm">رقم إيصال التفعيل المجاني: {done.receiptNumber}</p>
+        <div className="mt-4 flex flex-wrap gap-3">
+          <Link
+            href={freeActivationReceiptHref(done.redemptionId)}
+            className="inline-flex items-center justify-center rounded-xl bg-[#0B3D2E] px-5 py-2.5 text-sm font-bold text-white hover:bg-[#0E4D3A]"
+          >
+            عرض إيصال التفعيل المجاني
+          </Link>
+          <Link
+            href="/dashboard/billing"
+            className="inline-flex items-center justify-center rounded-xl border border-[#0B3D2E] px-5 py-2.5 text-sm font-bold text-[#0B3D2E] dark:border-[#C8A762] dark:text-[#C8A762]"
+          >
+            صفحة الاشتراك والفوترة
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   if (phase.kind === "error") {
     return (
       <div className="rounded-2xl border border-red-300 bg-red-50 p-5 text-red-900 dark:border-red-800 dark:bg-red-950/40 dark:text-red-200" role="alert">
         <p className="font-bold leading-7">{phase.message}</p>
         <div className="mt-4 flex flex-wrap gap-3">
+          {phase.verifyHref ? (
+            <Link
+              href={phase.verifyHref}
+              className="inline-flex items-center justify-center rounded-xl bg-[#0B3D2E] px-5 py-2.5 text-sm font-bold text-white hover:bg-[#0E4D3A]"
+            >
+              إكمال توثيق الرخصة
+            </Link>
+          ) : null}
           {phase.audience ? (
             <Link
               href="/pricing"
@@ -520,7 +706,7 @@ export default function MoyasarCheckout({
           disabled={phase.kind === "starting" || (needsTerms && !termsAccepted) || !captchaReady}
           className="inline-flex w-full items-center justify-center rounded-xl bg-[#0B3D2E] px-6 py-3.5 text-sm font-bold text-white transition-colors hover:bg-[#0E4D3A] disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {phase.kind === "starting" ? "جارٍ تجهيز الدفع…" : "متابعة الدفع"}
+          {phase.kind === "starting" ? "جارٍ تجهيز الدفع…" : coupon?.freeActivation ? FREE_ACTIVATION_BUTTON_AR : "متابعة الدفع"}
         </button>
       </div>
     );
@@ -528,6 +714,8 @@ export default function MoyasarCheckout({
 
   return (
     <div className="space-y-5">
+      {/* l18 (LIVE-11): the code box stays visible while the payment form is open */}
+      {couponBox}
       <dl className="divide-y divide-zinc-200 rounded-2xl border border-zinc-200 bg-white text-sm dark:divide-zinc-700 dark:border-zinc-700 dark:bg-zinc-900">
         {ready.quote.discount && ready.quote.listNet !== undefined ? (
           <>
@@ -597,7 +785,7 @@ export default function MoyasarCheckout({
           <dd className="text-base font-extrabold text-[#0B3D2E] dark:text-[#C8A762]">{formatHalalas(ready.quote.total)}</dd>
         </div>
       </dl>
-      <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">{quoteVatNotice(ready.quote.vatMode, ready.quote.vat)}</p>
+      {/* l18 (LIVE-15): the VAT sentence is said once, beside the price on the page above — not again here. */}
 
       {notice ? (
         <p className={NOTICE_CLASS} role="alert">

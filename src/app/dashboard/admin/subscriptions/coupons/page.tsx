@@ -182,7 +182,8 @@ const EMPTY_COUPON: AdminCoupon = {
   startsAt: "",
   expiresAt: "",
   status: "active",
-  eligibleRoles: ["client"],
+  // l18 (ق٢٦-١١): a new code is for everyone ([] = every account type) unless narrowed
+  eligibleRoles: [],
   maxDiscountPct: 25,
   excludedKinds: ["topup"],
   firstPaidOrderOnly: false,
@@ -516,17 +517,18 @@ export default function AdminCouponsPage() {
                     </select>
                   </Field>
                   <Field label="القيمة">
-                    <NumberBox value={draft.value} min={1} max={draft.discountType === "percentage" ? draft.maxDiscountPct ?? 25 : undefined} onValue={(n) => setDraft({ ...draft, value: n })} isDark={isDark} />
+                    <NumberBox value={draft.value} min={1} max={draft.discountType === "percentage" ? 100 : undefined} onValue={(n) => setDraft({ ...draft, value: n })} isDark={isDark} />
                   </Field>
                   {/* P7 review: checkout honours every active discount coupon;
                       the server refuses one without a minimum and any coupon
                       on point top-ups. l14: the cap goes up to 100 % (default
                       25), above 25 only with a purpose. */}
-                  <Field label="الحد الأدنى للطلب قبل الضريبة (ر.س) — مطلوب">
-                    <NumberBox value={draft.minOrderAmount} min={1} required onValue={(n) => setDraft({ ...draft, minOrderAmount: n })} isDark={isDark} />
+                  {/* l18 (ق٢٦-١١): the minimum is optional; when set, the buyer is told it */}
+                  <Field label="الحد الأدنى للطلب قبل الضريبة (ر.س) — اختياري، اتركه فارغًا إن لم يكن له حد">
+                    <NumberBox value={draft.minOrderAmount} min={0} onValue={(n) => setDraft({ ...draft, minOrderAmount: n })} isDark={isDark} />
                   </Field>
                   {draft.maxDiscountPct !== undefined && (
-                    <Field label="سقف الخصم ٪ من صافي الطلب (الافتراضي ٢٥، وحتى ١٠٠)">
+                    <Field label="سقف الخصم ٪ من صافي الطلب — للموظفين (الافتراضي ٢٥). كود المشرف الأعلى لا يُقيَّد به: المبلغ الثابت يُخصم كاملًا، والنسبة بقيمتها">
                       <NumberBox value={draft.maxDiscountPct} min={1} max={100} onValue={(n) => setDraft({ ...draft, maxDiscountPct: n })} isDark={isDark} />
                     </Field>
                   )}
@@ -591,13 +593,13 @@ export default function AdminCouponsPage() {
             {draft.couponType === "discount" && (draft.maxDiscountPct ?? 25) > 25 && (
               <p className={`flex items-start gap-1.5 text-xs font-bold leading-6 ${isDark ? "text-amber-400" : "text-amber-700"}`}>
                 <Warning size={14} weight="fill" className="mt-1 shrink-0" />
-                سقف الخصم فوق ٢٥٪ (القاعدة العامة ٢٥٪): كود إدارة يحفظه المشرف الأعلى وحده، مع الغرض وتاريخ انتهاء وحدّ لعدد مرات الاستخدام. وكود ١٠٠٪ لمنتجات المنصة ونقاطها فقط ولا يسري على خدمات المحامين والمكاتب. والكود الذي يغطي المبلغ كاملًا عند الدفع لا يُفعَّل للمشتري إلا مع بطاقة دفع محفوظة في حسابه، وتفعيله الكامل قيد التفعيل حاليًا.
+                سقف الخصم فوق ٢٥٪ (القاعدة العامة ٢٥٪): كود إدارة يحفظه المشرف الأعلى وحده، مع الغرض وتاريخ انتهاء وحدّ لعدد مرات الاستخدام. وكود ١٠٠٪ لمنتجات المنصة ونقاطها فقط ولا يسري على خدمات المحامين والمكاتب. والكود الذي يغطي المبلغ كاملًا عند الدفع يُفعِّل المنتج فورًا دون بطاقة ودون دفع، ويصدر للمشتري إيصال تفعيل مجاني بقيمة صفر.
               </p>
             )}
             {(draft.couponType === "points" || draft.couponType === "free_plan") && (
               <p className={`flex items-start gap-1.5 text-xs font-bold leading-6 ${isDark ? "text-amber-400" : "text-amber-700"}`}>
                 <Warning size={14} weight="fill" className="mt-1 shrink-0" />
-                كود الباقة المجانية أو النقاط كود إدارة: يحفظه المشرف الأعلى وحده، مع الغرض وتاريخ انتهاء وحدّ لعدد مرات الاستخدام. ويُفعّله صاحب الحساب من «تفعيل كود» في صفحة الاشتراك، ويصدر له إيصال تفعيل مجاني بثلاثة أسطر: السعر الكامل، ثم خصم ١٠٠٪، ثم الصافي صفر.
+                كود الباقة المجانية أو النقاط كود إدارة: يحفظه المشرف الأعلى وحده، مع الغرض وتاريخ انتهاء وحدّ لعدد مرات الاستخدام. ويُفعّله صاحب الحساب من خانة الكود في صفحة الدفع أو من «تفعيل كود» في صفحة الاشتراك، ويصدر له إيصال تفعيل مجاني بثلاثة أسطر: السعر الكامل، ثم خصم ١٠٠٪، ثم الصافي صفر.
               </p>
             )}
             <div>

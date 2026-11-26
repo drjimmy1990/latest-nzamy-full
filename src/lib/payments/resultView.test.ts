@@ -19,6 +19,7 @@ import {
   retryHrefFor,
   type ResultOrder,
 } from "./resultView.ts";
+import { gatewayErrorAr } from "./gatewayErrorAr.ts";
 
 const order: ResultOrder = {
   id: "11111111-1111-4111-8111-111111111111",
@@ -96,11 +97,14 @@ test("claimed_elsewhere and every pending reason: «جارٍ تأكيد الدف
   }
 });
 
-test("failed: «لم تتم عملية الدفع», Moyasar's message beside the Arabic, and a retry link", () => {
+test("failed: «لم تتم عملية الدفع», Moyasar's reason in Arabic (l18 LIVE-15), and a retry link", () => {
   const v = paymentResultView({ outcome: "failed", reason: "Insufficient Funds" }, order);
   assert.equal(v.tone, "failed");
   assert.equal(v.title, "لم تتم عملية الدفع");
-  assert.equal(v.detail, "Insufficient Funds");
+  assert.equal(v.detail, gatewayErrorAr("Insufficient Funds"));
+  assert.ok(v.detail && /[؀-ۿ]/.test(v.detail) && !/insufficient/i.test(v.detail), "Arabic only, never the raw English");
+  const country = paymentResultView({ outcome: "failed", reason: "BLOCKED: CARD COUNTRY NOT ALLOWED" }, order);
+  assert.ok(country.detail?.includes("بلد إصدارها"), country.detail);
   assert.ok(!v.body.includes("Insufficient Funds"), "the gateway message is never the copy itself");
   assert.equal(v.retryHref, RETRY);
   assert.equal(v.receiptHref, undefined);

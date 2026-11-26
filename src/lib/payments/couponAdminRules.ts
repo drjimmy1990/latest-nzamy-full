@@ -35,6 +35,16 @@
  * page's audience «الشركات» ('business') is stored as the user_type companies
  * have, 'corporate' (couponRoleToUserType).
  *
+ * Batch l18 (owner package of 26 Nov, ق٢٦-١١ / LIVE-13):
+ *   - the minimum order is OPTIONAL: empty or 0 = no minimum; when one is
+ *     set the buyer is told it (couponRules.couponMinimumAr). A negative or
+ *     unreadable minimum is still refused (MIN_ORDER_INVALID_AR);
+ *   - the 25 % cap binds the staff only. A code saved by the SUPER ADMIN takes
+ *     its cap from the code itself (superAdminCap): a fixed amount is never
+ *     clipped (cap 100), a percentage is capped at its own value (at least
+ *     25). Such a code above 25 % is still a management code — its purpose,
+ *     end date and use limit stay required (couponGrantRules.highCouponIssue).
+ *
  * Pure: relative `.ts` imports only (the price book), so `node --test` loads it.
  */
 
@@ -46,7 +56,12 @@ export const OWNER_MAX_DISCOUNT_PCT = 25;
 export const COUPON_HARD_MAX_PCT = 100;
 export const COUPON_KINDS: readonly string[] = Object.freeze(["plan", "library", "topup", "service"]);
 
-export const MIN_ORDER_REQUIRED_AR = "الحد الأدنى للطلب مطلوب لكوبون الخصم (صافي الطلب قبل الضريبة، أكبر من صفر)";
+/** l18: the minimum is optional — only a negative or unreadable one is refused. */
+export const MIN_ORDER_INVALID_AR = "الحد الأدنى للطلب رقم صفر أو أكبر (صافي الطلب قبل الضريبة) — اتركه فارغًا إن لم يكن للكود حد أدنى";
+/** @deprecated l18: the minimum is optional; kept as the same refusal for old callers. */
+export const MIN_ORDER_REQUIRED_AR = MIN_ORDER_INVALID_AR;
+/** The platform_staff role whose codes are not held to the 25 % cap (l18, ق٢٦-١١). */
+export const SUPER_ADMIN_ROLE = "super_admin";
 export const MAX_PCT_AR = "سقف الخصم بين ١٪ و١٠٠٪ من صافي الطلب";
 export const VALUE_ABOVE_CAP_AR = "نسبة الخصم لا تتجاوز سقف الخصم المحدد لهذا الكود";
 export const PURPOSE_REQUIRED_AR = "اكتب الغرض من الكود (من ٣ إلى ٥٠٠ حرف)";
@@ -161,6 +176,26 @@ export type AdminDiscountFields =
 
 const num = (v: unknown): number => (v === null || v === undefined || v === "" ? Number.NaN : Number(v));
 
+/** l18: the minimum order (SAR before VAT): absent / null / "" / 0 → 0 (none); a negative or unreadable one → null. */
+export function couponMinOrder(raw: unknown): number | null {
+  if (raw === undefined || raw === null || raw === "") return 0;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
+/**
+ * l18 (ق٢٦-١١): the cap of a code the super admin saves — a fixed amount is
+ * never clipped by a percentage (100), a percentage is capped at its own value
+ * (never below the default 25). Null for a value that is not a positive number.
+ */
+export function superAdminCap(dbType: string, value: unknown): number | null {
+  const v = num(value);
+  if (!Number.isFinite(v) || v <= 0) return null;
+  if (dbType === "fixed") return COUPON_HARD_MAX_PCT;
+  if (dbType === "percentage") return Math.min(COUPON_HARD_MAX_PCT, Math.max(OWNER_MAX_DISCOUNT_PCT, v));
+  return null;
+}
+
 /** maxDiscountPct: absent / null / "" = 25; else a number in (0, 100] (l14); null = refused. */
 function parseMaxPct(raw: unknown): number | null {
   const pct = raw === undefined || raw === null || raw === "" ? OWNER_MAX_DISCOUNT_PCT : num(raw);
@@ -180,7 +215,7 @@ function parseKinds(raw: unknown): string[] | null {
 export function adminDiscountFields(
   dbType: string,
   body: Record<string, unknown>,
-  opts: { withNewColumns: boolean },
+  opts: { withNewColumns: boolean; writerRole?: string },
 ): AdminDiscountFields {
   if (!isDiscountType(dbType)) return { ok: true, fields: {} };
 
@@ -188,10 +223,13 @@ export function adminDiscountFields(
   if (!Number.isFinite(value) || value <= 0) return { ok: false, error: VALUE_REQUIRED_AR };
   if (dbType === "percentage" && value > COUPON_HARD_MAX_PCT) return { ok: false, error: MAX_PCT_AR };
 
-  const min = num(body.minOrderAmount);
-  if (!Number.isFinite(min) || min <= 0) return { ok: false, error: MIN_ORDER_REQUIRED_AR };
+  // l18: optional — 0 means no minimum
+  const min = couponMinOrder(body.minOrderAmount);
+  if (min === null) return { ok: false, error: MIN_ORDER_INVALID_AR };
 
-  const pctRaw = parseMaxPct(body.maxDiscountPct);
+  // l18 (ق٢٦-١١): the super admin's code carries its own cap, never the staff's 25 %
+  const superCap = opts.writerRole === SUPER_ADMIN_ROLE && opts.withNewColumns ? superAdminCap(dbType, value) : null;
+  const pctRaw = superCap ?? parseMaxPct(body.maxDiscountPct);
   if (pctRaw === null) return { ok: false, error: MAX_PCT_AR };
   // before 20261026_20 no cap column exists: the old 25 % ceiling stays the rule
   if (!opts.withNewColumns && pctRaw > OWNER_MAX_DISCOUNT_PCT) return { ok: false, error: MAX_PCT_AR };
@@ -227,6 +265,7 @@ export function adminDiscountPatch(
   existing: { discount_type?: unknown; min_order_amount?: unknown; active?: unknown; discount_value?: unknown; max_discount_pct?: unknown },
   body: Record<string, unknown>,
   nextActive: boolean | undefined,
+  writerRole?: string,
 ): AdminDiscountFields {
   const dbType = typeof existing.discount_type === "string" ? existing.discount_type : "";
   if (!isDiscountType(dbType)) return { ok: true, fields: {} };
@@ -238,14 +277,22 @@ export function adminDiscountPatch(
     if (dbType === "percentage" && value > COUPON_HARD_MAX_PCT) return { ok: false, error: MAX_PCT_AR };
   }
 
-  let min = num(existing.min_order_amount);
+  // l18: optional — 0 / empty clears the minimum
   if (body.minOrderAmount !== undefined) {
-    min = num(body.minOrderAmount);
-    if (!Number.isFinite(min) || min <= 0) return { ok: false, error: MIN_ORDER_REQUIRED_AR };
+    const min = couponMinOrder(body.minOrderAmount);
+    if (min === null) return { ok: false, error: MIN_ORDER_INVALID_AR };
     fields.min_order_amount = min;
   }
 
-  if (body.maxDiscountPct !== undefined) {
+  // l18 (ق٢٦-١١): when the super admin changes the value or the cap, the cap
+  // follows the code (superAdminCap); an edit of other fields leaves it alone
+  const superCap =
+    writerRole === SUPER_ADMIN_ROLE && (body.value !== undefined || body.maxDiscountPct !== undefined)
+      ? superAdminCap(dbType, body.value !== undefined ? body.value : existing.discount_value)
+      : null;
+  if (superCap !== null) {
+    fields.max_discount_pct = superCap;
+  } else if (body.maxDiscountPct !== undefined) {
     const pct = parseMaxPct(body.maxDiscountPct);
     if (pct === null) return { ok: false, error: MAX_PCT_AR };
     fields.max_discount_pct = pct;
@@ -269,8 +316,8 @@ export function adminDiscountPatch(
     if (Number.isFinite(value) && value > cap) return { ok: false, error: VALUE_ABOVE_CAP_AR };
   }
 
-  const willBeActive = nextActive ?? existing.active === true;
-  if (willBeActive && !(Number.isFinite(min) && min > 0)) return { ok: false, error: MIN_ORDER_REQUIRED_AR };
+  // l18: a code without a minimum may be switched on (the minimum is optional)
+  void nextActive;
   return { ok: true, fields };
 }
 

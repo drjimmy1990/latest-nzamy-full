@@ -100,9 +100,11 @@ test("MoyasarCheckout POSTs the checkout from the click, never from an effect", 
   assert.match(form, /if \(inFlight\.current \|\| current\.current\) return;\s*inFlight\.current = true;/);
   assert.match(form, /متابعة الدفع/);
   // the quote shown is the server's
-  for (const field of ["ready.quote.net", "ready.quote.vat", "ready.quote.total", "quoteVatNotice(ready.quote.vatMode, ready.quote.vat)"]) {
+  for (const field of ["ready.quote.net", "ready.quote.vat", "ready.quote.total"]) {
     assert.ok(form.includes(field), field);
   }
+  // l18 (LIVE-15): the VAT sentence is said once, on the page beside the price — never again under the quote
+  assert.ok(!form.includes("quoteVatNotice("), "the VAT sentence is not repeated by the form");
   // a 403 shows the server's copy with the way back to /pricing
   assert.match(form, /audience: res\.status === 403/);
   assert.match(form, /href="\/pricing"/);
@@ -120,7 +122,9 @@ test("MoyasarCheckout imports the package and its CSS dynamically and initialise
   assert.doesNotMatch(form, /window\.location\.origin/);
   // a used-up intent (decline, not fulfillable) drops the held checkout
   assert.match(form, /onNeedsNewCheckout: needNewCheckout/);
-  assert.match(form, /function needNewCheckout\(\) \{\s*current\.current = null;\s*initialised\.current = false;\s*setPhase\(\{ kind: "idle" \}\);/);
+  assert.match(form, /function needNewCheckout\(reported: unknown\) \{\s*current\.current = null;\s*initialised\.current = false;\s*setPhase\(\{ kind: "idle" \}\);/);
+  // l18 (LIVE-14): the refusal's reason, in Arabic, is shown — never thrown away
+  assert.match(form, /setNotice\(failureReason\(reported\) \? checkoutRefusalNoticeAr\(reported\) : NEW_CHECKOUT_AR\)/);
   // a refreshed intent with another total stops for the payer to confirm
   assert.match(form, /refreshDecision\(held\.resp, fresh\.resp\) === "confirm"\) \{[\s\S]*?setPhase\(\{ kind: "ready", resp: fresh\.resp \}\);[\s\S]*?return null;/);
   // NEXT_PUBLIC_ is inlined at build time only when referenced literally

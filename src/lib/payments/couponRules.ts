@@ -56,6 +56,18 @@ export const COUPON_INVALID_AR = "كود الخصم غير صالح أو منت�
 export const COUPON_NOT_FOR_ITEM_AR = "كود الخصم لا ينطبق على هذا المنتج";
 export const COUPONS_UNAVAILABLE_AR = "أكواد الخصم غير متاحة حالياً";
 
+/**
+ * Batch l18 (LIVE-13, owner ق٢٦-١١): a free-plan or points code typed in the
+ * checkout's code box is no longer called «غير صالح»: once it is active,
+ * inside its dates, with uses left and for this account type (grantCodeOpen —
+ * the same checks, in the same order, as a discount code, so the answer still
+ * tells a guesser nothing more), checkout answers 409 with this sentence and
+ * code "grant_code", and the page activates it through the code box
+ * (POST /api/v1/coupons/redeem).
+ */
+export const GRANT_CODE_AT_CHECKOUT_CODE = "grant_code";
+export const GRANT_CODE_AT_CHECKOUT_AR = "هذا كود تفعيل مجاني (باقة أو نقاط)، لا كود خصم: يُفعَّل في حسابك مباشرة دون دفع.";
+
 /** «يتطلب هذا الكود طلباً بقيمة ٢٠٠ ر.س على الأقل قبل الضريبة» */
 export function couponMinimumAr(minText: string): string {
   return `يتطلب هذا الكود طلباً بقيمة ${minText} على الأقل قبل الضريبة`;
@@ -147,6 +159,18 @@ export function sarToHalalas(value: number | string | null | undefined): number 
 const MAX_PCT = 100;
 /** The column's default (owner ١٥٥) — used when a row's cap cannot be read. */
 const DEFAULT_PCT = 25;
+
+/** l18 (LIVE-13): a free-plan / points code a buyer could redeem now — active, dated, uses left, his account type. */
+export function grantCodeOpen(row: CouponRow | null | undefined, ctx: { userType: string | null; now: Date }): boolean {
+  if (!row || row.active !== true) return false;
+  if (row.discount_type !== "plan_upgrade" && row.discount_type !== "points_grant") return false;
+  const now = ctx.now.getTime();
+  if (row.valid_from && Date.parse(row.valid_from) > now) return false;
+  if (row.valid_until && Date.parse(row.valid_until) < now) return false;
+  if (typeof row.max_uses === "number" && row.max_uses > 0 && (row.used_count ?? 0) >= row.max_uses) return false;
+  const audience = row.eligible_user_types ?? [];
+  return !(audience.length > 0 && !(ctx.userType && audience.includes(ctx.userType)));
+}
 
 export function evaluateCoupon(row: CouponRow | null | undefined, ctx: CouponContext): CouponDecision {
   if (!row || row.active !== true) return { ok: false, reason: "invalid" };

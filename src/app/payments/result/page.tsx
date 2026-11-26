@@ -105,11 +105,8 @@ function ResultCard({ view, refreshHref }: { view: ResultView; refreshHref: stri
       <h1 className="text-xl font-bold sm:text-2xl">{view.title}</h1>
       {view.body ? <p className="mt-3 leading-7">{view.body}</p> : null}
       {view.detail ? (
-        <p className="mt-3 text-sm opacity-80">
-          رسالة بوابة الدفع:{" "}
-          <span dir="auto" className="font-mono">
-            {view.detail}
-          </span>
+        <p className="mt-3 text-sm font-semibold leading-7">
+          سبب الرفض: {view.detail}
         </p>
       ) : null}
       {/* While pending the page re-renders itself every 3 s for about a minute;

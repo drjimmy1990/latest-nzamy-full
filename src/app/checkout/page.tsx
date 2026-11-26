@@ -18,6 +18,7 @@ import {
   NOT_FOR_SALE_AR,
   UNKNOWN_ITEM_AR,
 } from "@/lib/payments/checkoutCore";
+import { licenceGatedPurchase, licencePurchaseDecision, readLicencePurchaseFacts } from "@/lib/payments/licenceGate";
 import { readConsultantStanding } from "@/lib/auth/consultantScopeServer";
 import { buyerAllowed, formatHalalas, quote, sellableItem, vatPercentFor } from "@/lib/payments/catalog";
 import { readVatRegistered } from "@/lib/payments/vatStatus";
@@ -95,12 +96,17 @@ function Shell({ children }: { children: React.ReactNode }) {
   );
 }
 
-function Notice({ title }: { title: string }) {
+function Notice({ title, verifyHref = null }: { title: string; verifyHref?: string | null }) {
   return (
     <Shell>
       <section className="rounded-2xl border border-zinc-300 bg-white p-6 text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 sm:p-8">
         <h1 className="text-xl font-bold sm:text-2xl">{title}</h1>
         <div className="mt-6 flex flex-wrap gap-3">
+          {verifyHref ? (
+            <Link href={verifyHref} className={PRIMARY}>
+              إكمال توثيق الرخصة
+            </Link>
+          ) : null}
           <Link href="/pricing" className={PRIMARY}>
             العودة إلى الباقات
           </Link>
@@ -161,6 +167,19 @@ export default async function CheckoutPage({ searchParams }: { searchParams: Sea
     const standing = await readConsultantStanding(supabase, user.id);
     if (standing.readFailed) return <Notice title={CONSULTANT_CHECK_FAILED_AR} />;
     if (standing.scopeKind === "consultant") return <Notice title={CONSULTANT_PLAN_REFUSED_AR} />;
+  }
+  // l18 (owner ق٢٦-٩): the founder plan and the professional plans wait for a
+  // verified, unexpired licence — the POST's rule (checkoutCore step 2d), told
+  // before the card form loads; a failed read refuses too, never a guess.
+  if (userType && licenceGatedPurchase(item, userType)) {
+    let facts: Awaited<ReturnType<typeof readLicencePurchaseFacts>> = null;
+    try {
+      facts = await readLicencePurchaseFacts(await createServiceClient(), user.id, userType);
+    } catch {
+      facts = null;
+    }
+    const licence = licencePurchaseDecision(userType, facts, new Date());
+    if (licence.ok === false) return <Notice title={licence.error} verifyHref={licence.verifyHref ?? null} />;
   }
 
   // The price the POST will charge now: the launch price while its campaign

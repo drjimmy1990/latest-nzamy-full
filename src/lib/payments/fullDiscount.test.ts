@@ -226,71 +226,11 @@ const input = (over: Partial<CheckoutInput> = {}): CheckoutInput => ({
 const LIVE_CARD = { status: "active", live: false, exp_month: "12", exp_year: "2030" };
 const orderWrites = (log: FakeQuery[]) => log.filter((q) => q.table === "payment_orders" && q.op !== "select");
 
-test("checkout: a 100 % code without a saved card → 409 card_required; no order, no intent, no try spent", async () => {
-  const { client: admin, log } = db();
-  const m = moyasar();
-  const attempts = createCouponAttemptBudget();
-  const r = await startCheckoutWith({ admin, client: m.client, now: () => NOW, catalog: CATALOG, book: BOOK, attempts }, input());
-  assert.deepEqual(r, { status: 409, body: { error: FULL_DISCOUNT_CARD_REQUIRED_AR, code: FULL_DISCOUNT_CARD_REQUIRED_CODE } });
-  assert.equal(orderWrites(log).length, 0);
-  assert.equal(m.intents.length, 0);
-  assert.equal(log.filter((q) => q.table === "payment_methods").length, 1);
-  for (let i = 0; i < 19; i++) attempts.spend(USER);
-  assert.equal(attempts.check(USER).ok, true, "the refusal spent no coupon try");
-});
-
-test("checkout: a 100 % code WITH a saved card of this mode → 409 full_discount_pending; still nothing written", async () => {
-  const { client: admin, log } = db({ cards: [LIVE_CARD] });
-  const m = moyasar();
-  const r = await startCheckoutWith({ admin, client: m.client, now: () => NOW, catalog: CATALOG, book: BOOK }, input());
-  assert.deepEqual(r, { status: 409, body: { error: FULL_DISCOUNT_PENDING_AR, code: FULL_DISCOUNT_PENDING_CODE } });
-  assert.equal(orderWrites(log).length, 0);
-  assert.equal(m.intents.length, 0);
-  // the same card in live mode does not count
-  const live = db({ cards: [LIVE_CARD] });
-  const r2 = await startCheckoutWith({ admin: live.client, client: moyasar().client, now: () => NOW, catalog: CATALOG, book: BOOK }, input({ gatewayMode: "live" }));
-  assert.equal((r2.body as { code?: string }).code, FULL_DISCOUNT_CARD_REQUIRED_CODE);
-});
-
-test("checkout: the card read fails → 503, nothing written", async () => {
-  const { client: admin, log } = db({ cardErr: true });
-  const r = await startCheckoutWith({ admin, client: moyasar().client, now: () => NOW, catalog: CATALOG, book: BOOK }, input());
-  assert.deepEqual(r, { status: 503, body: { error: FULL_DISCOUNT_CARD_CHECK_FAILED_AR } });
-  assert.equal(orderWrites(log).length, 0);
-});
-
-test("checkout: a 50 % code (cap 50) is charged normally — no card read, the intent carries half", async () => {
-  const half = { ...FULL_ROW, code: "HALF50", discount_value: "50.00", max_discount_pct: "50.00" };
-  const { client: admin, log } = db({ row: half });
-  const m = moyasar();
-  const r = await startCheckoutWith({ admin, client: m.client, now: () => NOW, catalog: CATALOG, book: BOOK }, input({ couponCode: "HALF50" }));
-  assert.equal(r.status, 200);
-  assert.equal(log.filter((q) => q.table === "payment_methods").length, 0);
-  // 1,490 / 2 = 745 net; VAT 111.75; total 856.75
-  assert.deepEqual((m.intents[0] as { amountHalalas: number }).amountHalalas, 85675);
-});
-
-test("preview: the same 409 as checkout, before the pay button", async () => {
-  const none = db();
-  const r = await validateCouponWith(
-    { admin: none.client, now: () => NOW, catalog: CATALOG, book: BOOK, attempts: createCouponAttemptBudget() },
-    { userId: USER, code: "FREE100", itemId: "ind-preventive", billing: "yearly", gatewayMode: "test", vatPercent: 15 },
-  );
-  assert.deepEqual(r, { status: 409, body: { error: FULL_DISCOUNT_CARD_REQUIRED_AR, code: FULL_DISCOUNT_CARD_REQUIRED_CODE } });
-  const withCard = db({ cards: [LIVE_CARD] });
-  const r2 = await validateCouponWith(
-    { admin: withCard.client, now: () => NOW, catalog: CATALOG, book: BOOK, attempts: createCouponAttemptBudget() },
-    { userId: USER, code: "FREE100", itemId: "ind-preventive", billing: "yearly", gatewayMode: "test", vatPercent: 15 },
-  );
-  assert.deepEqual(r2, { status: 409, body: { error: FULL_DISCOUNT_PENDING_AR, code: FULL_DISCOUNT_PENDING_CODE } });
-  // no gateway mode (the gateway is off) → no card counts
-  const off = db({ cards: [LIVE_CARD] });
-  const r3 = await validateCouponWith(
-    { admin: off.client, now: () => NOW, catalog: CATALOG, book: BOOK, attempts: createCouponAttemptBudget() },
-    { userId: USER, code: "FREE100", itemId: "ind-preventive", billing: "yearly", vatPercent: 15 },
-  );
-  assert.equal((r3.body as { code?: string }).code, FULL_DISCOUNT_CARD_REQUIRED_CODE);
-});
+// l18 (owner ق٢٦-١١, س٢٢٤ settled): a code that covers the whole price is no
+// longer refused for want of a saved card — it is activated at 0 SAR. Its
+// checkout and preview behaviour is tested in freeActivation.test.ts.
+void FULL_ROW; void db; void moyasar; void input; void LIVE_CARD; void orderWrites;
+void startCheckoutWith; void validateCouponWith; void createCouponAttemptBudget;
 
 test("the validate route passes the gateway mode (payments_gateway) to the preview", () => {
   const route = readFileSync(join(ROOT, "src", "app", "api", "v1", "coupons", "validate", "route.ts"), "utf8");

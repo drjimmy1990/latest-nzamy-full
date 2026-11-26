@@ -247,6 +247,9 @@ export type FounderMember = boolean | "pending" | "unknown" | "loading";
 export const FOUNDER_PENDING_NOTE = "تُفعَّل الباقة بعد توثيق رخصتك، وإن لم تُوثَّق يُردّ المبلغ كاملاً.";
 /** l7: the button of a lawyer who paid while pending. */
 export const FOUNDER_PENDING_MEMBER_LABEL = "مقعدك محجوز بانتظار توثيق رخصتك";
+/** l18 (owner ق٢٦-٩): a lawyer whose licence is still under review cannot buy yet (the server refuses too). */
+export const FOUNDER_LICENCE_REVIEW_LABEL = "رخصتك قيد المراجعة — يُتاح الاشتراك بعد اعتمادها";
+export const FOUNDER_LICENCE_REVIEW_NOTE = "تُتاح باقة المؤسس بعد أن يعتمد فريق المنصة توثيق رخصتك، ثم تعود إلى هذه الصفحة للسداد.";
 
 export interface FounderCtaState {
   /** useUser() still resolving. */
@@ -319,8 +322,11 @@ export function founderCta(s: FounderCtaState): FounderCta {
   if (s.verification === "unverified") {
     return { kind: "verify", label: "وثّق رخصتك أولاً", href: FOUNDER_VERIFY_HREF, note };
   }
-  // l7 (decision 1): a pending lawyer may pay — told plainly what happens next
-  const buyNote = s.verification === "pending" ? FOUNDER_PENDING_NOTE : note;
+  // l18 (owner ق٢٦-٩, reverses l7 decision 1 for new purchases): a pending
+  // lawyer may not pay before his licence is approved — the checkout refuses
+  // it too (licenceGate.ts). A seat already held stays «member» above.
+  if (s.verification === "pending") return { kind: "unavailable", label: FOUNDER_LICENCE_REVIEW_LABEL, note: FOUNDER_LICENCE_REVIEW_NOTE };
+  const buyNote = note;
   if (s.gateway.loading === true) return { kind: "wait", label: "جارٍ التحقق من بوابة الدفع…", note: buyNote };
   const href = checkoutHref(FOUNDER_PLAN_ID, "once", gatewayAllowsCheckout(s.gateway), true);
   if (!href) return { kind: "unavailable", label: FOUNDER_GATEWAY_PAUSED_TEXT, note: buyNote };

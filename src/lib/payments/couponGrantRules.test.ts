@@ -56,12 +56,16 @@ test("س٢١٣ ب: a 100 % cap always excludes services (and top-ups); below 100
   assert.deepEqual(withPlatformOnlyKinds(25, []), ["topup"]);
 });
 
-test("A-07: a free-plan code grants a plan on sale in one of its billings; never the bundle, a retired plan or a library pass", () => {
+test("A-07 + l18 (ق٢٦-١١): a free-plan code grants a plan, a library pass or the bundle on sale in one of its billings; never a retired plan or a top-up", () => {
   const ids = grantablePlans().map((p) => p.id);
   assert.ok(ids.includes("lawyer-pro"));
-  assert.ok(!ids.includes("lawyer-bundle"), "the bundle's library pass is keyed on a paid order");
+  // l18: the library and the bundle are coupon targets (their pass is granted on the redemption, 20261208_30)
+  for (const id of ["lawyer-bundle", "lib-q1", "lib-q2", "lib-annual"]) assert.ok(ids.includes(id), id);
+  assert.ok(grantablePlan("lib-q2", "once"));
+  assert.ok(grantablePlan("lawyer-bundle", "yearly"));
   assert.ok(!ids.includes("ind-preventive"), "retired");
-  assert.ok(!ids.some((id) => id.startsWith("lib-") || id.startsWith("topup-")));
+  assert.ok(!ids.some((id) => id.startsWith("topup-")));
+  assert.ok(!ids.includes("lawyer-founder-2026"), "never the founder membership");
   assert.ok(grantablePlan("lawyer-pro", "yearly"));
   assert.equal(grantablePlan("lawyer-pro", "monthly"), null, "a retired cycle");
   assert.equal(grantablePlan("lawyer-pro", "once"), null);

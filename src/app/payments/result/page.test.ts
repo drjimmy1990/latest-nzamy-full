@@ -53,9 +53,10 @@ test("fulfils with the stored payment id (the callback's only when the order has
   assert.match(code, /paymentResultView\(result, order\)/);
 });
 
-test("Moyasar's own message is shown only beside the Arabic copy, with its own direction", () => {
+test("l18 (LIVE-15): the refusal's reason is shown in Arabic (resultView → gatewayErrorAr), never Moyasar's raw text", () => {
   assert.match(code, /view\.detail/);
-  assert.match(code, /dir="auto"/);
+  assert.match(code, /سبب الرفض: \{view\.detail\}/);
+  assert.doesNotMatch(code, /رسالة بوابة الدفع/);
 });
 
 test("a service client that cannot be built renders the Arabic «temporarily unavailable» state, never a 500", () => {

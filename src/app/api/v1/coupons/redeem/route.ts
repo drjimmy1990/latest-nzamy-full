@@ -4,6 +4,8 @@ import { frozenAccountResponse, isAuthUnavailable, authUnavailableResponse } fro
 import { TIER_RANK } from "@/lib/access-control";
 import { readGiftValidDays } from "@/lib/points/pointsSettings";
 import { REDEEM_UNAVAILABLE_AR, redeemCouponWith } from "@/lib/payments/couponRedeemCore";
+import { licencePurchaseDecision, readLicencePurchaseFacts } from "@/lib/payments/licenceGate";
+import { readLibraryAccountAccess } from "@/lib/library/accountAccessServer";
 
 /**
  * POST /api/v1/coupons/redeem — «تفعيل كود» (batch l16, A-08 / A-59 / E-12;
@@ -49,7 +51,15 @@ export async function POST(request: NextRequest) {
 
   try {
     const result = await redeemCouponWith(
-      { admin, ranks: TIER_RANK, giftValidDays: () => readGiftValidDays(admin) },
+      {
+        admin,
+        ranks: TIER_RANK,
+        giftValidDays: () => readGiftValidDays(admin),
+        // l18: checkout's gates — the library lock for the account type, and the licence (ق٢٦-٩)
+        libraryAccountAllowed: async (userId) => (await readLibraryAccountAccess(userId)).allowed,
+        licenceAllowed: async (userId, userType) =>
+          licencePurchaseDecision(userType, await readLicencePurchaseFacts(admin, userId, userType), new Date()),
+      },
       { userId: user.id, code },
     );
     return reply(result.body, result.status);

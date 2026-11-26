@@ -7,6 +7,10 @@ import Link from "next/link";
 import { VAT_NOTICE } from "@/lib/pricing/vatNotice";
 import { bookPriceText } from "@/lib/pricing/priceBook";
 import { useMyLibraryGrant } from "@/components/library/LibraryGrantStatusCard";
+import LibraryPointsLockBanner from "@/components/library/LibraryPointsLockBanner";
+import { usePaymentsStatus } from "@/hooks/usePaymentsStatus";
+import { useLibraryStatus } from "@/hooks/useLibraryStatus";
+import { buyButtonAction } from "@/lib/payments/checkoutView";
 
 // ─── Types & Constants ─────────────────────────────────────────────────────────
 
@@ -44,6 +48,24 @@ export const PLANS = [
     name: "المكتبة القانونية — ربع سنوي", nameEn: "Legal Library — Quarterly",
     price: bookPriceText("lib-q1", "once", "ar"), priceEn: bookPriceText("lib-q1", "once", "en"), period: "٣ أشهر", periodEn: "/ 3 months",
     desc: "وصول كامل للأنظمة واللوائح والمبادئ القضائية لمدة ٣ أشهر", descEn: "Full access to laws, regulations and judicial principles for 3 months",
+    features: [
+      "الوصول الكامل لمواد الأنظمة واللوائح",
+      "بحث متقدّم في المكتبة القانونية",
+      "وضع التركيز للقراءة وحفظ المفضلة",
+    ],
+    featuresEn: [
+      "Full access to all law articles & regulations",
+      "Advanced search in the legal library",
+      "Focus reading mode & bookmarks",
+    ],
+    highlight: false,
+  },
+  // l18 (LIVE-10): the half-year pass is on sale (3,790) and was missing here.
+  {
+    id: "lib-q2",
+    name: "المكتبة القانونية — نصف سنوي", nameEn: "Legal Library — Semi-annual",
+    price: bookPriceText("lib-q2", "once", "ar"), priceEn: bookPriceText("lib-q2", "once", "en"), period: "٦ أشهر", periodEn: "/ 6 months",
+    desc: "وصول كامل للأنظمة واللوائح والمبادئ القضائية لمدة ٦ أشهر", descEn: "Full access to laws, regulations and judicial principles for 6 months",
     features: [
       "الوصول الكامل لمواد الأنظمة واللوائح",
       "بحث متقدّم في المكتبة القانونية",
@@ -108,6 +130,19 @@ function PaywallDialog({ onClose, isRTL, isDark, freeLimit }: {
   // A guest or an unreadable answer keeps the plans (sign-in comes first).
   const { answer } = useMyLibraryGrant();
   const refusal = answer?.purchase && answer.purchase.eligible === false ? answer.purchase : null;
+  // l18 (LIVE-10, owner 26 Nov): «اشترك الآن» goes straight to the payment of
+  // that pass (/checkout) when online payment is on for a signed-in viewer —
+  // not to another price page; otherwise /laws/subscribe (sign-in, or the
+  // request while sale is paused), as before.
+  const payments = usePaymentsStatus();
+  const signedIn = answer?.signedIn === true;
+  const planHref = (id: string): string => {
+    const action = buyButtonAction(id, "once", payments, signedIn);
+    return action.kind === "checkout" ? action.href : `/laws/subscribe?plan=${id}`;
+  };
+  // l18 (LIVE-10): a subscriber whose points fell below the minimum is not
+  // sold the library again — he is told to top up (the reader's own banner).
+  const { pointsLock } = useLibraryStatus();
   return (
     <AnimatePresence>
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
@@ -115,7 +150,7 @@ function PaywallDialog({ onClose, isRTL, isDark, freeLimit }: {
         className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
         <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
           onClick={e => e.stopPropagation()}
-          className={`w-full max-w-2xl max-h-[85dvh] overflow-y-auto overscroll-contain rounded-3xl border shadow-2xl ${isDark ? "bg-[#0c0f12] border-[#2d3748]" : "bg-white border-gray-200"}`}>
+          className={`w-full max-w-3xl max-h-[85dvh] overflow-y-auto overscroll-contain rounded-3xl border shadow-2xl ${isDark ? "bg-[#0c0f12] border-[#2d3748]" : "bg-white border-gray-200"}`}>
           <div className="relative bg-gradient-to-br from-[#0B3D2E] to-[#0a3328] p-8 text-white text-center">
             <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-[#C8A762] to-transparent opacity-60" />
             <Crown size={40} color="#C8A762" weight="fill" className="mx-auto mb-3" />
@@ -147,7 +182,13 @@ function PaywallDialog({ onClose, isRTL, isDark, freeLimit }: {
               <p>{refusal.messageAr}</p>
             </div>
           )}
-          <div className="p-6 grid grid-cols-1 sm:grid-cols-2 gap-4" dir={isRTL ? "rtl" : "ltr"}>
+          {pointsLock ? (
+            <div className="px-6 pt-6" data-paywall-points-lock>
+              <LibraryPointsLockBanner lock={pointsLock} />
+            </div>
+          ) : null}
+          {pointsLock ? null : (
+          <div className="p-6 grid grid-cols-1 sm:grid-cols-3 gap-4" dir={isRTL ? "rtl" : "ltr"}>
             {PLANS.map(plan => (
               <div key={plan.id} className={`rounded-2xl border p-5 relative ${plan.highlight ? "border-[#C8A762] bg-[#C8A762]/5" : isDark ? "border-[#2d3748]" : "border-gray-200"}`}>
                 {/* No «الأكثر قيمة» pill (owner, Q164, 2026-10-03: no
@@ -171,7 +212,7 @@ function PaywallDialog({ onClose, isRTL, isDark, freeLimit }: {
                     {isRTL ? "غير متاح لنوع حسابك" : "Not available for your account"}
                   </span>
                 ) : (
-                  <Link href={`/laws/subscribe?plan=${plan.id}`}
+                  <Link href={planHref(plan.id)}
                     className={`block text-center py-2.5 rounded-xl text-sm font-bold transition ${plan.highlight ? "bg-[#C8A762] text-[#0B3D2E] hover:opacity-90" : "bg-[#0B3D2E] text-white hover:bg-[#0a3328]"}`}>
                     {isRTL ? "اشترك الآن" : "Subscribe Now"}
                   </Link>
@@ -179,6 +220,7 @@ function PaywallDialog({ onClose, isRTL, isDark, freeLimit }: {
               </div>
             ))}
           </div>
+          )}
           {/* The library's VAT depends on the buyer (owner ٢٤٨). */}
           <p className={`text-center text-xs font-medium px-6 pb-2 ${isDark ? "text-gray-400" : "text-gray-500"}`} dir={isRTL ? "rtl" : "ltr"}>
             {isRTL ? VAT_NOTICE.exclusive.ar : VAT_NOTICE.exclusive.en}
