@@ -200,7 +200,7 @@ test("recordSuspensionTermsWith writes end, template and reason on the OPEN free
   const r = await recordSuspensionTermsWith(db, { userId: "u-1", endsAt: "2026-11-29T09:00:00.000Z", template: "72h", reason: "سبب" });
   assert.deepEqual(r, { state: "recorded", freezeId: "f-9" });
   const ops = calls[0].ops;
-  assert.deepEqual(ops.find(([op]) => op === "update")?.[1][0], { ends_at: "2026-11-29T09:00:00.000Z", template: "72h", suspend_reason: "سبب" });
+  assert.deepEqual(ops.find(([op]) => op === "update")?.[1][0], { ends_at: "2026-11-29T09:00:00.000Z", template: "72h", suspend_reason: "سبب", lift_attempts: 0, lift_last_error: null });
   assert.deepEqual(ops.find(([op]) => op === "is")?.[1], ["lifted_at", null]);
   const none = fakeDb({ account_suspension_freezes: [{ data: [] }] });
   assert.deepEqual(await recordSuspensionTermsWith(none.db, { userId: "u", endsAt: "e", template: "7d", reason: "سبب" }), { state: "no_open_freeze" });

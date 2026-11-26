@@ -274,7 +274,9 @@ export async function recordSuspensionTermsWith(
   try {
     const { data, error } = await db
       .from("account_suspension_freezes")
-      .update({ ends_at: args.endsAt, template: args.template, suspend_reason: args.reason })
+      // l16 review: new terms are a new suspension for the automatic lift —
+      // its failed tries start again from zero
+      .update({ ends_at: args.endsAt, template: args.template, suspend_reason: args.reason, lift_attempts: 0, lift_last_error: null })
       .eq("user_id", args.userId)
       .is("lifted_at", null)
       .select("id");
