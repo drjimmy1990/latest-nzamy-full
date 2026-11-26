@@ -1078,11 +1078,14 @@ export default function UserProfilePage() {
                 <UserSwitch size={13}/> عرض كمستخدم
               </Link>
               )}
+              {/* l16 C11: never offered on a staff account (the route refuses it too). */}
+              {U.user_type !== "admin" && (
               <button onClick={handleDemoToggle} disabled={demoLoading}
                 title="الحساب التجريبي: لا يكتب في الأقسام العامة، لا يدفع ولا يحجز مقعد المؤسس، وحدوده ٥ قضايا و٥ استشارات و١٠ موكلين"
                 className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-bold bg-sky-500/10 border border-sky-500/20 text-sky-400 hover:bg-sky-500/20 transition-colors disabled:opacity-50">
                 {U.is_demo === true ? "إلغاء وضع الحساب التجريبي" : "تحويل إلى حساب تجريبي"}
               </button>
+              )}
               <button onClick={() => { setTab("subscription"); setChangingPlan(true); }}
                 className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-bold bg-purple-500/10 border border-purple-500/20 text-purple-400 hover:bg-purple-500/20 transition-colors">
                 <Crown size={13}/> ترقية الباقة
@@ -1093,7 +1096,8 @@ export default function UserProfilePage() {
                   <ShieldCheck size={13}/> تحقق من الحساب
                 </button>
               )}
-              {mapStatus(activeSub?.status, U.verified_at) === "active" && (
+              {/* l16 C11: an admin account cannot be suspended (the server refuses it too). */}
+              {U.user_type !== "admin" && mapStatus(activeSub?.status, U.verified_at) === "active" && (
                 <button onClick={handleSuspend}
                   className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-bold bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 transition-colors">
                   <Prohibit size={13}/> تعليق الحساب

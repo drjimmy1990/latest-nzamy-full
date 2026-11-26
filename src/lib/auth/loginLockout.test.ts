@@ -90,7 +90,14 @@ test("wiring: the login page signs in through the route; the route checks the lo
   const status = route.indexOf("lockStatus(service, key, body.id)");
   const signIn = route.indexOf("supabase.auth.signInWithPassword(credentials)");
   assert.ok(status > 0 && status < signIn, "the lock is checked before GoTrue is asked");
-  assert.match(route, /if \(service && isCredentialFailure\(error\)\) \{\s*const after = await record\(service, key, body\.id, false\);/);
+  assert.match(route, /if \(isCredentialFailure\(error\)\) \{\s*const after = await record\(service, key, body\.id, false\);/);
+  // l16 D-31: no service client → the sign-in is refused (503), never let through uncounted
+  {
+    const svc = route.indexOf("service = await createServiceClient();");
+    const refuse = route.indexOf("{ status: 503, headers: NO_STORE }");
+    assert.ok(svc > 0 && refuse > svc && refuse < status, "a missing service client is answered 503 before anything else");
+  }
+  assert.match(page, /signInRes\.status === 503/);
   assert.match(route, /options: \{ captchaToken: body\.captchaToken \}/);
   assert.match(route, /sendEmail\(\{ to: data, subject: mail\.subject, text: mail\.text, tag: "login_locked" \}\)/);
   const settings = src("app", "api", "v1", "admin", "settings", "route.ts");

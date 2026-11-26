@@ -8630,3 +8630,105 @@ select 'l15 phone otp: the switch row exists, and while on it carries the first 
        and coalesce((select count(*) = 1 from pg_catalog.pg_trigger
                        where tgrelid = 'public.platform_settings'::regclass and tgname = 'trg_signup_phone_otp_setting' and not tgisinternal), false) as ok;
 -- <<< verify:l15_phone_otp
+-- >>> verify:l16_d01 — supabase/tests/rls/requester_cancel_lock_definer.test.sql
+-- l16 D-01: a session status change on service_requests must not hit 42501 —
+-- the cancel-lock trigger runs as its owner; the helpers stay closed (20261016_07).
+-- A re-run of 20260917 turns the trigger function back to INVOKER: this fails then.
+select 'l16 D-01: the requester cancel lock is SECURITY DEFINER with an empty search_path, its trigger enabled, helpers still closed to sessions (run 20261206_10)' as check,
+       coalesce((select p.prosecdef and p.proconfig @> array['search_path=""']
+                   from pg_catalog.pg_proc p
+                  where p.oid = to_regprocedure('public.enforce_requester_cancel_lock()')), false)
+       and exists (select 1 from pg_catalog.pg_trigger
+                    where tgrelid = 'public.service_requests'::regclass
+                      and tgname = 'trg_enforce_requester_cancel_lock' and tgenabled <> 'D'
+                      and tgfoid = to_regprocedure('public.enforce_requester_cancel_lock()'))
+       and not coalesce(has_function_privilege('authenticated', 'public.service_request_requester_cancellable(text, text, jsonb)', 'EXECUTE'), true)
+       and not coalesce(has_function_privilege('authenticated', 'public.service_request_delivered_at(jsonb)', 'EXECUTE'), true)
+       and not coalesce(has_function_privilege('authenticated', 'public.enforce_requester_cancel_lock()', 'EXECUTE'), true) as ok;
+-- <<< verify:l16_d01
+-- >>> verify:l16_hold — supabase/tests/rls/attachment_hold_owner.test.sql
+-- l16 س٢٠٣: a party places a hold on any file of its request; only the owner
+-- (a case supervisor for a team member's file, or an admin) lifts it; only the
+-- owner bins / restores; the other party files «طلب رفع الحجز».
+select 'l16 س٢٠٣: the hold/bin owner guard is on attachments, SECURITY INVOKER, enabled (run 20261206_11)' as check,
+       exists (select 1 from pg_catalog.pg_trigger
+                where tgrelid = 'public.attachments'::regclass
+                  and tgname = 'trg_03_attachments_hold_owner' and tgenabled <> 'D'
+                  and tgfoid = to_regprocedure('public.guard_attachment_hold_owner()'))
+       and not coalesce((select prosecdef from pg_catalog.pg_proc
+                          where oid = to_regprocedure('public.guard_attachment_hold_owner()')), true) as ok;
+select 'l16 س٢٠٣: restore_case_document no longer lets the other party restore (run 20261206_11; a re-run of 20261025_51 undoes it)' as check,
+       coalesce(pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.restore_case_document(bigint)')), 'can_manage_attachment') > 0, false) as ok;
+select 'l16 س٢٠٣: «طلب رفع الحجز» — append-only table closed to session writes; the definer RPC callable by signed-in users only (run 20261206_11)' as check,
+       to_regclass('public.attachment_hold_lift_requests') is not null
+       and coalesce((select c.relrowsecurity from pg_catalog.pg_class c where c.oid = to_regclass('public.attachment_hold_lift_requests')), false)
+       and not coalesce(has_table_privilege('authenticated', 'public.attachment_hold_lift_requests', 'INSERT'), true)
+       and not coalesce(has_table_privilege('authenticated', 'public.attachment_hold_lift_requests', 'UPDATE'), true)
+       and not coalesce(has_table_privilege('anon', 'public.attachment_hold_lift_requests', 'SELECT'), true)
+       and exists (select 1 from pg_catalog.pg_trigger
+                    where tgrelid = to_regclass('public.attachment_hold_lift_requests')
+                      and tgname = 'trg_attachment_hold_lift_requests_append_only' and not tgisinternal)
+       and coalesce((select p.prosecdef and p.proconfig @> array['search_path=""']
+                       from pg_catalog.pg_proc p where p.oid = to_regprocedure('public.request_attachment_hold_lift(bigint, text)')), false)
+       and coalesce(has_function_privilege('authenticated', to_regprocedure('public.request_attachment_hold_lift(bigint, text)'), 'EXECUTE'), false)
+       and not coalesce(has_function_privilege('anon', to_regprocedure('public.request_attachment_hold_lift(bigint, text)'), 'EXECUTE'), true) as ok;
+-- <<< verify:l16_hold
+-- >>> verify:l16_breakglass — supabase/tests/rls/restricted_case_break_glass.test.sql
+-- l16 س٢١٦: a platform admin reads no restricted firm case without a live
+-- break-glass grant (written reason + a second super admin + ≤240 min + firm
+-- notified + audit). A re-run of 20261125_40 / 20261129_10 puts is_admin() back
+-- into case_visible: this fails until 20261206_12 is re-run.
+select 'l16 س٢١٦: case_visible has no is_admin() arm, has the break-glass grant arm and keeps the scoped-member branch (run 20261206_12)' as check,
+       coalesce(pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.case_visible(text)')), 'is_admin()') = 0, false)
+       and coalesce(pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.case_visible(text)')), 'restricted_case_grant_active(sr.id)') > 0, false)
+       and coalesce(pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.case_visible(text)')), 'firm_case_scoped_member') > 0, false) as ok;
+select 'l16 س٢١٦: the break-glass grant table is closed to sessions, guarded (no delete, no rewrite), and its RPCs are SECURITY DEFINER for signed-in users only (run 20261206_12)' as check,
+       to_regclass('public.restricted_case_access_grants') is not null
+       and coalesce((select c.relrowsecurity from pg_catalog.pg_class c where c.oid = to_regclass('public.restricted_case_access_grants')), false)
+       and not coalesce(has_table_privilege('authenticated', 'public.restricted_case_access_grants', 'SELECT'), true)
+       and not coalesce(has_table_privilege('authenticated', 'public.restricted_case_access_grants', 'INSERT'), true)
+       and not coalesce(has_table_privilege('anon', 'public.restricted_case_access_grants', 'SELECT'), true)
+       and exists (select 1 from pg_catalog.pg_trigger
+                    where tgrelid = to_regclass('public.restricted_case_access_grants')
+                      and tgname = 'trg_restricted_case_access_grants_guard' and not tgisinternal)
+       and exists (select 1 from pg_catalog.pg_constraint
+                    where conrelid = to_regclass('public.restricted_case_access_grants')
+                      and conname = 'restricted_case_access_grants_two_people')
+       and coalesce((select count(*) = 5
+                            and bool_and(p.prosecdef and p.proconfig @> array['search_path=""']
+                                         and has_function_privilege('authenticated', p.oid, 'EXECUTE')
+                                         and not has_function_privilege('anon', p.oid, 'EXECUTE'))
+                       from pg_catalog.pg_proc p
+                      where p.oid in (to_regprocedure('public.restricted_case_access_request(text, text, integer)'),
+                                      to_regprocedure('public.restricted_case_access_approve(uuid, text)'),
+                                      to_regprocedure('public.restricted_case_access_reject(uuid, text)'),
+                                      to_regprocedure('public.restricted_case_access_revoke(uuid)'),
+                                      to_regprocedure('public.restricted_case_break_glass_read(text)'))), false)
+       and not coalesce(has_function_privilege('authenticated', to_regprocedure('public.restricted_case_grant_active(text)'), 'EXECUTE'), true) as ok;
+-- OPS (C54), a WARNING only: with fewer than two super admins nobody can give
+-- the second approval yet.
+do $$
+declare n bigint;
+begin
+  if to_regclass('public.platform_staff') is null then
+    return;
+  end if;
+  execute 'select count(*) from public.platform_staff ps join public.profiles p on p.id = ps.user_id
+            where ps.staff_role = ''super_admin'' and p.user_type = ''admin''' into n;
+  if n < 2 then
+    raise warning '_verify: l16 س٢١٦ — fewer than two super_admin staff rows: a break-glass request cannot get its second approval until a second super admin is named (C54)';
+  end if;
+end $$;
+-- <<< verify:l16_breakglass
+-- >>> verify:l16_d54 — supabase/tests/rls/activity_events_firm_insert.test.sql
+-- l16 D-54: a session writes an activity row naming a firm only as its owner or
+-- an active member. A re-run of 20260903_phase1_case_tables puts the old check back.
+select 'l16 D-54: the activity_events INSERT policy checks the firm, and it is the only INSERT-capable policy (run 20261206_13)' as check,
+       coalesce((select pg_catalog.strpos(pg_catalog.pg_get_expr(p.polwithcheck, p.polrelid), 'firm_id') > 0
+                        and pg_catalog.strpos(pg_catalog.pg_get_expr(p.polwithcheck, p.polrelid), 'can_access_case_row') > 0
+                   from pg_catalog.pg_policy p
+                  where p.polrelid = to_regclass('public.activity_events')
+                    and p.polname = 'activity insertable by actor' and p.polcmd = 'a'), false)
+       and coalesce((select count(*) = 1 from pg_catalog.pg_policy p
+                      where p.polrelid = to_regclass('public.activity_events') and p.polcmd in ('a', '*')), false) as ok;
+-- <<< verify:l16_d54

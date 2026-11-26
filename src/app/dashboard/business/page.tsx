@@ -15,6 +15,7 @@ import {
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
+import { BUSINESS_REQUEST_ROLES } from "@/constants/entityRouteAccess";
 import AddCaseModal from "./_components/AddCaseModal";
 import { BusinessProfileReadinessPanel } from "@/components/dashboard/business/BusinessProfileReadinessPanel";
 import { listMyServiceOrders } from "@/lib/services/serviceOrders";
@@ -187,6 +188,10 @@ export default function BusinessOverviewPage() {
   const user = useUser();
   // Owner item 9 (batch l8): no library link while the library is locked for this account.
   const libraryLock = useLibraryAccountLocked();
+  // l16 D-10: a seconded counsel or a compliance officer does not raise
+  // requests in the company's name (the server files them as personal ones).
+  const canRequestForCompany =
+    !user.businessRole || (BUSINESS_REQUEST_ROLES as readonly string[]).includes(user.businessRole);
 
   const [ordersRead, setOrdersRead] = useState<ListRead<ClientCase> | null>(null);
   const [ordersLoading, setOrdersLoading] = useState(true);
@@ -334,23 +339,25 @@ export default function BusinessOverviewPage() {
               اطلب خدمة قانونية عبر نظامي، وتابع طلبات منشأتك ووثائقها من هنا.
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-2.5">
-            <Link
-              href="/dashboard/client/services"
-              className="flex items-center gap-2 rounded-xl bg-[#C8A762] px-4 py-2.5 text-sm font-bold text-[#0B3D2E] shadow-[0_4px_16px_-4px_rgba(200,167,98,0.5)] transition hover:brightness-105"
-            >
-              <Plus size={16} weight="bold" />
-              اطلب خدمة قانونية
-            </Link>
-            <button
-              type="button"
-              onClick={() => setShowNewRequest(true)}
-              className="flex items-center gap-2 rounded-xl border border-white/20 bg-white/[0.12] px-4 py-2.5 text-sm font-semibold text-white backdrop-blur-sm transition hover:bg-white/[0.18] cursor-pointer"
-            >
-              <Briefcase size={15} />
-              طلب قانوني جديد
-            </button>
-          </div>
+          {canRequestForCompany && (
+            <div className="flex flex-wrap items-center gap-2.5">
+              <Link
+                href="/dashboard/client/services"
+                className="flex items-center gap-2 rounded-xl bg-[#C8A762] px-4 py-2.5 text-sm font-bold text-[#0B3D2E] shadow-[0_4px_16px_-4px_rgba(200,167,98,0.5)] transition hover:brightness-105"
+              >
+                <Plus size={16} weight="bold" />
+                اطلب خدمة قانونية
+              </Link>
+              <button
+                type="button"
+                onClick={() => setShowNewRequest(true)}
+                className="flex items-center gap-2 rounded-xl border border-white/20 bg-white/[0.12] px-4 py-2.5 text-sm font-semibold text-white backdrop-blur-sm transition hover:bg-white/[0.18] cursor-pointer"
+              >
+                <Briefcase size={15} />
+                طلب قانوني جديد
+              </button>
+            </div>
+          )}
         </div>
       </motion.div>
 

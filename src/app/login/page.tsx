@@ -273,6 +273,11 @@ export default function LoginPage() {
           setError(isAr ? LOGIN_LOCKED_AR : LOGIN_LOCKED_EN);
           return;
         }
+        // l16 D-31: the server refuses a sign-in it cannot count (503).
+        if (signInRes.status === 503 && typeof signInBody?.error === "string") {
+          setError(isAr ? signInBody.error : "Sign-in is unavailable right now. Please try again shortly.");
+          return;
+        }
         const authError = signInRes.ok && signInBody?.ok === true ? null : (signInBody?.authError ?? { message: "network" });
 
         if (authError) {

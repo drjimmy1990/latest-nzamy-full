@@ -25,6 +25,7 @@ import { loginLockKey } from "@/lib/auth/loginLockoutKey";
  *   401 { authError: { message, code, status } }  GoTrue refused — the page
  *        translates it exactly as before (translateAuthError, context "login")
  *   400 { error }  a body without an identifier / password
+ *   503 { error }  the service client is unavailable (l16 D-31, fail closed)
  *   200 { ok: true }  signed in; the session cookies are set on this response
  *
  * The counter (20261202_20): max_failures wrong passwords inside
@@ -34,7 +35,9 @@ import { loginLockKey } from "@/lib/auth/loginLockoutKey";
  * which addresses have accounts. Only a credential failure counts. When a
  * lock starts, the account (if one exists) gets ONE e-mail through
  * sendEmail. Until the SQL has run (or if a lockout call fails) the route
- * signs in exactly as before — fail open, logged.
+ * signs in exactly as before — fail open, logged. The service client itself
+ * missing is different (l16 D-31): then nothing can be counted at all, so the
+ * sign-in is refused — 503 { error }.
  *
  * A script that calls GoTrue directly skips this route (Turnstile still
  * applies there). The GoTrue hook in the same migration would close that,
@@ -124,19 +127,24 @@ export async function POST(request: Request) {
   if (!body.ok) return NextResponse.json({ error: "بيانات غير صالحة" }, { status: 400, headers: NO_STORE });
 
   const key = loginLockKey(body.id);
-  let service: Rpc | null = null;
+  // l16 D-31: fail CLOSED — without the service client the lockout can neither
+  // be read nor counted, so the sign-in is refused (503) instead of letting an
+  // unlimited run of password guesses through.
+  let service: Rpc;
   try {
     service = await createServiceClient();
   } catch {
-    console.error("[auth/sign-in] service client unavailable — signing in without the lockout");
+    console.error("[auth/sign-in] service client unavailable — sign-in refused (lockout cannot be checked)");
+    return NextResponse.json(
+      { error: "تعذّر تسجيل الدخول الآن. حاول مرة أخرى بعد قليل." },
+      { status: 503, headers: NO_STORE },
+    );
   }
 
-  if (service) {
-    const before = await lockStatus(service, key, body.id);
-    if (before.locked) {
-      await notifyOnce(service, key, body.id, before.until);
-      return locked();
-    }
+  const before = await lockStatus(service, key, body.id);
+  if (before.locked) {
+    await notifyOnce(service, key, body.id, before.until);
+    return locked();
   }
 
   const supabase = await createClient();
@@ -148,12 +156,12 @@ export async function POST(request: Request) {
   const { data, error } = await supabase.auth.signInWithPassword(credentials);
 
   if (error || !data?.user) {
-    if (service && isHookLockRefusal(error)) {
+    if (isHookLockRefusal(error)) {
       const now = await lockStatus(service, key, body.id);
       await notifyOnce(service, key, body.id, now.until);
       return locked();
     }
-    if (service && isCredentialFailure(error)) {
+    if (isCredentialFailure(error)) {
       const after = await record(service, key, body.id, false);
       if (after.locked) {
         // The attempt that reached the maximum is answered with the lock itself.
@@ -174,6 +182,6 @@ export async function POST(request: Request) {
     );
   }
 
-  if (service) await record(service, key, body.id, true);
+  await record(service, key, body.id, true);
   return NextResponse.json({ ok: true }, { headers: NO_STORE });
 }
