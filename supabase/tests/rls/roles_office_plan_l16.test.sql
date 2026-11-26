@@ -35,6 +35,9 @@
 --
 -- NEGATIVE CONTROL (must FAIL): the same chain without the two 20261206_70
 -- lines → T1 «function public.office_features_locked(uuid) does not exist».
+-- l16 review: with the pre-review 20261206_70 → «T10 FAIL: the consultant's
+-- plan unlocked a lawyer's office»; with T10 removed → «T11 FAIL: the
+-- hr_manager invited a finance manager».
 --
 -- Every assertion RAISES on failure.
 \set ON_ERROR_STOP 1
@@ -332,6 +335,104 @@ begin
     raise exception 'T9 FAIL: the firm account could not switch the reviews off';
   end if;
   raise notice 'T9 PASS: the firm account and its managing partner switch the public reviews; the hr_manager does not';
+end $$;
+reset role;
+
+-- ── T10 (l16 review) «إدارة المكتب» is matched by plan id, never by tier ─────
+-- r1 (free lawyer) buys the consultant's plan, r5 (member of the unpaid firm)
+-- an individual AI plan, p0 (the unpaid firm) the consultant's plan: all three
+-- are paid tiers, none is an office plan — all stay locked. r2b holds the
+-- bundle (an office plan).
+insert into auth.users (id, email, raw_user_meta_data) values
+  ('00000000-0000-0000-0000-0000000001aa', 'r2b@l16.test', '{"user_type": "lawyer"}'),
+  ('00000000-0000-0000-0000-0000000001a9', 'r9@l16.test', '{}'),
+  ('00000000-0000-0000-0000-0000000001ab', 'r10@l16.test', '{}');
+insert into public.subscriptions (user_id, plan_id, tier, status, current_period_end) values
+  ('00000000-0000-0000-0000-0000000001a1', 'consultant-independent', 'pro', 'active', now() + interval '300 days'),
+  ('00000000-0000-0000-0000-0000000001a5', 'ind-ai', 'ai', 'active', now() + interval '300 days'),
+  ('00000000-0000-0000-0000-0000000001b0', 'consultant-independent', 'pro', 'active', now() + interval '300 days'),
+  ('00000000-0000-0000-0000-0000000001aa', 'lawyer-bundle', 'pro', 'active', now() + interval '300 days');
+-- the paid firm's seats are full after T6 / T9: an override for T11's invitations
+update public.firm_profiles set max_seats = 20 where owner_user_id = '00000000-0000-0000-0000-0000000001b9';
+do $$
+begin
+  if not public.office_features_locked('00000000-0000-0000-0000-0000000001a1') then
+    raise exception 'T10 FAIL: the consultant''s plan unlocked a lawyer''s office';
+  end if;
+  if not public.office_features_locked('00000000-0000-0000-0000-0000000001a5') then
+    raise exception 'T10 FAIL: a member''s personal AI plan unlocked the office of an unpaid firm';
+  end if;
+  if not public.office_features_locked('00000000-0000-0000-0000-0000000001b0') then
+    raise exception 'T10 FAIL: a non-office plan unlocked a firm';
+  end if;
+  if public.office_features_locked('00000000-0000-0000-0000-0000000001aa') then
+    raise exception 'T10 FAIL: lawyer-bundle does not unlock the office';
+  end if;
+  if not ('lawyer-pro' = any (public.office_plan_ids()) and 'firm-enterprise' = any (public.office_plan_ids())
+          and not 'consultant-independent' = any (public.office_plan_ids())) then
+    raise exception 'T10 FAIL: office_plan_ids() is wrong';
+  end if;
+  raise notice 'T10 PASS: only an office plan id (or a founder seat / paid firm) unlocks «إدارة المكتب»; a paid tier alone does not';
+end $$;
+
+-- ── T11 (l16 review) team managers: invitations only; senior roles for the owner / MP ─
+set role authenticated;
+select set_config('test.uid', '00000000-0000-0000-0000-0000000001a6', false);   -- r6 hr_manager
+do $$
+declare v_p9 uuid;
+begin
+  select firm_id into v_p9 from public.firm_members where user_id = auth.uid() and status = 'active';
+  -- an «active» insert lands as an invitation
+  insert into public.firm_members (firm_id, user_id, role, status, accepted_at)
+  values (v_p9, '00000000-0000-0000-0000-0000000001a9', 'trainee', 'active', now());
+  begin
+    insert into public.firm_members (firm_id, user_id, role, status)
+    values (v_p9, '00000000-0000-0000-0000-0000000001ab', 'finance_manager', 'invited');
+    raise exception 'T11 FAIL: the hr_manager invited a finance manager';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    update public.firm_members set role = 'partner' where firm_id = v_p9 and user_id = '00000000-0000-0000-0000-0000000001a7';
+    raise exception 'T11 FAIL: the hr_manager made a member partner';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+do $$
+begin
+  if exists (select 1 from public.firm_members where user_id = '00000000-0000-0000-0000-0000000001a9'
+              and (status <> 'invited' or accepted_at is not null)) then
+    raise exception 'T11 FAIL: a manager''s insert became an active membership without the person''s answer';
+  end if;
+end $$;
+set role authenticated;
+select set_config('test.uid', '00000000-0000-0000-0000-0000000001c1', false);   -- k1 managing partner
+do $$
+declare v_p9 uuid;
+begin
+  select firm_id into v_p9 from public.firm_members where user_id = auth.uid() and status = 'active' and role = 'managing_partner';
+  update public.firm_members set role = 'partner' where firm_id = v_p9 and user_id = '00000000-0000-0000-0000-0000000001a7';
+  update public.firm_members set role = 'finance_manager' where firm_id = v_p9 and user_id = '00000000-0000-0000-0000-0000000001a7';
+  if (select role from public.firm_members where firm_id = v_p9 and user_id = '00000000-0000-0000-0000-0000000001a7') <> 'finance_manager' then
+    raise exception 'T11 FAIL: the managing partner could not assign the senior roles';
+  end if;
+  begin
+    update public.firm_members set role = 'managing_partner' where firm_id = v_p9 and user_id = '00000000-0000-0000-0000-0000000001a7';
+    raise exception 'T11 FAIL: the managing partner granted managing_partner (the owner''s alone)';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+select set_config('test.uid', '00000000-0000-0000-0000-0000000001a6', false);   -- r6 hr_manager again
+do $$
+declare v_p9 uuid;
+begin
+  select firm_id into v_p9 from public.firm_members where user_id = auth.uid() and status = 'active';
+  begin
+    update public.firm_members set status = 'suspended' where firm_id = v_p9 and user_id = '00000000-0000-0000-0000-0000000001a7';
+    raise exception 'T11 FAIL: the hr_manager suspended the finance manager';
+  exception when insufficient_privilege then null;
+  end;
+  raise notice 'T11 PASS: a manager''s insert is an invitation; partner / finance / HR roles only by the owner or the managing partner; managing_partner by the owner alone';
 end $$;
 reset role;
 

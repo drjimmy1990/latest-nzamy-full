@@ -14,12 +14,16 @@
 --          account (user_type lawyer or firm, or an active member of a firm)
 --          that is not a demo account and holds no office entitlement:
 --        public.office_plan_entitled(p_user) — any of
---          * an active, unexpired, non-free `subscriptions` row of his own
---            (lawyer-pro, lawyer-bundle, consultant-independent, firm-basic,
---            firm-enterprise, an admin grant …);
+--          * an active, unexpired `subscriptions` row of his own whose
+--            plan_id is an office plan (public.office_plan_ids(): lawyer-pro,
+--            lawyer-bundle, firm-basic, firm-enterprise and the older
+--            firm-pro / firm-corp / firm-max) — by plan id, never by tier, so
+--            the consultant's plan, an individual's AI plan or a member's
+--            personal plan unlock nothing (l16 review); an admin grant counts
+--            when it is one of those plans;
 --          * an active founder seat (founder_seats: the founder's ERP year);
 --          * an ACTIVE membership of a firm whose owner holds one of the two
---            above, or that has its own firm-entity subscription.
+--            above, or whose firm entity holds an office plan.
 --        public.my_office_features_locked() — the same for auth.uid(); the
 --          one function a session may call (the API gate reads it).
 --      The API routes refuse the paid writes with «متاحة في باقة إدارة
@@ -58,6 +62,12 @@
 --        * a manager never grants, changes or removes the managing_partner
 --          role (only the owner does), never touches the owner's row, never
 --          changes his own role and never inserts himself;
+--        * (l16 review) partner, finance_manager and hr_manager are granted,
+--          changed, suspended or removed only by the owner or an ACTIVE
+--          managing partner — an hr_manager manages the rest of the team;
+--        * (l16 review) a row a manager INSERTS is always an invitation:
+--          status forced to 'invited', accepted_at to null — the person's own
+--          answer (20260922_02) is the only way it becomes active;
 --        * the invitee's own answer (20260922_02) and the owner are untouched.
 --      public.set_firm_public_reviews(boolean) also admits the firm's active
 --      managing partner (owner decision 20 named «مدير المكتب»).
@@ -123,6 +133,19 @@ $pre$;
 -- ═════════════════════════════════════════════════════════════════════════════
 -- 1. Who holds «إدارة المكتب»
 -- ═════════════════════════════════════════════════════════════════════════════
+create or replace function public.office_plan_ids()
+returns text[]
+language sql
+immutable
+set search_path = ''
+as $fn$
+  select array['lawyer-pro', 'lawyer-bundle', 'firm-basic', 'firm-enterprise',
+               'firm-pro', 'firm-corp', 'firm-max']::text[];
+$fn$;
+
+comment on function public.office_plan_ids() is
+  'س٢١٢ + l16 review (20261206_70): the subscription plan ids that are «إدارة المكتب» — lawyer-pro, lawyer-bundle, the firm plans (firm-basic, firm-enterprise, and the older firm-pro / firm-corp / firm-max). office_plan_entitled matches these ids, never a tier.';
+
 create or replace function public.office_plan_entitled(p_user uuid)
 returns boolean
 language plpgsql
@@ -134,17 +157,25 @@ declare
   v_hit boolean := false;
   v_subs boolean := to_regclass('public.subscriptions') is not null;
   v_seats boolean := to_regclass('public.founder_seats') is not null;
+  -- l16 review: the plans that ARE «إدارة المكتب», by id — never by tier (a
+  -- consultant's library plan, an individual's AI plan or a member's personal
+  -- plan is a paid tier too, and unlocks nothing here). The price book's
+  -- lawyer-pro / lawyer-bundle / firm-basic / firm-enterprise, plus the older
+  -- firm catalogue rows firm-pro / firm-corp / firm-max (the admin's
+  -- assign-by-tier still resolves a firm to them). The list lives in
+  -- public.office_plan_ids() above — change it there only.
+  v_plans text[] := public.office_plan_ids();
 begin
   if p_user is null then
     return false;
   end if;
-  -- his own paid plan (status active, period not ended, not a free tier)
+  -- his own office plan (status active, period not ended)
   if v_subs then
     execute 'select exists (select 1 from public.subscriptions s
                              where s.user_id = $1 and s.status = ''active''
-                               and coalesce(s.tier, ''free'') <> ''free''
+                               and s.plan_id = any ($2)
                                and (s.current_period_end is null or s.current_period_end > pg_catalog.now()))'
-      into v_hit using p_user;
+      into v_hit using p_user, v_plans;
     if v_hit then
       return true;
     end if;
@@ -159,8 +190,8 @@ begin
       return true;
     end if;
   end if;
-  -- a member works under his firm's plan: the owner's own plan or seat, or
-  -- a subscription keyed on the firm entity
+  -- a member works under his firm's plan: the owner's own office plan or
+  -- seat, or an office plan keyed on the firm entity
   if v_subs then
     execute 'select exists (
                select 1
@@ -171,9 +202,9 @@ begin
                                where (s.user_id = fp.owner_user_id
                                       or (s.entity_type = ''firm'' and s.entity_id = fp.id))
                                  and s.status = ''active''
-                                 and coalesce(s.tier, ''free'') <> ''free''
+                                 and s.plan_id = any ($2)
                                  and (s.current_period_end is null or s.current_period_end > pg_catalog.now())))'
-      into v_hit using p_user;
+      into v_hit using p_user, v_plans;
     if v_hit then
       return true;
     end if;
@@ -197,7 +228,7 @@ end
 $fn$;
 
 comment on function public.office_plan_entitled(uuid) is
-  'س٢١٢ (20261206_70): true when p_user holds «إدارة المكتب» — an active unexpired non-free subscription of his own, an active founder seat, or an active membership of a firm whose owner holds either (or whose firm entity is subscribed). Service role only.';
+  'س٢١٢ (20261206_70): true when p_user holds «إدارة المكتب» — an active unexpired subscription of his own to one of office_plan_ids() (matched by plan id, never by tier), an active founder seat, or an active membership of a firm whose owner holds either (or whose firm entity holds an office plan). Service role only.';
 
 create or replace function public.office_features_locked(p_user uuid)
 returns boolean
@@ -472,8 +503,12 @@ security definer
 set search_path = ''
 as $fn$
 declare
-  v_uid   uuid := auth.uid();
-  v_owner uuid;
+  v_uid    uuid := auth.uid();
+  v_owner  uuid;
+  v_mp     boolean;
+  -- l16 review: the senior roles a manager below the managing partner never
+  -- grants, changes or touches (managing_partner itself: the owner only)
+  v_senior constant text[] := array['partner', 'finance_manager', 'hr_manager'];
 begin
   -- the service role, a migration, an internal trigger, an admin: not this guard's business
   if v_uid is null or public.is_admin() then
@@ -509,12 +544,29 @@ begin
   if tg_op = 'UPDATE' and (new.firm_id is distinct from old.firm_id or new.user_id is distinct from old.user_id) then
     raise exception 'firm_members_manager_guard: a membership does not move' using errcode = '42501';
   end if;
+  -- l16 review: partner / finance_manager / hr_manager — granted, changed,
+  -- suspended or removed only by the owner or an ACTIVE managing partner of
+  -- this firm (an hr_manager manages the rest of the team, never these)
+  if new.role = any (v_senior) or (tg_op = 'UPDATE' and old.role = any (v_senior)) then
+    v_mp := exists (select 1 from public.firm_members m
+                     where m.firm_id = new.firm_id and m.user_id = v_uid
+                       and m.status = 'active' and m.role = 'managing_partner');
+    if not v_mp then
+      raise exception 'firm_members_manager_guard: only the firm owner or the managing partner grants or changes a partner, finance manager or HR manager' using errcode = '42501';
+    end if;
+  end if;
+  -- l16 review: a manager INVITES — the person's own answer (20260922_02) is
+  -- the only way a row he adds becomes active (consent at entry)
+  if tg_op = 'INSERT' then
+    new.status := 'invited';
+    new.accepted_at := null;
+  end if;
   return new;
 end
 $fn$;
 
 comment on function public.firm_members_manager_guard() is
-  'D-53 (20261206_70): a team manager (firm_team_manager) never grants / changes / removes managing_partner, never touches the owner''s row, never re-roles or inserts himself, never moves a row to another firm or person. Owner, admin and service role pass.';
+  'D-53 + l16 review (20261206_70): a team manager (firm_team_manager) never grants / changes / removes managing_partner, never touches the owner''s row, never re-roles or inserts himself, never moves a row to another firm or person; partner / finance_manager / hr_manager are granted or changed only by the owner or an active managing partner; a row a manager inserts is always an invitation (status invited, accepted_at null). Owner, admin and service role pass.';
 
 drop trigger if exists trg_firm_members_manager_guard on public.firm_members;
 create trigger trg_firm_members_manager_guard
@@ -596,6 +648,7 @@ declare
   fn text;
 begin
   foreach fn in array array[
+    'public.office_plan_ids()',
     'public.office_plan_entitled(uuid)',
     'public.office_features_locked(uuid)',
     'public.my_office_features_locked()',
@@ -619,6 +672,7 @@ begin
     end if;
   end loop;
   if exists (select 1 from pg_catalog.pg_roles where rolname = 'service_role') then
+    grant execute on function public.office_plan_ids() to service_role;
     grant execute on function public.office_plan_entitled(uuid) to service_role;
     grant execute on function public.office_features_locked(uuid) to service_role;
     grant execute on function public.solo_lawyer_is_capped(uuid) to service_role;
