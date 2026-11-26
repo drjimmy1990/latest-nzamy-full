@@ -24,7 +24,13 @@ test("the lawyer's sign-up keeps the WhatsApp step but never leaves the page for
   const phone = page.indexOf("<PhoneOtpPanel");
   const licence = page.indexOf("<LawyerVerificationPanel isAr={isAr} initialFile={licenceFile}");
   assert.ok(phone > 0 && licence > phone, "PhoneOtpPanel renders before the licence panel");
-  assert.match(page, /signupHasSession && phoneStepPending \? \(\s*<PhoneOtpPanel showSignOut=\{false\} onDone=\{\(\) => setPhoneStepPending\(false\)\} \/>/);
+  // l16 review: stable callbacks; the licence panel's phone_unverified refusal comes back to this step
+  assert.match(page, /signupHasSession && phoneStepPending \? \(\s*<PhoneOtpPanel showSignOut=\{false\} onDone=\{onPhoneDone\} \/>/);
+  assert.match(page, /const onPhoneDone = useCallback\(\(\) => setPhoneStepPending\(false\), \[\]\);/);
+  assert.match(page, /const onPhoneUnverified = useCallback\(\(\) => setPhoneStepPending\(true\), \[\]\);/);
+  assert.match(page, /<LawyerVerificationPanel [^>]*onPhoneUnverified=\{onPhoneUnverified\} \/>/);
+  const panel = code("src/components/lawyerSignup/LawyerVerificationPanel.tsx");
+  assert.match(panel, /if \(inline\) inline\(\);\s*else window\.location\.assign\("\/verify-phone\?next=\/register\/provider\/verify"\);/);
 });
 
 test("/verify-phone still works on its own: the same panel, ?next= kept", () => {

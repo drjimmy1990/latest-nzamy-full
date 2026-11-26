@@ -590,7 +590,9 @@ test("nothing outside adminAudit.ts inserts into admin_audit_events (one row per
   // write fails — logAdminAction never throws, so it cannot be the gate there.
   // payments/minTopup.ts (batch l7, decision 5) records a BUYER's refused top-up
   // below his type's minimum (actor_type "user") — not an admin action either.
-  const ALLOWED = new Set(["lib/auth/adminAudit.ts", "app/api/v1/onboarding/account-type/route.ts", "lib/payments/refundCore.ts", "lib/payments/minTopup.ts"]);
+  // payments/couponRedeemCore.ts (l16 review) records a USER's own code
+  // redemption (actor_type "user", coupon_redeemed), the minTopup pattern.
+  const ALLOWED = new Set(["lib/auth/adminAudit.ts", "app/api/v1/onboarding/account-type/route.ts", "lib/payments/refundCore.ts", "lib/payments/minTopup.ts", "lib/payments/couponRedeemCore.ts"]);
   const offenders: string[] = [];
   const walk = (dir: string) => {
     for (const name of readdirSync(dir)) {
@@ -616,6 +618,8 @@ test("nothing outside adminAudit.ts inserts into admin_audit_events (one row per
   assert.ok(onboarding.includes('actor_type: "user"'), "the allow-listed onboarding writer must be a user actor");
   const minTopup = codeOnly(readFileSync(join(SRC, "lib/payments/minTopup.ts"), "utf8"));
   assert.ok(minTopup.includes('actor_type: "user"'), "the allow-listed min top-up writer must be a user actor");
+  const redeem = codeOnly(readFileSync(join(SRC, "lib/payments/couponRedeemCore.ts"), "utf8"));
+  assert.ok(redeem.includes('actor_type: "user"'), "the allow-listed coupon redemption writer must be a user actor");
 });
 
 test("requireStaff: requireAdmin first, the role from platform_staff with the service client, fail-closed", () => {
