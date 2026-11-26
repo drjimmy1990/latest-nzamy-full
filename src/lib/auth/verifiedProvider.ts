@@ -44,3 +44,30 @@ export function verifiedProviderDecision(facts: VerifiedProviderFacts | null): V
   if (facts.memberFirmStatuses.includes("verified")) return { ok: true };
   return { ok: false, status: 403, error: UNVERIFIED_PROVIDER_REFUSAL_AR, code: UNVERIFIED_PROVIDER_CODE };
 }
+
+// ── owner س٢١٤ (25 Nov 2026, batch l16): the professional AI tools ─────────────
+
+/** Where a lawyer finishes his licence verification (photo + code). */
+export const LICENCE_VERIFY_HREF = "/register/provider/verify";
+
+/** The professional tools' refusal before the licence is verified. */
+export const LICENCE_REQUIRED_TOOLS_AR =
+  "وثّق رخصتك أولاً: أدوات الصياغة والتحليل المهنية تعمل بعد أن يعتمد فريق المنصة توثيق ترخيصك.";
+
+/** A firm account is verified by the team (no self-service step): the same rule, without a link. */
+export const LICENCE_REQUIRED_FIRM_AR =
+  "أدوات الصياغة والتحليل المهنية تعمل بعد أن يعتمد فريق المنصة توثيق مكتبك.";
+
+/**
+ * The 403 body of a professional AI tool for an unverified account:
+ * `verifyHref` is the lawyer's own verification step, null for a firm (its
+ * verification is the team's review).
+ */
+export function licenceRefusalBody(userType: string): { error: string; code: typeof UNVERIFIED_PROVIDER_CODE; verifyHref: string | null } {
+  return userType === "firm"
+    ? { error: LICENCE_REQUIRED_FIRM_AR, code: UNVERIFIED_PROVIDER_CODE, verifyHref: null }
+    : { error: LICENCE_REQUIRED_TOOLS_AR, code: UNVERIFIED_PROVIDER_CODE, verifyHref: LICENCE_VERIFY_HREF };
+}
+
+/** useAiRun → the /ai layout: a run was refused for the licence (detail: { verifyHref }). */
+export const LICENCE_REQUIRED_EVENT = "nzamy:licence-required";

@@ -96,6 +96,22 @@ export function toolRoleRefusal(spec: ToolAudience, actor: ToolCaller): "role" |
   return null;
 }
 
+/**
+ * Owner س٢١٤ (25 Nov 2026, batch l16): a professional tool runs only once the
+ * account's licence is verified — the founder plan's rule (its seat activates
+ * only on approval, 20261127_10) applied to every lawyer's tool. A
+ * professional tool is one whose roles are the lawyers' and firms' only: a
+ * tool open to an individual too (quick answer, library assistant, «مساعد
+ * نظامي», the simple contract) is never gated, so a lawyer keeps his free
+ * questions before approval. Derived from `roles`, so a lawyer-only tool added
+ * tomorrow is gated from its first day. Who passes is
+ * src/lib/auth/verifiedProvider.ts (admin, verified lawyer, verified firm,
+ * active member of a verified firm).
+ */
+export function toolNeedsLicence(spec: Pick<AiToolSpec, "roles">): boolean {
+  return !spec.roles.includes("individual") && spec.roles.some((r) => r === "lawyer" || r === "firm");
+}
+
 /** The whole answer, in the run path's order: who the caller is first, then the mode. */
 export function toolAccessFor(
   spec: ToolAudience,

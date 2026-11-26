@@ -1617,3 +1617,79 @@ test("GraphRAG: embedQuery runs in parallel with lib-queries and rescues colloqu
   const kinds = reported.flatMap((x) => x.events.map((e) => e.kind));
   assert.ok(kinds.includes("law") && kinds.includes("note"), "decree maps to law and feqh maps to note within DB CHECK constraint");
 });
+
+// ── owner س٢١٤ (batch l16): the verified licence before a professional tool ────
+
+test("س٢١٤: an unverified lawyer is refused a professional tool (403 + link), uncharged and before the mode is read", async () => {
+  for (const userType of ["lawyer", "firm"]) {
+    const { client, log } = db();
+    const seen: unknown[] = [];
+    const asked: string[] = [];
+    const r = await startRunWith(
+      client as never,
+      {
+        ...deps(okReply(), seen),
+        verifiedProvider: async (id, type) => (asked.push(`${id}:${type}`), { ok: false, status: 403, error: "x", code: "provider_not_verified" }),
+      },
+      { ...LAWYER, userType },
+      body(),
+    );
+    assert.equal(r.status, 403, userType);
+    assert.equal(r.body.code, "provider_not_verified");
+    assert.match(String(r.body.error), /توثيق/);
+    assert.equal(r.body.verifyHref, userType === "lawyer" ? "/register/provider/verify" : null);
+    assert.deepEqual(asked, [`u-1:${userType}`]);
+    assert.deepEqual(rpcs(log), [], "no money function ran");
+    assert.equal(log.filter((q) => q.table === "platform_settings").length, 0, "refused before the mode is read");
+    assert.equal(seen.length, 0, "n8n was not called");
+  }
+});
+
+test("س٢١٤: a verified lawyer runs; a failed or thrown licence read refuses with 503; an admin is never asked", async () => {
+  {
+    const { client } = db();
+    const r = await startRunWith(client as never, { ...deps(okReply()), verifiedProvider: async () => ({ ok: true }) }, LAWYER, body());
+    assert.equal(r.status, 200);
+  }
+  for (const verifiedProvider of [
+    async () => ({ ok: false as const, status: 503 as const, error: "تعذّر التحقق" }),
+    async () => {
+      throw new Error("down");
+    },
+  ]) {
+    const { client, log } = db();
+    const r = await startRunWith(client as never, { ...deps(okReply()), verifiedProvider }, LAWYER, body());
+    assert.equal(r.status, 503);
+    assert.deepEqual(rpcs(log), []);
+  }
+  {
+    const { client } = db();
+    let asked = 0;
+    const r = await startRunWith(
+      client as never,
+      { ...deps(okReply()), verifiedProvider: async () => (asked++, { ok: false, status: 403, error: "x" }) },
+      { ...LAWYER, userType: "admin" },
+      body(),
+    );
+    assert.equal(r.status, 200);
+    assert.equal(asked, 0);
+  }
+});
+
+test("س٢١٤: which tools wait for the licence — every lawyer/firm-only tool; none a client may run too", async () => {
+  const { toolNeedsLicence } = await import("./aiToolsConfig.ts");
+  const gated = Object.values(AI_TOOLS).filter((t) => toolNeedsLicence(t)).map((t) => t.id).sort();
+  const open = Object.values(AI_TOOLS).filter((t) => !toolNeedsLicence(t)).map((t) => t.id).sort();
+  for (const id of ["legal-drafter", "contracts-pro", "contract-drafter", "contract-review", "contract-negotiator", "legal-opinion-consult", "legal-opinion-letter", "case-brief", "brief-check", "wargaming", "analyze-strength", "najiz-optimizer", "communicate", "assistant", "canvas-card"]) {
+    assert.ok(gated.includes(id), id);
+  }
+  for (const id of ["quick-answer", "library-assistant", "floating", "simple-contract"]) assert.ok(open.includes(id), id);
+  for (const t of Object.values(AI_TOOLS)) {
+    if (t.roles.includes("individual")) assert.equal(toolNeedsLicence(t), false, t.id);
+  }
+});
+
+test("س٢١٤: the run route wires the licence check (the contracts / invoices rule, service client)", () => {
+  const route = readFileSync(join(process.cwd(), "src/app/api/v1/ai/runs/route.ts"), "utf8");
+  assert.match(route, /verifiedProvider: async \(userId, type\) => verifiedProviderDecision\(await readVerifiedProviderFacts\(admin, userId, type\)\)/);
+});

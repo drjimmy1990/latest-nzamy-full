@@ -47,7 +47,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { CONSULTANT_BLOCKED_MESSAGE, CONSULTANT_RESERVED_MESSAGE, type PracticeKind } from "../auth/practiceKind.ts";
 import { CONSULTANT_PLEADING_TOOL_IDS } from "../auth/consultantScope.ts";
-import { resolveToolRuntime, toolAvailability, toolRoleRefusal } from "./aiToolsConfig.ts";
+import { resolveToolRuntime, toolAvailability, toolNeedsLicence, toolRoleRefusal } from "./aiToolsConfig.ts";
+import { licenceRefusalBody, type VerifiedProviderDecision } from "../auth/verifiedProvider.ts";
 import type { N8nCall, N8nOutcome } from "./n8nClient.ts";
 import {
   cleanQueries,
@@ -216,6 +217,16 @@ export interface StartRunDeps {
    * refusal and the output filter still run, only the counters are skipped.
    */
   promptGuard?: PromptGuardState;
+  /**
+   * Owner س٢١٤ (batch l16): is this account's licence verified? Asked only
+   * for a non-admin run of a professional tool (aiToolsConfig.toolNeedsLicence),
+   * right after the role checks and before the mode, the input and any charge.
+   * The route passes verifiedProviderRead + verifiedProviderDecision (the
+   * contracts / invoices rule). A refusal is 403 provider_not_verified with the
+   * verification link; a failed read (503) refuses too — fail closed. A throw
+   * is the 503.
+   */
+  verifiedProvider?: (userId: string, userType: string) => Promise<VerifiedProviderDecision>;
 }
 
 export type ProgressReporter = (runId: string, userId: string, events: ProgressEvent[]) => void;
@@ -602,6 +613,20 @@ export async function startRunWith(
     // Only the four pleading tools cite Art. 18; every other closed tool names the reservation.
     const message = CONSULTANT_PLEADING_TOOL_IDS.includes(spec.id) ? CONSULTANT_BLOCKED_MESSAGE : CONSULTANT_RESERVED_MESSAGE;
     return { status: 403, body: { error: message, code: "consultant_blocked" } };
+  }
+  // Owner س٢١٤ (batch l16): a professional tool waits for the verified licence.
+  if (!isAdmin && toolNeedsLicence(spec) && deps.verifiedProvider) {
+    let decision: VerifiedProviderDecision;
+    try {
+      decision = await deps.verifiedProvider(actor.userId, actor.userType);
+    } catch {
+      decision = { ok: false, status: 503, error: AI_COPY.unavailable };
+    }
+    if (!decision.ok) {
+      return decision.status === 403
+        ? { status: 403, body: licenceRefusalBody(actor.userType) }
+        : { status: 503, body: { error: decision.error, code: "unavailable" } };
+    }
   }
 
   const runtime = resolveToolRuntime(spec, await readAiToolsSetting(admin));

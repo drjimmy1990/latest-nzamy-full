@@ -8,6 +8,7 @@ import {
   INSUFFICIENT_POINTS_EVENT,
   saveToolDraft,
 } from "@/lib/payments/topUpDraft";
+import { LICENCE_REQUIRED_EVENT, UNVERIFIED_PROVIDER_CODE } from "@/lib/auth/verifiedProvider";
 
 /**
  * useAiRun — the one client for the AI tools (plan §2.4), as a React state.
@@ -64,6 +65,13 @@ export function useAiRun() {
           window.dispatchEvent(new CustomEvent(INSUFFICIENT_POINTS_EVENT, { detail: { tool } }));
         } catch {
           // no window: nothing to open
+        }
+      } else if (after.phase === "error" && after.code === UNVERIFIED_PROVIDER_CODE) {
+        // Owner س٢١٤ (batch l16): the /ai layout shows «وثّق رخصتك» with its link.
+        try {
+          window.dispatchEvent(new CustomEvent(LICENCE_REQUIRED_EVENT, { detail: { tool } }));
+        } catch {
+          // no window: the error line still says it
         }
       } else if (after.phase === "running" || after.phase === "done" || after.phase === "review") {
         clearToolDraft(session(), tool);

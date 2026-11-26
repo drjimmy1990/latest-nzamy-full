@@ -97,7 +97,47 @@ test("the route: signed in, per caller, no-store, and it answers nothing but the
   assert.match(route, /if \(auth instanceof NextResponse\) return auth;/);
   assert.match(route, /"Cache-Control": "private, no-store"/);
   assert.match(route, /status: 400/);
-  assert.match(route, /toolStatusWith\(supabase, admin, auth\.user\.id, spec\)/);
+  assert.match(route, /toolStatusWith\(supabase, admin, auth\.user\.id, spec, \{ licence \}\)/);
+  // Owner س٢١٤ (l16): the licence check is the run path's own rule.
+  assert.match(route, /verifiedProviderDecision\(await readVerifiedProviderFacts\(admin, userId, userType\)\)/);
   assert.doesNotMatch(route, /export async function (POST|PUT|PATCH|DELETE)/);
   assert.doesNotMatch(route, /\b(price|dailyLimit|daily_limit|defaultMode|\.mode)\b/);
+});
+
+// ── owner س٢١٤ (batch l16): the licence before a professional tool ─────────────
+
+test("س٢١٤: an unverified lawyer is told why (reason licence + link); a firm gets no link; a verified one and the admin pass", async () => {
+  const refuse = async () => ({ ok: false as const, status: 403 as const, error: "x", code: "provider_not_verified" });
+  const pass = async () => ({ ok: true as const });
+  const seen: string[] = [];
+  const run = async (userType: string, licence: typeof refuse | typeof pass, spec = OPEN) => {
+    const { rls, admin } = clients({ userType, mode: "live", tool: spec.id });
+    return toolStatusWith(rls.client as never, admin.client as never, "u-1", spec, {
+      licence: async (id, type) => (seen.push(`${id}:${type}`), licence()),
+    });
+  };
+  assert.deepEqual(await run("lawyer", refuse), { usable: false, reason: "licence", verifyHref: "/register/provider/verify" });
+  assert.deepEqual(await run("firm", refuse), { usable: false, reason: "licence", verifyHref: null });
+  assert.deepEqual(await run("lawyer", pass), { usable: true });
+  seen.length = 0;
+  assert.deepEqual(await run("admin", refuse), { usable: true });
+  assert.equal(seen.length, 0, "an admin is never asked");
+  // A tool open to individuals too (the library assistant) is never gated.
+  const lib = AI_TOOLS["library-assistant"];
+  const { rls, admin } = clients({ userType: "lawyer", mode: "live", tool: lib.id });
+  let asked = 0;
+  await toolStatusWith(rls.client as never, admin.client as never, "u-1", lib, { licence: async () => (asked++, refuse()) });
+  assert.equal(asked, 0);
+});
+
+test("س٢١٤: a failed licence read (503) or a throw answers plain not-usable", async () => {
+  const { rls, admin } = clients({ userType: "lawyer", mode: "live" });
+  assert.deepEqual(
+    await toolStatusWith(rls.client as never, admin.client as never, "u-1", OPEN, { licence: async () => ({ ok: false, status: 503, error: "x" }) }),
+    { usable: false },
+  );
+  assert.deepEqual(
+    await toolStatusWith(rls.client as never, admin.client as never, "u-1", OPEN, { licence: async () => { throw new Error("down"); } }),
+    { usable: false },
+  );
 });

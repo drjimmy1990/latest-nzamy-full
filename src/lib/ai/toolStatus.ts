@@ -16,12 +16,25 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { practiceKindFromRead } from "../auth/courtPracticeDecision.ts";
 import { readConsultantStanding } from "../auth/consultantScopeServer.ts";
-import { resolveToolRuntime, toolAvailability, toolRoleRefusal } from "./aiToolsConfig.ts";
+import { resolveToolRuntime, toolAvailability, toolNeedsLicence, toolRoleRefusal } from "./aiToolsConfig.ts";
+import { licenceRefusalBody, type VerifiedProviderDecision } from "../auth/verifiedProvider.ts";
 import { readAiToolsSetting } from "./runCore.ts";
 import type { AiToolSpec } from "./tools.ts";
 
 export interface ToolStatus {
   usable: boolean;
+  /**
+   * Owner س٢١٤ (batch l16): set only when the one thing missing is the
+   * account's verified licence, so the screen says «وثّق رخصتك» instead of
+   * «قيد التفعيل». `verifyHref` is the lawyer's own step (null for a firm).
+   */
+  reason?: "licence";
+  verifyHref?: string | null;
+}
+
+export interface ToolStatusOptions {
+  /** The run path's licence check (StartRunDeps.verifiedProvider). Absent → not asked. */
+  licence?: (userId: string, userType: string) => Promise<VerifiedProviderDecision>;
 }
 
 export async function toolStatusWith(
@@ -29,6 +42,7 @@ export async function toolStatusWith(
   admin: SupabaseClient,
   userId: string,
   spec: AiToolSpec,
+  opts: ToolStatusOptions = {},
 ): Promise<ToolStatus> {
   try {
     const { data: profile, error } = await rls.from("profiles").select("user_type").eq("id", userId).maybeSingle();
@@ -42,6 +56,13 @@ export async function toolStatusWith(
     // Owner decision (22-23 Nov 2026): the run path's own membership read, for a consultant only.
     const firmMember = practiceKind === "consultant" ? (await readConsultantStanding(rls, userId)).firmMember : false;
     if (toolRoleRefusal(spec, { userType, practiceKind, firmMember })) return { usable: false };
+    // Owner س٢١٤ (batch l16): the run path's order — the licence after the role, before the mode.
+    if (userType !== "admin" && toolNeedsLicence(spec) && opts.licence) {
+      const decision = await opts.licence(userId, userType);
+      if (!decision.ok) {
+        return decision.status === 403 ? { usable: false, reason: "licence", verifyHref: licenceRefusalBody(userType).verifyHref } : { usable: false };
+      }
+    }
 
     const runtime = resolveToolRuntime(spec, await readAiToolsSetting(admin));
     return { usable: toolAvailability(runtime.mode, userType === "admin") === "ok" };

@@ -86,3 +86,23 @@ test("Retry-After is capped at the bucket's minute; nonsense waits a second; oth
   await readToolUsable("quick-answer", (async () => { asked += 1; return new Response("{}", { status: 503 }); }) as never, async () => { throw new Error("no wait"); });
   assert.equal(asked, 1);
 });
+
+// ── owner س٢١٤ (batch l16) ──────────────────────────────────────────────────────
+
+test("س٢١٤: the licence reason comes through with a same-site link only; everything else stays a plain no", async () => {
+  const { readToolStatus } = await import("./toolStatusClient.ts");
+  assert.deepEqual(await readToolStatus("legal-drafter", reply(200, { usable: false, reason: "licence", verifyHref: "/register/provider/verify" })), {
+    usable: false,
+    licence: { verifyHref: "/register/provider/verify" },
+  });
+  assert.deepEqual(await readToolStatus("legal-drafter", reply(200, { usable: false, reason: "licence", verifyHref: null })), {
+    usable: false,
+    licence: { verifyHref: null },
+  });
+  for (const bad of ["https://evil.example/x", "//evil.example", "//evil", "javascript:alert(1)"]) {
+    assert.deepEqual((await readToolStatus("legal-drafter", reply(200, { usable: false, reason: "licence", verifyHref: bad }))).licence, { verifyHref: null }, bad);
+  }
+  assert.deepEqual(await readToolStatus("legal-drafter", reply(403, { usable: false, reason: "licence" })), { usable: false, licence: null });
+  assert.deepEqual(await readToolStatus("legal-drafter", reply(200, { usable: true, reason: "licence" })), { usable: true, licence: null });
+  assert.equal(await readToolUsable("legal-drafter", reply(200, { usable: false, reason: "licence" })), false);
+});
