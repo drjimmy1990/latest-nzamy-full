@@ -36,3 +36,14 @@ export async function checkoutVatRegistered(admin: SupabaseClient, mode: "test" 
   if (mode === "live") return true;
   return readVatRegistered(admin);
 }
+
+/**
+ * l16 review: what GET /api/v1/pricing/vat answers. Live mode always charges
+ * VAT (checkoutVatRegistered), so it is true there whatever the read said; a
+ * failed read outside live mode is null — the page shows no VAT line and
+ * never claims «no VAT» on a guess.
+ */
+export function publicVatAnswer(read: boolean | null, mode: "test" | "live" | null): boolean | null {
+  if (mode === "live") return true;
+  return read;
+}

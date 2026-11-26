@@ -14,7 +14,7 @@ import { NO_VAT_LINE_AR, NO_VAT_RECEIPT_TITLE_AR, receiptView, creditNoteView, T
 import { listedVatNotice, quoteVatNotice } from "./checkoutView.ts";
 import { VAT_NOTICE, VAT_UNREGISTERED_NOTICE, vatNoticeText } from "../pricing/vatNotice.ts";
 import { cardTotalWithVat } from "../pricing/cardPrice.ts";
-import { readVatRegistered, checkoutVatRegistered } from "./vatStatus.ts";
+import { readVatRegistered, checkoutVatRegistered, publicVatAnswer } from "./vatStatus.ts";
 
 const COMPANY = { legal_name_ar: "شركة", cr_number: "1010000000", vat_number: "300000000000003", address_ar: "الرياض" };
 
@@ -62,6 +62,19 @@ test("the server read: a missing row is false, an error is null; live mode never
   assert.equal(await readVatRegistered(fake({ data: null, error: { code: "08006" } })), null);
   assert.equal(await checkoutVatRegistered(fake({ data: null, error: { code: "08006" } }), "live"), true);
   assert.equal(await checkoutVatRegistered(fake({ data: null, error: null }), "test"), false);
+});
+
+test("l16 review: GET /api/v1/pricing/vat never says «no VAT» on a failed read, and is true in live mode", () => {
+  assert.equal(publicVatAnswer(null, "live"), true);
+  assert.equal(publicVatAnswer(false, "live"), true, "live always charges VAT");
+  assert.equal(publicVatAnswer(null, "test"), null, "unknown stays unknown — no VAT line, no «no VAT»");
+  assert.equal(publicVatAnswer(null, null), null);
+  assert.equal(publicVatAnswer(false, "test"), false);
+  assert.equal(publicVatAnswer(true, null), true);
+  assert.equal(vatNoticeText(null), null, "the page shows nothing while unknown");
+  const route = readFileSync(join(import.meta.dirname, "..", "..", "app", "api", "v1", "pricing", "vat", "route.ts"), "utf8");
+  assert.match(route, /publicVatAnswer\(read, mode\)/);
+  assert.doesNotMatch(route, /vatRegistered = false;/);
 });
 
 test("receipts: an order with no VAT is «إيصال سداد», one amount row, the owner's line, no QR", () => {
