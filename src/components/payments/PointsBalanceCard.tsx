@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Coins } from "@phosphor-icons/react";
+import { TOPUP_BUTTON_AR, TOPUP_HREF } from "@/lib/payments/topUpLinks";
 import { arabicDigits, billingDateAr, pointsByType, pointsSummary, POINTS_SPEND_ORDER_AR, POINTS_SPEND_REFUND_NOTE_AR, type BillingData } from "@/lib/payments/billingView";
 
 /**
@@ -27,9 +28,15 @@ export function PointsBalanceCard({ data }: { data: Pick<BillingData, "pointsBal
             </p>
           </div>
         </div>
-        <Link href="/dashboard/billing" className="text-xs font-bold text-[#0B3D2E] hover:underline dark:text-[#C8A762]">
-          تفاصيل النقاط
-        </Link>
+        <div className="flex flex-wrap items-center gap-3">
+          {/* l16 (A-57, owner 25 Nov §7.7.2): top up from the balance itself */}
+          <Link href={TOPUP_HREF} className="rounded-xl bg-[#0B3D2E] px-4 py-2 text-xs font-bold text-white hover:bg-[#0B3D2E]/90 dark:bg-[#C8A762] dark:text-[#0B3D2E]">
+            {TOPUP_BUTTON_AR}
+          </Link>
+          <Link href="/dashboard/billing" className="text-xs font-bold text-[#0B3D2E] hover:underline dark:text-[#C8A762]">
+            تفاصيل النقاط
+          </Link>
+        </div>
       </div>
       {/* Owner ١٦٥ (l13): the balance by kind, each with its soonest end, in spend order. */}
       {groups.length > 0 && (<>

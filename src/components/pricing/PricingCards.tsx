@@ -20,6 +20,8 @@ import { planEntitlementRequest } from "@/lib/pricing/planRequest";
 import { vatNoticeFor } from "@/lib/pricing/vatNotice";
 import { cardLaunch, cardPrice, cardTotalWithVat, shownCards, type LaunchPriceMap } from "@/lib/pricing/cardPrice";
 import { signedInCta } from "@/lib/pricing/cardCta";
+import { requestFiledAr } from "@/lib/payments/manualRequest";
+import { TOPUP_PACKS_ANCHOR } from "@/lib/payments/topUpLinks";
 import { useLaunchPrices } from "@/hooks/useLaunchPrices";
 
 /**
@@ -90,6 +92,12 @@ function SpotlightCard({
   // UX14: what the buyer pays with VAT, and for which cycle, beside the button.
   const vatTotal = cardTotalWithVat(plan, billing, launch, isAr ? "ar" : "en");
   const cta = signedInCta(plan, signedIn, isAr);
+  const memberBuy = signedIn && cta.ctaHref === plan.ctaHref && isSubscribeCta(plan.ctaHref);
+  const buyClass = `${vatTotal ? "mt-2" : "mt-7"} flex w-full items-center justify-center gap-2 rounded-xl px-6 py-3.5 text-sm font-bold tracking-wide transition-all ${
+    plan.highlighted
+      ? "bg-white text-[#0B3D2E] shadow-[0_4px_20px_-4px_rgba(255,255,255,0.3)] hover:shadow-[0_8px_28px_-4px_rgba(255,255,255,0.4)]"
+      : "bg-royal text-white shadow-[0_4px_20px_-4px_rgba(11,61,46,0.35)] hover:shadow-[0_8px_28px_-4px_rgba(11,61,46,0.5)]"
+  }`;
   const { bonusLabel, comingSoon } = plan;
   // Owner ٤٢٠: a card shown before it is sold says «قريباً» where the badge,
   // the price and the button would be.
@@ -338,6 +346,22 @@ function SpotlightCard({
           >
             {soonText}
           </button>
+        ) : memberBuy ? (
+          // l16 (A-56, owner 25 Nov §7.7.1): a signed-in member's buy button is
+          // a real button — no sign-up link on hover or on a middle click; it
+          // goes to /checkout (gateway on) or files the request (handleSubscribe)
+          <motion.button
+            type="button"
+            onClick={() => {
+              onSubscribe?.(plan);
+            }}
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.97, y: 1 }}
+            className={buyClass}
+          >
+            {cta.cta}
+            <ArrowLeft size={15} weight="bold" />
+          </motion.button>
         ) : (
         <motion.a
           href={cta.ctaHref}
@@ -348,11 +372,7 @@ function SpotlightCard({
           }}
           whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.97, y: 1 }}
-          className={`${vatTotal ? "mt-2" : "mt-7"} flex w-full items-center justify-center gap-2 rounded-xl px-6 py-3.5 text-sm font-bold tracking-wide transition-all ${
-            isHighlighted
-              ? "bg-white text-[#0B3D2E] shadow-[0_4px_20px_-4px_rgba(255,255,255,0.3)] hover:shadow-[0_8px_28px_-4px_rgba(255,255,255,0.4)]"
-              : "bg-royal text-white shadow-[0_4px_20px_-4px_rgba(11,61,46,0.35)] hover:shadow-[0_8px_28px_-4px_rgba(11,61,46,0.5)]"
-          }`}
+          className={buyClass}
         >
           {cta.cta}
           <ArrowLeft size={15} weight="bold" />
@@ -383,7 +403,7 @@ function LawyerCreditsLayout({ planList, billing, isAr, onSubscribe }: { planLis
       </div>
 
       {topups.length > 0 && (
-        <div>
+        <div id={TOPUP_PACKS_ANCHOR} className="scroll-mt-32">
           <h3 className="mb-4 text-center font-brand text-lg font-bold text-ink">
             {isAr ? "حزم الشحن الإضافية" : "Extra point top-ups"}
           </h3>
@@ -534,16 +554,36 @@ function LawyerServicesTable({ isAr }: { isAr: boolean }) {
 
 /* ─── Default layout: flexible grid ─────────────────────────────────────── */
 function DefaultLayout({ planList, billing, isAr, onSubscribe }: { planList: Plan[]; billing: Billing; isAr: boolean; onSubscribe?: (plan: Plan) => boolean }) {
+  // l16 (A-57 / A-58): the point top-ups get their own titled row (#topup-packs),
+  // as on the lawyers' tab — the firms' packs and the individuals' alike
+  const plans = planList.filter((p) => !p.id.startsWith("topup-"));
+  const topups = planList.filter((p) => p.id.startsWith("topup-"));
   const cols =
-    planList.length <= 3 ? "md:grid-cols-3" :
-    planList.length === 4 ? "md:grid-cols-2 lg:grid-cols-4" :
+    plans.length <= 3 ? "md:grid-cols-3" :
+    plans.length === 4 ? "md:grid-cols-2 lg:grid-cols-4" :
     "md:grid-cols-3";
 
   return (
-    <div className={`grid gap-4 ${cols} lg:gap-5`}>
-      {planList.map((plan, i) => (
-        <SpotlightCard key={plan.id} plan={plan} billing={billing} index={i} isLawyer={false} isAr={isAr} onSubscribe={onSubscribe} />
-      ))}
+    <div className="space-y-6 lg:space-y-8">
+      {plans.length > 0 && (
+        <div className={`grid gap-4 ${cols} lg:gap-5`}>
+          {plans.map((plan, i) => (
+            <SpotlightCard key={plan.id} plan={plan} billing={billing} index={i} isLawyer={false} isAr={isAr} onSubscribe={onSubscribe} />
+          ))}
+        </div>
+      )}
+      {topups.length > 0 && (
+        <div id={TOPUP_PACKS_ANCHOR} className="scroll-mt-32">
+          <h3 className="mb-4 text-center font-brand text-lg font-bold text-ink">
+            {isAr ? "حزم شحن النقاط" : "Point top-ups"}
+          </h3>
+          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 lg:gap-4">
+            {topups.map((plan, i) => (
+              <SpotlightCard key={plan.id} plan={plan} billing={billing} index={i + plans.length} isLawyer={false} isAr={isAr} compact onSubscribe={onSubscribe} />
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -592,12 +632,13 @@ export function PricingCards({ planList, billing, isAr, audience, libraryMode }:
     }
     // requested_ref = Plan.id (the name rides in `note`) — see planEntitlementRequest.
     void requestEntitlement(planEntitlementRequest(plan, { libraryMode })).then((res) => {
+      // l16 (A-56): the request's reference and that online payment is paused
       setToast(
         res.ok
-          ? { ok: true, msg: "تم إرسال طلبك للمراجعة" }
+          ? { ok: true, msg: requestFiledAr(res.id) }
           : { ok: false, msg: res.error ?? "تعذّر إرسال الطلب" },
       );
-      window.setTimeout(() => setToast(null), 4000);
+      window.setTimeout(() => setToast(null), 8000);
     });
     return true;
   }

@@ -3,6 +3,7 @@ import { dbErrorJson } from "@/lib/api/dbError";
 import { createClient } from "@/lib/supabase/server";
 import { isAuthUnavailable, authUnavailableResponse, frozenAccountResponse } from "@/lib/auth/apiAuth";
 import { isLibrarySaleRequest, libraryPurchaseEligibility } from "@/lib/library/libraryPurchaseEligibility";
+import { noteWithCoupon, normalizeRequestCoupon } from "@/lib/payments/manualRequest";
 
 /**
  * POST /api/v1/entitlement-requests — an authenticated user asks for a paid
@@ -29,7 +30,7 @@ export async function POST(request: NextRequest) {
   const frozen = frozenAccountResponse(user);
   if (frozen) return frozen;
 
-  let body: { kind?: string; requested_ref?: string; amount?: number; note?: string };
+  let body: { kind?: string; requested_ref?: string; amount?: number; note?: string; coupon_code?: unknown };
   try {
     body = await request.json();
   } catch {
@@ -62,6 +63,14 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  // l16 (A-59, owner 25 Nov §7.7.3): a discount code attached while online
+  // payment is off rides on the note (shape-checked only; the admin checks
+  // the code when approving). A malformed code is refused, never dropped.
+  const coupon = body.coupon_code === undefined || body.coupon_code === null || body.coupon_code === "" ? null : normalizeRequestCoupon(body.coupon_code);
+  if (body.coupon_code && !coupon) {
+    return NextResponse.json({ error: "كود الخصم غير صالح" }, { status: 400 });
+  }
+
   // Insert via the auth-aware client so the RLS insert-own policy applies
   // (user_id must equal auth.uid()).
   const { data, error } = await supabase
@@ -71,7 +80,7 @@ export async function POST(request: NextRequest) {
       kind,
       requested_ref: body.requested_ref ?? null,
       amount: typeof body.amount === "number" ? body.amount : null,
-      note: body.note ?? null,
+      note: noteWithCoupon(body.note, coupon),
     })
     .select("id, kind, status, created_at")
     .single();

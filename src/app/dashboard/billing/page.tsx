@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/server";
 import { BILLING_UNAVAILABLE_AR, getBillingWith } from "@/lib/payments/billingCore";
 import { arabicDigits, billingDateAr, billingOrderItemAr, cardTitleAr, hasReceipt, orderStatusAr, pointsByType, POINTS_SPEND_ORDER_AR, POINTS_SPEND_REFUND_NOTE_AR, type BillingData } from "@/lib/payments/billingView";
 import { formatHalalas } from "@/lib/payments/catalog";
+import { TOPUP_BUTTON_AR, TOPUP_HREF } from "@/lib/payments/topUpLinks";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "الفوترة والمدفوعات | نظامي", robots: { index: false, follow: false } };
@@ -39,7 +40,11 @@ export default async function BillingPage() {
         </section>
         {!data ? <p role="alert" className={PANEL}>{BILLING_UNAVAILABLE_AR}</p> : <>
           <section className={PANEL}>
-            <h2 className="text-xl font-bold">رصيد النقاط</h2>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h2 className="text-xl font-bold">رصيد النقاط</h2>
+              {/* l16 (A-57): «شحن النقاط» → the packs sold to this account type */}
+              <Link href={TOPUP_HREF} className="rounded-xl bg-[#0B3D2E] px-4 py-2 text-sm font-bold text-white hover:bg-[#0B3D2E]/90 dark:bg-[#C8A762] dark:text-[#0B3D2E]">{TOPUP_BUTTON_AR}</Link>
+            </div>
             <p className="mt-3 text-3xl font-extrabold text-[#0B3D2E] dark:text-[#C8A762]">{arabicDigits(data.pointsBalance)} <span className="text-base">نقطة</span></p>
             <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">{POINTS_SPEND_ORDER_AR} {POINTS_SPEND_REFUND_NOTE_AR} النقاط مخصصة لاستخدام أدوات الذكاء الاصطناعي ولا تُحوّل إلى نقد.</p>
             {/* Owner ١٦٥ (l13): the balance by kind, each lot with its end date, in spend order. */}
