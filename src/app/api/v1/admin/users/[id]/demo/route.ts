@@ -50,6 +50,12 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       return NextResponse.json({ error: "تعذّر إتمام العملية، حاول مرة أخرى" }, { status: 500 });
     }
     if (!before) return NextResponse.json({ error: "المستخدم غير موجود" }, { status: 404 });
+    // l16 C11 / E-02: a staff account is never turned into a test account — not
+    // the caller's own (above) and not another admin's or super admin's.
+    // Clearing a flag an admin somehow carries stays allowed.
+    if ((before as { user_type?: unknown }).user_type === "admin" && isDemo) {
+      return NextResponse.json({ error: "لا يمكن جعل حساب من فريق الإدارة حساباً تجريبياً" }, { status: 400 });
+    }
     if (!("is_demo" in (before as Record<string, unknown>))) {
       return NextResponse.json({ error: MISSING_COLUMN_AR }, { status: 503 });
     }

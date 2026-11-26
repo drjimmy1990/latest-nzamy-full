@@ -58,6 +58,7 @@ const AR = {
   // problem. See the PGRST116 branch below.
   readFailed: "حدث خطأ أثناء قراءة بياناتك من الخادم.",
   noFields: "لا توجد حقول صالحة للتحديث.",
+  consultantNotInDirectory: "المستشار المستقل لا يظهر في دليل المحامين، فلا يمكن تفعيل الظهور في الدليل أو استقبال العملاء منه.",
   // badPhone used to live here. The message is now per-reason and comes from
   // saudiMobileMessage() via ./_phone.ts — appendix 03 §(a).
   badOnboardingFlag: "قيمة حالة إكمال الإعداد غير صالحة.",
@@ -755,6 +756,31 @@ export async function PATCH(request: Request) {
           { status: 422 },
         );
       }
+    }
+  }
+
+  // l16 D-51: an independent consultant is never listed in the public lawyer
+  // directory (GET /api/v1/lawyers filters him out), so he cannot switch ON
+  // «الظهور في الدليل» or «يستقبل عملاء». Only a false → true change is
+  // refused: the editor sends the whole form on every save, and a value that
+  // is already on (is_accepting_clients defaults to true at sign-up) must not
+  // block the rest of his profile. Switching off is always allowed. Fail
+  // closed: if his row cannot be read, the switch is refused, not guessed.
+  if (lawyerUpdates.marketplace_visible === true || lawyerUpdates.is_accepting_clients === true) {
+    const { data: kindRow, error: kindErr } = await readOwnLawyerRow(user.id);
+    if (kindErr) {
+      console.error("[api/v1/profile] practice kind read failed:", kindErr.message, kindErr.code);
+      return NextResponse.json({ error: AR.readFailed }, { status: 500 });
+    }
+    const kind = kindRow as { practice_kind?: string | null; marketplace_visible?: boolean | null; is_accepting_clients?: boolean | null } | null;
+    const turningOn =
+      (lawyerUpdates.marketplace_visible === true && kind?.marketplace_visible !== true) ||
+      (lawyerUpdates.is_accepting_clients === true && kind?.is_accepting_clients !== true);
+    if (kind?.practice_kind === "consultant" && turningOn) {
+      return NextResponse.json(
+        { error: AR.consultantNotInDirectory, field: "marketplace_visible" },
+        { status: 422 },
+      );
     }
   }
 

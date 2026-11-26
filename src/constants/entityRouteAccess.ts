@@ -26,7 +26,9 @@ const ALL_BUSINESS_ROLES = [
 ] as const satisfies readonly BusinessRole[];
 
 const BUSINESS_CASE_ROLES = ["owner", "legal_manager", "legal_staff", "compliance_officer", "seconded"] as const;
-const BUSINESS_REQUEST_ROLES = ["owner", "legal_manager", "legal_staff", "department_head", "hr_manager", "finance_manager", "employee"] as const;
+/** The company roles that may raise a request in the company's name (also the
+ *  server gate of POST /api/v1/service-requests — l16 D-10). */
+export const BUSINESS_REQUEST_ROLES = ["owner", "legal_manager", "legal_staff", "department_head", "hr_manager", "finance_manager", "employee"] as const;
 
 export const BUSINESS_ROUTE_RULES: readonly Rule<BusinessRole>[] = [
   { path: "/dashboard/business", match: "exact", label: "لوحة الشركة", allowedRoles: ALL_BUSINESS_ROLES },

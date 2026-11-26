@@ -204,7 +204,9 @@ export async function GET(
     .select(PUBLIC_COLUMNS)
     .eq("user_type", "lawyer")
     .eq("lawyer_profiles.verification_status", "verified")
-    .eq("lawyer_profiles.marketplace_visible", true);
+    .eq("lawyer_profiles.marketplace_visible", true)
+    // l16 D-51: never an independent consultant (see GET /api/v1/lawyers)
+    .neq("lawyer_profiles.practice_kind", "consultant");
   query = UUID_RE.test(id) ? query.eq("id", id) : query.eq("lawyer_profiles.slug", id);
 
   const { data, error } = await query.maybeSingle();
