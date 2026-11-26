@@ -60,6 +60,7 @@ import { CURRENT_TERMS_VERSION } from "@/lib/legal/termsVersion";
 import { recordTermsAcceptance } from "@/lib/legal/termsAcceptanceClient";
 // Batch l15: a new account confirms its mobile by WhatsApp before anything else.
 import { phoneOtpRequiredNow } from "@/lib/phoneOtp/phoneOtpClient";
+import { PhoneOtpPanel } from "@/components/auth/PhoneOtpPanel";
 
 // `?type=` from a /pricing CTA (e.g. /register/provider?type=consultant)
 // preselects that card. Step 1 stays on screen, so the choice can still be
@@ -91,6 +92,9 @@ export default function RegisterProviderPage() {
   // off) — with one, the verification panel runs right on the last step.
   const [licenceFile, setLicenceFile] = useState<File | null>(null);
   const [signupHasSession, setSignupHasSession] = useState(false);
+  // A-10 / E-15 (batch l16): the WhatsApp step of a lawyer runs inline on the
+  // last step, so the photo above survives it (a page change lost it before).
+  const [phoneStepPending, setPhoneStepPending] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const [authLoading, setAuthLoading] = useState(false);
   // OWNER-SEC-01: GoTrue's captcha check covers /signup too, so signUp sends
@@ -440,7 +444,12 @@ export default function RegisterProviderPage() {
                   otherwise after e-mail confirmation and sign-in. */}
               {step === 5 && needsLicenceProofFor(providerType) && (
                 <div className="mt-8">
-                  {signupHasSession ? (
+                  {signupHasSession && phoneStepPending ? (
+                    // The licence panel mounts only once the mobile is
+                    // confirmed: before that the proxy refuses its API
+                    // (phone_unverified) and it would leave the page.
+                    <PhoneOtpPanel showSignOut={false} onDone={() => setPhoneStepPending(false)} />
+                  ) : signupHasSession ? (
                     <LawyerVerificationPanel isAr={isAr} initialFile={licenceFile} fullName={formData.registryFullName?.trim() || null} />
                   ) : (
                     <div className="rounded-2xl border border-slate-200 bg-white p-5 text-start text-sm text-ink dark:border-white/10 dark:bg-dark-card dark:text-gray-300">
@@ -589,15 +598,19 @@ export default function RegisterProviderPage() {
                             if (signUpData.session) await recordTermsAcceptance("signup");
 
                             // Batch l15: with a session and the admin's switch
-                            // on, the account's WhatsApp code comes first; a
-                            // lawyer then returns to the licence step (the photo
-                            // is asked again there). Without a session nothing
+                            // on, the account's WhatsApp code comes first.
+                            // A-10 / E-15 (batch l16): a lawyer does it right
+                            // here on the last step (PhoneOtpPanel), then the
+                            // licence panel uploads the photo he already picked
+                            // — never picked twice. Every other provider still
+                            // goes to /verify-phone. Without a session nothing
                             // changes.
                             if (signUpData.session && (await phoneOtpRequiredNow())) {
-                              window.location.assign(
-                                needsLicenceProofFor(providerType) ? "/verify-phone?next=/register/provider/verify" : "/verify-phone",
-                              );
-                              return;
+                              if (!needsLicenceProofFor(providerType)) {
+                                window.location.assign("/verify-phone");
+                                return;
+                              }
+                              setPhoneStepPending(true);
                             }
                             setSignupHasSession(Boolean(signUpData.session));
 
