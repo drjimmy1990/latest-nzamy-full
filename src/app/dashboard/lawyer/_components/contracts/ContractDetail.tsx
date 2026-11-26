@@ -33,6 +33,7 @@ import UploadVersionModal from "./UploadVersionModal";
 import { PartyFormModal, ObligationFormModal, PaymentFormModal } from "./ContractChildForms";
 import ZipDownloadButton from "@/components/attachments/ZipDownloadButton";
 import CounterpartyNationalIdPanel from "./CounterpartyNationalIdPanel";
+import { CONTRACT_FEES_FIRM_ONLY_AR } from "@/lib/contracts/contractFeeAccess";
 
 /**
  * ContractDetail.tsx
@@ -355,7 +356,8 @@ export default function ContractDetail({ contractId, isDark, basePath }: Props) 
 
       {/* ── Tabs ── */}
       <div className="flex gap-2 overflow-x-auto">
-        {TABS.map((t) => {
+        {/* Owner ٢٢٩ (batch l18): no «الدفعات» tab for a firm member who may not see the fee schedule. */}
+        {TABS.filter((t) => !(t.key === "payments" && detail.paymentsHidden)).map((t) => {
           const count =
             t.key === "versions" ? detail.versions.length
             : t.key === "parties" ? detail.parties.length
@@ -418,6 +420,12 @@ export default function ContractDetail({ contractId, isDark, basePath }: Props) 
             </p>
           </div>
 
+          {detail.paymentsHidden ? (
+            <div className={`${card} p-4`}>
+              <h2 className={`text-[13px] font-bold mb-2 ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>الدفعات</h2>
+              <p className={`text-[12px] ${isDark ? "text-zinc-400" : "text-slate-500"}`}>{CONTRACT_FEES_FIRM_ONLY_AR}</p>
+            </div>
+          ) : (
           <div className={`${card} p-4`}>
             <h2 className={`text-[13px] font-bold mb-3 ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>الدفعات — الإجمالي</h2>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -439,6 +447,7 @@ export default function ContractDetail({ contractId, isDark, basePath }: Props) 
               </div>
             </div>
           </div>
+          )}
         </div>
       )}
 
@@ -631,7 +640,7 @@ export default function ContractDetail({ contractId, isDark, basePath }: Props) 
       )}
 
       {/* ── الدفعات ── */}
-      {tab === "payments" && (
+      {tab === "payments" && !detail.paymentsHidden && (
         <div className="space-y-2.5">
           <div className="flex justify-end">
             <button
