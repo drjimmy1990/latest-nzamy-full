@@ -244,6 +244,34 @@ export async function readUpgrade(
   admin: SupabaseClient,
   input: { userId: string; tier: string; now: Date; ranks: TierRankTable },
 ): Promise<UpgradeDecision | null> {
+  const held = await readHeldPlans(admin, input);
+  return held ? held.decision : null;
+}
+
+/**
+ * l16 review (free-plan codes): is any OTHER paid plan running — a
+ * subscriptions row that is active, not ended at `nowMs`, not a free tier,
+ * whatever granted it (a paid order, a bank transfer, an admin grant, a test
+ * account) — whose plan is not `planId`? A free plan granted on top of it
+ * would cancel days the proration cannot give back (it credits only live
+ * paid orders). The same plan is not "other": a code for the plan already
+ * held, and the row a resumed redemption just granted, pass.
+ */
+export function otherPaidPlanRunning(rows: readonly HeldPlanRow[] | null | undefined, planId: string, nowMs: number): boolean {
+  return (rows ?? []).some(
+    (r) =>
+      (r.status ?? "active") === "active" &&
+      planEndsAtMs(r) > nowMs &&
+      (r.tier ?? "free") !== "free" &&
+      r.plan_id !== planId,
+  );
+}
+
+/** readUpgrade's decision together with the active rows it was made from (one read). */
+export async function readHeldPlans(
+  admin: SupabaseClient,
+  input: { userId: string; tier: string; now: Date; ranks: TierRankTable },
+): Promise<{ decision: UpgradeDecision; rows: HeldPlanRow[] } | null> {
   const { data, error } = await admin
     .from("subscriptions")
     .select("id, plan_id, tier, status, started_at, current_period_start, current_period_end, metadata")
@@ -270,5 +298,5 @@ export async function readUpgrade(
     }
     for (const o of Array.isArray(paid) ? (paid as SourceOrderRow[]) : []) orders.set(o.id, o);
   }
-  return upgradeDecision({ userId: input.userId, tier: input.tier, now: input.now, ranks: input.ranks, rows, orders });
+  return { decision: upgradeDecision({ userId: input.userId, tier: input.tier, now: input.now, ranks: input.ranks, rows, orders }), rows };
 }

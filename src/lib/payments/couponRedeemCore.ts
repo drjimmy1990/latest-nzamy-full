@@ -21,9 +21,11 @@
  *      buying that plan, so the box is never a way around them: the account
  *      type (buyerAllowed → 403), the independent consultant and the office
  *      plans (403; a failed read → 503, fail-closed), what the buyer holds
- *      (readUpgrade: a higher or open-ended plan → 409 with its reason; a
+ *      (readHeldPlans: a higher or open-ended plan → 409 with its reason; a
  *      lower PAID plan with days left → 409 — a free plan never silently
- *      cancels days he paid for; a failed read → 503);
+ *      cancels days he paid for; l16 review: so does ANY other non-free plan
+ *      with days left, whatever granted it — otherPaidPlanRunning; a failed
+ *      read → 503);
  *   5. coupon_redeem_open (20261206_30) under the coupon's row lock: once per
  *      user, uses left, the audience again; a POINTS code is credited there
  *      (a gift lot, gift_valid_days) and answers granted; a PLAN code answers
@@ -48,7 +50,7 @@ import { COUPON_INVALID_AR, isFirstOrderCoupon, normalizeCouponCode } from "./co
 import { alreadyUsed, hasEarlierPaidOrder } from "./couponServer.ts";
 import { COUPON_ATTEMPTS, RATE_LIMITED_AR, type CouponAttemptBudget } from "./couponAttempts.ts";
 import { grantablePlan, isGrantCouponType } from "./couponGrantRules.ts";
-import { readUpgrade } from "./upgradeProration.ts";
+import { otherPaidPlanRunning, readHeldPlans } from "./upgradeProration.ts";
 import { readConsultantStanding } from "../auth/consultantScopeServer.ts";
 import { CONSULTANT_REFUSED_PLAN_ID_LIST } from "../pricing/audienceForUserType.ts";
 import { isMissingPaymentsObject } from "./fulfillDecision.ts";
@@ -113,6 +115,39 @@ async function finish(admin: SupabaseClient, id: string, ok: boolean, subscripti
     return null;
   }
   return typeof data === "string" ? data : null;
+}
+
+/**
+ * l16 review: one admin audit row per redemption that granted something
+ * (actor_type 'user', the checkMinTopup pattern) — best effort: the grant and
+ * its receipt stand even if the row cannot be written.
+ */
+async function auditRedemption(
+  admin: SupabaseClient,
+  input: { userId: string; couponId: string; code: string; redemptionId: string; receiptNumber: string; kind: "points" | "plan"; itemId: string | null; points: number | null },
+): Promise<void> {
+  try {
+    const { error } = await admin.from("admin_audit_events").insert({
+      actor_id: input.userId,
+      actor_type: "user",
+      action: "coupon_redeemed",
+      target_type: "coupon",
+      target_id: input.couponId,
+      before_state: null,
+      after_state: null,
+      metadata: {
+        code: input.code,
+        redemption_id: input.redemptionId,
+        receipt_number: input.receiptNumber,
+        kind: input.kind,
+        item_id: input.itemId,
+        points: input.points,
+      },
+    });
+    if (error) console.error("[coupons/redeem] the audit row failed:", error.code);
+  } catch {
+    console.error("[coupons/redeem] the audit row threw");
+  }
 }
 
 /** The plan row this redemption granted (metadata.order_id = the redemption id): its id, and the method set to «coupon». */
@@ -196,10 +231,15 @@ export async function redeemCouponWith(deps: RedeemDeps, input: { userId: string
       if (standing.readFailed) return fail(503, REDEEM_CHECK_FAILED_AR);
       if (standing.scopeKind === "consultant") return fail(403, REDEEM_CONSULTANT_AR);
     }
-    const held = await readUpgrade(admin, { userId: input.userId, tier: item.tier, now, ranks: deps.ranks });
-    if (!held) return fail(503, REDEEM_UNAVAILABLE_AR);
+    const read = await readHeldPlans(admin, { userId: input.userId, tier: item.tier, now, ranks: deps.ranks });
+    if (!read) return fail(503, REDEEM_UNAVAILABLE_AR);
+    const held = read.decision;
     if (held.kind === "refused") return fail(409, held.error);
     if (held.kind === "credit") return fail(409, REDEEM_PAID_PLAN_RUNNING_AR);
+    // l16 review: any other paid plan with days left, whatever granted it (a
+    // bank transfer, an admin grant, a test account — the proration credits
+    // only live paid orders, so those days would be lost without a word)
+    if (otherPaidPlanRunning(read.rows, item.id, now.getTime())) return fail(409, REDEEM_PAID_PLAN_RUNNING_AR);
     plan = { item, billing: billing as Billing, listNet };
   }
 
@@ -228,7 +268,9 @@ export async function redeemCouponWith(deps: RedeemDeps, input: { userId: string
     return fail(400, COUPON_INVALID_AR);
   }
   if (status === "granted" && row.discount_type === "points_grant" && id && receiptNumber) {
-    return { status: 200, body: { kind: "points", code: row.code, points: Number(answer.points), receiptNumber, redemptionId: id } };
+    const points = Number(answer.points);
+    await auditRedemption(admin, { userId: input.userId, couponId: row.id, code: row.code, redemptionId: id, receiptNumber, kind: "points", itemId: null, points });
+    return { status: 200, body: { kind: "points", code: row.code, points, receiptNumber, redemptionId: id } };
   }
   if ((status === "opened" || status === "resume") && plan && id && receiptNumber) {
     const granted = await grantPurchase(
@@ -253,6 +295,7 @@ export async function redeemCouponWith(deps: RedeemDeps, input: { userId: string
     const subscriptionId = await markPlanRow(admin, input.userId, id);
     const closed = await finish(admin, id, true, subscriptionId);
     if (closed !== "granted") console.error("[coupons/redeem] the plan is granted but the redemption did not close:", id, closed);
+    await auditRedemption(admin, { userId: input.userId, couponId: row.id, code: row.code, redemptionId: id, receiptNumber, kind: "plan", itemId: plan.item.id, points: null });
     return {
       status: 200,
       body: { kind: "plan", code: row.code, itemId: plan.item.id, labelAr: plan.item.labelAr, billing: plan.billing, receiptNumber, redemptionId: id },

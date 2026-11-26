@@ -91,6 +91,14 @@ test("a free-plan code: the plan is granted on the redemption id, the row closed
   const stamp = log.find((x) => x.table === "subscriptions" && x.op === "update")!.payload as { metadata: Record<string, unknown> };
   assert.equal(stamp.metadata.method, "coupon");
   assert.equal(log.filter((x) => x.table === "payment_orders").length, 0, "never a payment order");
+  // l16 review: one admin audit row (actor_type user) for the redemption
+  const audit = log.filter((x) => x.table === "admin_audit_events" && x.op === "insert");
+  assert.equal(audit.length, 1);
+  const row = audit[0].payload as { actor_type: string; action: string; metadata: Record<string, unknown> };
+  assert.equal(row.actor_type, "user");
+  assert.equal(row.action, "coupon_redeemed");
+  assert.equal(row.metadata.redemption_id, RED);
+  assert.equal(row.metadata.item_id, "lawyer-pro");
 });
 
 test("a points code: credited by the RPC with gift_valid_days; nothing else granted", async () => {
@@ -180,6 +188,20 @@ test("checkout's gates hold for a free plan: audience, consultant (fail-closed),
   const r = await redeemCouponWith(deps(paid.client), { userId: USER, code: "PROFREE" });
   assert.deepEqual(r, { status: 409, body: { error: REDEEM_PAID_PLAN_RUNNING_AR } });
   assert.equal(rpcs(paid.log, "coupon_redeem_open").length, 0);
+  // l16 review: a lower plan NOT paid by a live order (an admin grant, a bank
+  // transfer, a test account) with days left → refused too, whatever its source
+  for (const metadata of [{ method: "admin_assignment" }, { method: "bank_transfer", order_id: "o-bank" }, {}]) {
+    x = await run({ subs: [{ id: "s3", plan_id: "ind-ai", tier: "ai", status: "active", started_at: "2026-11-01T00:00:00Z", current_period_start: "2026-11-01T00:00:00Z", current_period_end: "2027-11-01T00:00:00Z", metadata }] });
+    assert.deepEqual([x.r, x.opened], [{ status: 409, body: { error: REDEEM_PAID_PLAN_RUNNING_AR } }, 0], JSON.stringify(metadata));
+  }
+  // … but a free row, an ended row, or the SAME plan already held do not block
+  x = await run({ subs: [
+    { id: "s4", plan_id: "lawyer-free", tier: "free", status: "active", current_period_end: null, metadata: {} },
+    { id: "s5", plan_id: "ind-ai", tier: "ai", status: "active", current_period_end: "2026-11-01T00:00:00Z", metadata: {} },
+    { id: "s6", plan_id: "lawyer-pro", tier: "pro", status: "active", started_at: "2026-11-01T00:00:00Z", current_period_start: "2026-11-01T00:00:00Z", current_period_end: "2027-01-01T00:00:00Z", metadata: {} },
+  ] });
+  assert.equal(x.r.status, 200, JSON.stringify(x.r));
+  assert.equal(x.opened, 1);
 });
 
 test("a higher plan found at grant time voids the redemption (the use comes back); a transient failure leaves it open", async () => {
