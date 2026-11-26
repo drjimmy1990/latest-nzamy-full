@@ -91,7 +91,7 @@ test("the new copy is Arabic, with no Latin letters (it names no plan)", () => {
 test("LibraryAI and «اشرح لي» ask the pipeline through askLibrary, and show its refusal's link", () => {
   // Wave 2 L5: both call /api/v1/ai/runs via _library-assistant.ts, which maps
   // 401 / 403 library_tier to libraryAiRefusal (library-assistant.test.ts).
-  assert.match(componentSource, /import \{ askLibrary, loadLibraryHistory, type LibraryHistoryConversation \} from "\.\/_library-assistant";/);
+  assert.match(componentSource, /import \{ askLibrary, (?:LIBRARY_AI_SOON, )?loadLibraryHistory, type LibraryHistoryConversation \} from "\.\/_library-assistant";/);
   assert.doesNotMatch(componentSource, /\/api\/ai\/library-chat|\/api\/ai\/explain-article/);
   const start = componentSource.indexOf("export function LibraryAI(");
   const end = componentSource.indexOf("export function ArticleExplainModal(");

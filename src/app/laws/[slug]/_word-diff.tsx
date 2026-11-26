@@ -97,7 +97,7 @@ export function PreviousVersionText({
               <del
                 key={i}
                 title={against === "next" ? (isRTL ? "محذوف في الصيغة التالية" : "Removed in the next wording") : (isRTL ? "محذوف من النص الحالي" : "Removed in the current text")}
-                className={`line-through rounded px-0.5 ${isDark ? "bg-red-500/25 text-red-200" : "bg-red-200/70 text-red-900"}`}
+                className={`line-through rounded-sm ${isDark ? "bg-red-500/25 text-red-200" : "bg-red-200/70 text-red-900"}`}
               >
                 <Hl text={run.text} />
               </del>
@@ -105,7 +105,7 @@ export function PreviousVersionText({
               <ins
                 key={i}
                 title={against === "next" ? (isRTL ? "مضاف في الصيغة التالية" : "Added in the next wording") : (isRTL ? "مضاف في النص الحالي" : "Added in the current text")}
-                className={`no-underline rounded px-0.5 ${isDark ? "bg-emerald-500/25 text-emerald-200" : "bg-emerald-200/70 text-emerald-900"}`}
+                className={`no-underline rounded-sm ${isDark ? "bg-emerald-500/25 text-emerald-200" : "bg-emerald-200/70 text-emerald-900"}`}
               >
                 <Hl text={run.text} />
               </ins>

@@ -1096,6 +1096,11 @@ export async function seedDecrees(
       date: dec.date || "",
       summary: dec.summary || "",
       summary_brief: dec.summary_brief || "",
+      // Batch l16 (B-49): the summary's review status (draft | reviewed | NULL) —
+      // REQUIRES migration 20261202_50 (the owner loader's preflight stops before
+      // the first write without it). Written on every load, so a status removed
+      // from the front matter leaves on the next.
+      summary_status: dec.summary_status === "draft" || dec.summary_status === "reviewed" ? dec.summary_status : null,
       category: cap("decrees_circulars", "category", decId, dec.cat || "", 100),
       preamble: dec.preamble || "",
       hashtags: dec.hashtags || [],

@@ -35,7 +35,7 @@ import { describeOwnerLinkCut, extractOwnerLinks, type OwnerLink } from "../../s
 import { filterMeta, assertManifestLoadable } from "./manifest";
 import { writeParseReport, printCapped, bindParseReportToOutput } from "./lib/report";
 import { classifyInstrument, type InstrumentType } from "./lib/instrument";
-import { decreeSummaries } from "../../src/lib/library/decreeSummary";
+import { decreeSummaries, decreeSummaryStatus } from "../../src/lib/library/decreeSummary";
 import {
   anchorShortfall,
   bodyLineOffset,
@@ -94,6 +94,11 @@ export interface ParsedDecree {
   date: string;
   summary: string;
   summary_brief: string;
+  /**
+   * Batch l16 (B-49): the front matter's summary_status ('draft' | 'reviewed' |
+   * null), seeded into library.decrees_circulars.summary_status (20261202_50).
+   */
+  summary_status: "draft" | "reviewed" | null;
   preamble: string;
   cat: string;
   articles: DecreeArticle[];
@@ -216,6 +221,7 @@ function parseUnifiedIndex(filePath: string): ParsedDecree[] {
       date: String(entry.date || ""),
       summary: String(entry.summary || ""),
       summary_brief: String(entry.summary_brief || ""),
+      summary_status: decreeSummaryStatus(entry as Record<string, unknown>),
       preamble: String(entry.preamble || ""),
       cat: String(entry.cat || ""),
       articles,
@@ -353,6 +359,7 @@ function parseCircularMd(filePath: string): ParsedDecree | null {
     date: String(meta.date || meta.issue_date_hijri || meta.decree_date || ""),
     summary: summaries.summary,
     summary_brief: summaries.summary_brief,
+    summary_status: decreeSummaryStatus(meta),
     preamble,
     cat: String(meta.cat || meta.section_code || ""),
     articles,

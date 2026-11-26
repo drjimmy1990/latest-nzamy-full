@@ -3,7 +3,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Stack, Trash, X, ArrowCounterClockwise, Copy, Check, BookOpen, CaretDown, CaretUp, FileText, Scales, Gavel, Tray,
+  Stack, Trash, X, ArrowCounterClockwise, Copy, Check, BookOpen, CaretDown, CaretUp, FileText, Gavel, Tray,
   FileDoc, ShareNetwork, WhatsappLogo, XLogo, LinkedinLogo, LinkSimple, PencilSimpleLine,
 } from "@phosphor-icons/react";
 import { addToDesktop } from "@/lib/services/researchService";
@@ -595,7 +595,7 @@ function DraftItem({ e, isSelected, onToggle, onRemove, isDark, isRTL }: { e: Ca
         <div className={`px-3 pb-2 space-y-1 ${(e.isArticleAdded || hasExecReg) ? `border-t ${isDark ? "border-white/[0.04]" : "border-slate-100"}` : ""}`}>
           {e.principles.map(p => (
             <div key={p.id} className="flex items-start gap-1.5 pt-1.5">
-              <Scales size={9} className={`mt-0.5 flex-shrink-0 ${isDark ? "text-[#C8A762]" : "text-amber-600"}`} />
+              <Gavel size={9} className={`mt-0.5 flex-shrink-0 ${isDark ? "text-[#C8A762]" : "text-amber-600"}`} />
               <p className={`text-[10px] leading-relaxed ${isDark ? "text-zinc-500" : "text-slate-500"}`}>{p.text}</p>
             </div>
           ))}

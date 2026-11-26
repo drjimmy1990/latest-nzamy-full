@@ -5,7 +5,6 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Copy, Check, CaretDown, CaretUp,
   ClockCounterClockwise, FileText, BookOpen, Lock,
-  Scales,
   Gavel, Sparkle
 } from "@phosphor-icons/react";
 import { markdownBoldToSafeHtml } from "@/utils/sanitize";
@@ -728,7 +727,7 @@ export function RightPanel({ article, isDark, cart, onTogglePrinciple, onToggleP
 
   if (!article) return (
     <div className={`${card} ${border} p-4 text-center`}>
-      <Scales size={28} className={`mx-auto mb-2 ${muted}`} />
+      <Gavel size={28} className={`mx-auto mb-2 ${muted}`} />
       <p className={`text-[12px] ${muted}`}>{isRTL ? "اختر مادة من القائمة لعرض المبادئ والسوابق المرتبطة" : "Choose an article to show related principles and precedents"}</p>
     </div>
   );
@@ -751,7 +750,7 @@ export function RightPanel({ article, isDark, cart, onTogglePrinciple, onToggleP
       {/* Principles */}
       <div className={`${card} ${border} p-3 space-y-2`}>
         <div className="flex items-center gap-1.5 mb-1">
-          <Scales size={13} className={isDark ? "text-[#C8A762]" : "text-amber-600"} weight="duotone" />
+          <Gavel size={13} className={isDark ? "text-[#C8A762]" : "text-amber-600"} weight="duotone" />
           <p className={`text-[11px] font-bold ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>{isRTL ? "المبادئ القضائية" : "Judicial Principles"}</p>
           {hasPrinciples && <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${isDark ? "bg-[#C8A762]/10 text-[#C8A762]" : "bg-amber-50 text-amber-700"}`}>{article.principles!.length}</span>}
         </div>
@@ -1446,7 +1445,7 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
                 <p className={`text-[10px] font-bold ${isDark ? "text-zinc-400" : "text-slate-400"}`}>{isRTL ? "مضاف للمسودة:" : "Added to draft:"}</p>
                 {entry.principles.map(p => (
                   <div key={p.id} className={`flex items-start gap-2 p-2 rounded-lg text-[11px] ${isDark ? "bg-[#C8A762]/5" : "bg-amber-50"}`}>
-                    <Scales size={10} className={`mt-0.5 flex-shrink-0 ${isDark ? "text-[#C8A762]" : "text-amber-600"}`} />
+                    <Gavel size={10} className={`mt-0.5 flex-shrink-0 ${isDark ? "text-[#C8A762]" : "text-amber-600"}`} />
                     <span className={isDark ? "text-zinc-400" : "text-zinc-600"}>{p.text}</span>
                   </div>
                 ))}

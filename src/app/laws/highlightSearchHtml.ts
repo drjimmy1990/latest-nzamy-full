@@ -53,7 +53,7 @@ export function highlightSearchHtml(text: string, term: string): string {
   while ((m = regex.exec(source)) !== null) {
     if (m[0].length === 0) { regex.lastIndex += 1; continue; }
     if (m.index > last) out += escapeHtml(source.slice(last, m.index));
-    out += `<mark class="bg-yellow-300/80 text-yellow-900 rounded px-0.5">${escapeHtml(m[0])}</mark>`;
+    out += `<mark class="bg-yellow-300/80 text-yellow-900 rounded-sm">${escapeHtml(m[0])}</mark>`;
     last = m.index + m[0].length;
   }
   if (last < source.length) out += escapeHtml(source.slice(last));

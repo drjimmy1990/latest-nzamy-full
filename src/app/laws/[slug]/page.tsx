@@ -4,8 +4,8 @@ import { useState, useCallback, useEffect, useRef, useMemo, Suspense } from "rea
 import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  ArrowRight, ArrowUp, Crown, Stack, Check, Copy, BookOpen, Bookmark, Scales, Printer,
-  ListBullets, X, Lock, Prohibit, Info, Clock
+  ArrowRight, ArrowUp, Crown, Stack, Check, Copy, BookOpen, Bookmark, Printer,
+  ListBullets, X, Lock, Prohibit, Info, Clock, Gavel
 } from "@phosphor-icons/react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
@@ -980,7 +980,7 @@ function LawSystemPageContent() {
         <Navbar />
         <div className="print-main flex-1 max-w-[1280px] mx-auto w-full px-3 py-8 pt-32 pb-24 flex items-center justify-center">
           <div className="flex flex-col items-center gap-4 text-center max-w-md p-6 rounded-2xl border border-red-500/20 bg-red-500/5">
-            <Scales size={48} className="text-red-500" />
+            <Gavel size={48} className="text-red-500" />
             {loadError === "failed" ? (
               <>
                 <h2 className="text-lg font-black">تعذّر تحميل هذا التشريع</h2>

@@ -2,7 +2,7 @@
 
 import { useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Crown, CheckCircle, Scales, ListBullets, Gavel, X, BookOpen, Books, BookmarkSimple, Scroll } from "@phosphor-icons/react";
+import { Crown, CheckCircle, ListBullets, Gavel, X, BookOpen, Books, BookmarkSimple, Scroll } from "@phosphor-icons/react";
 import Link from "next/link";
 import { VAT_NOTICE } from "@/lib/pricing/vatNotice";
 import { bookPriceText } from "@/lib/pricing/priceBook";
@@ -214,7 +214,7 @@ const LAW_TYPES = [
 // ── Scoped search modes for Precedents ──────────────────────────────────────
 const PREC_MODES = [
   { id: "all",        icon: ListBullets, labelAr: "بحث عام",          labelEn: "General Search" },
-  { id: "principles", icon: Scales,      labelAr: "مبادئ مستقرة فقط", labelEn: "Principles Only" },
+  { id: "principles", icon: Gavel,       labelAr: "مبادئ مستقرة فقط", labelEn: "Principles Only" },
   { id: "rulings",    icon: Gavel,       labelAr: "سوابق قضائية فقط", labelEn: "Precedents Only" },
 ];
 
@@ -424,7 +424,7 @@ export function AdvancedSearchModal({
           <div className={`flex items-center justify-between px-5 py-3 border-b ${bdr}`}>
             <div className="flex items-center gap-2.5">
               <div className="w-8 h-8 rounded-lg bg-[#0B3D2E]/10 flex items-center justify-center shrink-0">
-                <Scales size={17} className="text-[#0B3D2E] dark:text-emerald-400" weight="duotone" />
+                <Gavel size={17} className="text-[#0B3D2E] dark:text-emerald-400" weight="duotone" />
               </div>
               <div>
                 <p className={`text-[13px] font-black leading-none ${isDark ? "text-white" : "text-gray-900"}`}>
@@ -452,7 +452,7 @@ export function AdvancedSearchModal({
                     ${tab === t ? "bg-[#0B3D2E] text-white shadow" : isDark ? "text-gray-400 hover:text-white" : "text-gray-600 hover:text-gray-900"}`}>
                   {t === "laws"
                     ? <BookOpen size={13} weight={tab === "laws" ? "fill" : "regular"} />
-                    : <Scales   size={13} weight={tab === "precedents" ? "fill" : "regular"} />}
+                    : <Gavel   size={13} weight={tab === "precedents" ? "fill" : "regular"} />}
                   {t === "laws"
                     ? (isRTL ? "الأنظمة واللوائح (التشريعات)" : "Laws & Regulations")
                     : (isRTL ? "السوابق والمبادئ القضائية"    : "Judicial Precedents")}
@@ -698,7 +698,7 @@ export function AdvancedSearchModal({
               </span>
               <button onClick={handleApply}
                 className="flex items-center gap-1.5 px-6 py-1.5 bg-[#0B3D2E] text-white text-[11.5px] font-bold rounded-xl hover:bg-[#0a3328] transition shadow-md">
-                <Scales size={13} weight="fill" />
+                <Gavel size={13} weight="fill" />
                 {isRTL ? "تطبيق البحث" : "Apply Search"}
               </button>
             </div>
