@@ -412,7 +412,7 @@ export default function MoyasarCheckout({
               <dd className="font-semibold text-emerald-700 dark:text-emerald-400">− {formatHalalas(coupon.discount)}</dd>
             </div>
             <div className="flex justify-between gap-4">
-              <dt>المبلغ قبل الضريبة بعد الخصم</dt>
+              <dt>{coupon.vat === 0 ? "المبلغ بعد الخصم" : "المبلغ قبل الضريبة بعد الخصم"}</dt>
               <dd>{formatHalalas(coupon.net)}</dd>
             </div>
           </dl>
@@ -421,7 +421,9 @@ export default function MoyasarCheckout({
               {coupon.founderWins ? FOUNDER_BEATS_COUPON_AR : COUPON_REPLACES_FOUNDER_AR}
             </p>
           ) : null}
-          <p className="text-xs text-zinc-600 dark:text-zinc-400">تُحسب ضريبة القيمة المضافة على المبلغ بعد الخصم.</p>
+          {coupon.vat === 0 ? null : (
+            <p className="text-xs text-zinc-600 dark:text-zinc-400">تُحسب ضريبة القيمة المضافة على المبلغ بعد الخصم.</p>
+          )}
         </div>
       ) : (
         <div className="mt-2 flex gap-2">
@@ -577,20 +579,25 @@ export default function MoyasarCheckout({
             </dd>
           </div>
         ) : null}
-        <div className="flex items-center justify-between gap-4 px-5 py-3">
-          <dt className="text-zinc-600 dark:text-zinc-400">المبلغ قبل الضريبة</dt>
-          <dd className="font-semibold text-zinc-900 dark:text-zinc-100">{formatHalalas(ready.quote.net)}</dd>
-        </div>
-        <div className="flex items-center justify-between gap-4 px-5 py-3">
-          <dt className="text-zinc-600 dark:text-zinc-400">ضريبة القيمة المضافة (١٥٪)</dt>
-          <dd className="font-semibold text-zinc-900 dark:text-zinc-100">{formatHalalas(ready.quote.vat)}</dd>
-        </div>
+        {/* l16 (A-01): a quote with no VAT (no VAT number saved yet) has no VAT rows at all */}
+        {ready.quote.vat > 0 ? (
+          <>
+            <div className="flex items-center justify-between gap-4 px-5 py-3">
+              <dt className="text-zinc-600 dark:text-zinc-400">المبلغ قبل الضريبة</dt>
+              <dd className="font-semibold text-zinc-900 dark:text-zinc-100">{formatHalalas(ready.quote.net)}</dd>
+            </div>
+            <div className="flex items-center justify-between gap-4 px-5 py-3">
+              <dt className="text-zinc-600 dark:text-zinc-400">ضريبة القيمة المضافة (١٥٪)</dt>
+              <dd className="font-semibold text-zinc-900 dark:text-zinc-100">{formatHalalas(ready.quote.vat)}</dd>
+            </div>
+          </>
+        ) : null}
         <div className="flex items-center justify-between gap-4 px-5 py-3">
           <dt className="font-bold text-zinc-900 dark:text-zinc-100">الإجمالي المستحق</dt>
           <dd className="text-base font-extrabold text-[#0B3D2E] dark:text-[#C8A762]">{formatHalalas(ready.quote.total)}</dd>
         </div>
       </dl>
-      <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">{quoteVatNotice(ready.quote.vatMode)}</p>
+      <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">{quoteVatNotice(ready.quote.vatMode, ready.quote.vat)}</p>
 
       {notice ? (
         <p className={NOTICE_CLASS} role="alert">

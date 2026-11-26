@@ -139,6 +139,18 @@ export function isBillingCompanyComplete(value: unknown): boolean {
   return SAUDI_VAT_NUMBER.test(clean(value.vat_number));
 }
 
+/**
+ * l16 (A-01, owner 25 Nov §1.1): VAT (15 %) is added, quoted and printed only
+ * once billing_company holds a valid Saudi VAT number. Before that: no VAT
+ * line anywhere (catalog.vatPercentFor(false) = 0). Live already requires a
+ * complete billing_company (VAT number included), so whenever the gateway is
+ * live this is true.
+ */
+export function isVatRegistered(value: unknown): boolean {
+  if (!isPlainObject(value)) return false;
+  return SAUDI_VAT_NUMBER.test(clean(value.vat_number));
+}
+
 /** Admin write check for billing_company; null when acceptable. */
 export function billingCompanySettingIssue(value: unknown): string | null {
   if (!isPlainObject(value)) {

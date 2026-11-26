@@ -72,6 +72,7 @@ function db(opts: { founder: boolean | "error"; coupon: Record<string, unknown> 
 }
 
 const input: CheckoutInput = {
+  vatPercent: 15,
   user: { id: USER, email: "buyer@example.test" },
   itemId: "lib-q1",
   billing: "once",
@@ -84,7 +85,7 @@ async function both(opts: { founder: boolean | "error"; coupon: Record<string, u
   const p = db(opts);
   const preview = await validateCouponWith(
     { admin: p.client, now: () => NOW, attempts: createCouponAttemptBudget() },
-    { userId: USER, code: "LIB50", itemId: "lib-q1", billing: "once" },
+    { userId: USER, code: "LIB50", itemId: "lib-q1", billing: "once", vatPercent: 15 },
   );
   const c = db(opts);
   const charge = await startCheckoutWith({ admin: c.client, client: moyasar(), now: () => NOW, attempts: createCouponAttemptBudget() }, input);

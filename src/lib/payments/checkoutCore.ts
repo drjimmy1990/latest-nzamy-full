@@ -295,6 +295,12 @@ export interface CheckoutInput {
    * demoRefusal below). Absent → not stored.
    */
   gatewayMode?: "test" | "live";
+  /**
+   * l16 (A-01): the VAT rate of this checkout — catalog.vatPercentFor(the
+   * route's checkoutVatRegistered): 15 once billing_company holds the VAT
+   * number (always in live mode), 0 before it. Every price step uses it.
+   */
+  vatPercent: number;
 }
 
 export type CheckoutReply =
@@ -544,7 +550,8 @@ export async function startCheckoutWith(deps: CheckoutDeps, input: CheckoutInput
   // 3. the price — on the request's clock, so a launch price (owner ٣٠٣) is
   // charged while its campaign runs and never after
   const now = deps.now?.() ?? new Date();
-  const q = quote(input.itemId, input.billing, catalog, now);
+  const vatPct = input.vatPercent;
+  const q = quote(input.itemId, input.billing, catalog, now, vatPct);
   if (!q.ok) {
     if (q.error === "not_for_sale") return fail(410, NOT_FOR_SALE_AR);
     return fail(400, q.error === "unknown_item" ? UNKNOWN_ITEM_AR : BILLING_NOT_OFFERED_AR);
@@ -583,6 +590,7 @@ export async function startCheckoutWith(deps: CheckoutDeps, input: CheckoutInput
       now,
       book: deps.book,
       gateway: client,
+      vatPercent: vatPct,
     });
     if (!priced.ok) {
       if (priced.status === 400) attempts.spend(user.id);
@@ -619,7 +627,7 @@ export async function startCheckoutWith(deps: CheckoutDeps, input: CheckoutInput
       const fd = founderDiscountHalalas(listNet, bps);
       const otherSaving = listNet - q.netHalalas + (couponQuote?.discount ?? 0);
       if (bestDiscount(otherSaving, fd).source === "founder") {
-        const d = applyDiscount(listNet, fd);
+        const d = applyDiscount(listNet, fd, vatPct);
         ({ netHalalas: net, vatHalalas: vat, totalHalalas: total } = d);
         couponMeta = null;
         couponQuote = null;
@@ -657,7 +665,7 @@ export async function startCheckoutWith(deps: CheckoutDeps, input: CheckoutInput
   let prorationQuote: { listNet: number; prorationCredit: number } | null = null;
   if (upgrade) {
     if (netAfterCredit(net, upgrade.creditHalalas) === null) return fail(409, UPGRADE_CREDIT_TOO_BIG_AR);
-    const d = applyDiscount(net, upgrade.creditHalalas);
+    const d = applyDiscount(net, upgrade.creditHalalas, vatPct);
     ({ netHalalas: net, vatHalalas: vat, totalHalalas: total } = d);
     prorationMeta = prorationMetadata(upgrade, q.netHalalas);
     prorationQuote = { listNet: q.netHalalas, prorationCredit: d.discountHalalas };

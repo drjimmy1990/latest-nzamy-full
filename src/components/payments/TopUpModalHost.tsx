@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useUser } from "@/hooks/useUser";
+import { useVatRegistered } from "@/hooks/useVatRegistered";
 import MoyasarCheckout from "@/components/payments/MoyasarCheckout";
 import { formatHalalas, type PayableItem } from "@/lib/payments/catalog";
 import { checkoutItemNotes, POINT_VALUE_LINE_AR, TOPUP_LIBRARY_EXPIRY_GENERIC_AR } from "@/lib/payments/checkoutView";
@@ -22,6 +23,7 @@ import { INSUFFICIENT_POINTS_EVENT, saveTopUpReturn, topUpPacksFor } from "@/lib
  */
 export default function TopUpModalHost() {
   const user = useUser();
+  const vatRegistered = useVatRegistered();
   const [open, setOpen] = useState(false);
   const [pack, setPack] = useState<PayableItem | null>(null);
 
@@ -120,7 +122,13 @@ export default function TopUpModalHost() {
               </li>
             ))}
             <li className="pt-1 text-xs text-zinc-600 dark:text-zinc-400">
-              {POINT_VALUE_LINE_AR}. الأسعار قبل ضريبة القيمة المضافة (١٥٪)، ويظهر المبلغ النهائي قبل الدفع.
+              {/* l16 (A-01): the 15 % only once the platform's VAT number is saved */}
+              {POINT_VALUE_LINE_AR}.{" "}
+              {vatRegistered === true
+                ? "الأسعار قبل ضريبة القيمة المضافة (١٥٪)، ويظهر المبلغ النهائي قبل الدفع."
+                : vatRegistered === false
+                  ? "لا تُضاف ضريبة القيمة المضافة قبل إدخال الرقم الضريبي، ويظهر المبلغ النهائي قبل الدفع."
+                  : "ويظهر المبلغ النهائي قبل الدفع."}
             </li>
           </ul>
         ) : (

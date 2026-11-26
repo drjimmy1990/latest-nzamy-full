@@ -17,7 +17,8 @@ import { buyClickGate } from "@/lib/pricing/buyClickGate";
 import { requestEntitlement } from "@/lib/services/entitlementService";
 import { referencePriceFor } from "@/lib/pricing/priceDisplay";
 import { planEntitlementRequest } from "@/lib/pricing/planRequest";
-import { vatNoticeFor } from "@/lib/pricing/vatNotice";
+import { vatNoticeFor, VAT_UNREGISTERED_NOTICE } from "@/lib/pricing/vatNotice";
+import { useVatRegistered } from "@/hooks/useVatRegistered";
 import { cardLaunch, cardPrice, cardTotalWithVat, shownCards, type LaunchPriceMap } from "@/lib/pricing/cardPrice";
 import { signedInCta } from "@/lib/pricing/cardCta";
 import { requestFiledAr } from "@/lib/payments/manualRequest";
@@ -29,7 +30,11 @@ import { useLaunchPrices } from "@/hooks/useLaunchPrices";
  * null until GET /api/v1/pricing/launch answers, so a server-rendered card
  * never carries one) and whether the viewer is signed in (UX14).
  */
-const CardContext = createContext<{ launch: LaunchPriceMap | null; signedIn: boolean }>({ launch: null, signedIn: false });
+const CardContext = createContext<{ launch: LaunchPriceMap | null; signedIn: boolean; vatRegistered: boolean | null }>({
+  launch: null,
+  signedIn: false,
+  vatRegistered: null,
+});
 
 interface PricingCardsProps {
   planList: Plan[];
@@ -80,7 +85,7 @@ function SpotlightCard({
   // A price-book card reads the book (src/lib/pricing/cardPrice.ts); other
   // cards keep their display strings. null = not sold in this cycle.
   const shown = cardPrice(plan, billing, isAr ? "ar" : "en");
-  const { launch, signedIn } = useContext(CardContext);
+  const { launch, signedIn, vatRegistered } = useContext(CardContext);
   // Owner ٣٠٣: while the SERVER says a launch price runs, the listed price is
   // struck through beside it (cardLaunch); otherwise the listed price alone.
   const launchView = cardLaunch(plan, billing, launch, isAr ? "ar" : "en");
@@ -90,7 +95,8 @@ function SpotlightCard({
   // A running launch price is the one struck-through figure on the card.
   const referencePrice = launchView ? null : referencePriceFor(plan, billing);
   // UX14: what the buyer pays with VAT, and for which cycle, beside the button.
-  const vatTotal = cardTotalWithVat(plan, billing, launch, isAr ? "ar" : "en");
+  // l16 (A-01): no VAT line before the platform's VAT number is saved (useVatRegistered)
+  const vatTotal = cardTotalWithVat(plan, billing, launch, isAr ? "ar" : "en", vatRegistered);
   const cta = signedInCta(plan, signedIn, isAr);
   const memberBuy = signedIn && cta.ctaHref === plan.ctaHref && isSubscribeCta(plan.ctaHref);
   const buyClass = `${vatTotal ? "mt-2" : "mt-7"} flex w-full items-center justify-center gap-2 rounded-xl px-6 py-3.5 text-sm font-bold tracking-wide transition-all ${
@@ -602,6 +608,7 @@ export function PricingCards({ planList, billing, isAr, audience, libraryMode }:
   const { isLoggedIn, loading: sessionLoading } = useUser();
   const payments = usePaymentsStatus();
   const launch = useLaunchPrices();
+  const vatRegistered = useVatRegistered();
   const router = useRouter();
   const [toast, setToast] = useState<{ ok: boolean; msg: string } | null>(null);
 
@@ -649,7 +656,7 @@ export function PricingCards({ planList, billing, isAr, audience, libraryMode }:
     !sessionLoading && saleGatewayPaused(payments) && shownPlans.some((p) => checkoutHref(p.id, billing, true, true) !== null);
 
   return (
-    <CardContext.Provider value={{ launch, signedIn: !sessionLoading && isLoggedIn }}>
+    <CardContext.Provider value={{ launch, signedIn: !sessionLoading && isLoggedIn, vatRegistered }}>
     <section className="pb-16 md:pb-24">
       <div className="mx-auto max-w-[1200px] px-4">
 
@@ -667,9 +674,17 @@ export function PricingCards({ planList, billing, isAr, audience, libraryMode }:
           <DefaultLayout planList={shownPlans} billing={billing} isAr={isAr} onSubscribe={handleSubscribe} />
         )}
 
-        <p className="mt-6 text-center text-xs font-medium text-ink-muted dark:text-gray-400">
-          {isAr ? vatNotice.ar : vatNotice.en}
-        </p>
+        {/* l16 (A-01): the VAT sentence follows the server's answer — none until it arrives */}
+        {vatRegistered === true && (
+          <p className="mt-6 text-center text-xs font-medium text-ink-muted dark:text-gray-400">
+            {isAr ? vatNotice.ar : vatNotice.en}
+          </p>
+        )}
+        {vatRegistered === false && (
+          <p className="mt-6 text-center text-xs font-medium text-ink-muted dark:text-gray-400">
+            {isAr ? VAT_UNREGISTERED_NOTICE.ar : VAT_UNREGISTERED_NOTICE.en}
+          </p>
+        )}
 
         {isLawyer && !libraryMode && <LawyerServicesTable isAr={isAr} />}
 

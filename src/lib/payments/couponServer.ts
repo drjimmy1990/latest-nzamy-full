@@ -164,6 +164,8 @@ export interface CouponPricingInput {
    * no way to ask Moyasar (answers 503 rather than guess).
    */
   gateway?: Pick<MoyasarClient, "listPaymentsByOrder"> | null;
+  /** l16 (A-01): the quote's VAT rate (catalog.vatPercentFor) — the discounted VAT uses it too. */
+  vatPercent: number;
 }
 
 const unavailable = (): CouponPricing => ({ ok: false, status: 503, error: COUPONS_UNAVAILABLE_AR });
@@ -393,7 +395,7 @@ export async function priceWithCoupon(admin: SupabaseClient, input: CouponPricin
     ok: true,
     // l6-pay: a limited code (max_uses) is reserved at checkout (coupon_reserve, 20261126_60)
     coupon: { id: row.id, code: row.code, limited: typeof row.max_uses === "number" && row.max_uses > 0 },
-    quote: applyDiscount(input.netHalalas, decision.discountHalalas),
+    quote: applyDiscount(input.netHalalas, decision.discountHalalas, input.vatPercent),
   };
 }
 
@@ -410,6 +412,8 @@ export interface ValidateInput {
    * counts, so the preview says a card is required.
    */
   gatewayMode?: "test" | "live";
+  /** l16 (A-01): the VAT rate checkout would use (catalog.vatPercentFor) — the preview equals the charge. */
+  vatPercent: number;
 }
 
 export interface ValidateDeps {
@@ -464,7 +468,7 @@ export async function validateCouponWith(deps: ValidateDeps, input: ValidateInpu
   if (!known || !buyerAllowed(known, userType)) return { status: 400, body: { error: COUPON_INVALID_AR } };
   // the request's clock, as checkout's: the preview equals the charge (٣٠٣)
   const now = deps.now?.() ?? new Date();
-  const q = quote(input.itemId, input.billing, catalog, now);
+  const q = quote(input.itemId, input.billing, catalog, now, input.vatPercent);
   if (!q.ok) return { status: 400, body: { error: COUPON_INVALID_AR } };
 
   // l6-pay (Q511): the same upgrade read as checkout, so the preview never
@@ -485,6 +489,7 @@ export async function validateCouponWith(deps: ValidateDeps, input: ValidateInpu
     netHalalas: q.netHalalas,
     now,
     book: deps.book,
+    vatPercent: input.vatPercent,
   });
   if (!priced.ok) return { status: priced.status, body: { error: priced.error } };
 
@@ -502,7 +507,7 @@ export async function validateCouponWith(deps: ValidateDeps, input: ValidateInpu
       const fd = founderDiscountHalalas(listNet, bps);
       const otherSaving = listNet - q.netHalalas + priced.quote.discountHalalas;
       if (bestDiscount(otherSaving, fd).source === "founder") {
-        const f = applyDiscount(listNet, fd);
+        const f = applyDiscount(listNet, fd, input.vatPercent);
         return {
           status: 200,
           body: {

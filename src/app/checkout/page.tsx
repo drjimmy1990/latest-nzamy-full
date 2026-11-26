@@ -19,7 +19,8 @@ import {
   UNKNOWN_ITEM_AR,
 } from "@/lib/payments/checkoutCore";
 import { readConsultantStanding } from "@/lib/auth/consultantScopeServer";
-import { buyerAllowed, formatHalalas, quote, sellableItem } from "@/lib/payments/catalog";
+import { buyerAllowed, formatHalalas, quote, sellableItem, vatPercentFor } from "@/lib/payments/catalog";
+import { readVatRegistered } from "@/lib/payments/vatStatus";
 import { couponsAvailable } from "@/lib/payments/couponServer";
 import { readUpgrade, upgradeCreditLineAr } from "@/lib/payments/upgradeProration";
 import {
@@ -164,7 +165,9 @@ export default async function CheckoutPage({ searchParams }: { searchParams: Sea
 
   // The price the POST will charge now: the launch price while its campaign
   // runs today in Riyadh (owner ٣٠٣), else the listed one. Per request, never cached.
-  const priced = quote(item.id, parsed.billing, undefined, new Date());
+  // l16 (A-01): the VAT state the POST will charge by (a failed read: no VAT sentence; the POST refuses)
+  const vatRegistered = await readVatRegistered(await createServiceClient()).catch(() => null);
+  const priced = quote(item.id, parsed.billing, undefined, new Date(), vatPercentFor(vatRegistered === true));
   let listed = priced.ok ? priced.netHalalas : item.prices[parsed.billing];
   let launchList = priced.ok && priced.launch ? priced.launch.listNetHalalas : null;
   // l11 O7 (register 49, founder terms ١٢): a top-up bought by a holder of a
@@ -269,7 +272,9 @@ export default async function CheckoutPage({ searchParams }: { searchParams: Sea
             ) : null}
           </p>
         ) : null}
-        <p className="mt-1 text-xs font-medium text-zinc-600 dark:text-zinc-400">{listedVatNotice(item)}</p>
+        {listedVatNotice(item, vatRegistered) ? (
+          <p className="mt-1 text-xs font-medium text-zinc-600 dark:text-zinc-400">{listedVatNotice(item, vatRegistered)}</p>
+        ) : null}
         {creditHalalas > 0 ? (
           <p className="mt-3 rounded-xl bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300">
             {upgradeCreditLineAr(creditHalalas)} — بحسب الأيام المتبقية منها، وتبدأ الباقة الجديدة من اليوم

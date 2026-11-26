@@ -121,6 +121,13 @@ export const NOT_TAX_INVOICE_AR = {
   office: "هذا إيصال بالمبلغ المدفوع؛ تصدر الفاتورة الضريبية من الجهة المستفيدة.",
 } as const;
 export const TAX_INVOICE_NOTE_AR = "فاتورة ضريبية مبسطة صادرة آلياً عند الدفع، ورقمها رقم العملية.";
+/**
+ * l16 (A-01, owner 25 Nov §1.1): an order charged with NO VAT (no VAT number
+ * saved yet) is a «إيصال سداد» with the owner's line — no VAT row, no QR,
+ * never «0 % VAT» and never a blank VAT number.
+ */
+export const NO_VAT_RECEIPT_TITLE_AR = "إيصال سداد";
+export const NO_VAT_LINE_AR = "لا تُضاف ضريبة القيمة المضافة قبل إدخال الرقم الضريبي؛ هذا إيصال بالمبلغ المدفوع.";
 
 /**
  * The paid order's document (batch l7): a simplified tax invoice with its
@@ -141,8 +148,16 @@ export function receiptView(order: BillingOrder, company: unknown) {
     catch { qrPayload = null; }
   }
   const isTaxInvoice = !!qrPayload;
+  // l16 (A-01): no VAT charged → «إيصال سداد», one amount row, the owner's line
+  const noVat = !isTaxInvoice && order.vat_halalas === 0;
+  const total = formatHalalas(order.total_halalas);
+  const amountRows: Array<[string, string]> = noVat
+    ? [["المبلغ المدفوع", total]]
+    : [["المبلغ قبل الضريبة", formatHalalas(order.net_halalas)], ["ضريبة القيمة المضافة ١٥٪", formatHalalas(order.vat_halalas)], ["الإجمالي شاملاً الضريبة", total]];
   return {
-    title: isTaxInvoice ? TAX_INVOICE_TITLE_AR : RECEIPT_TITLE_AR,
+    title: isTaxInvoice ? TAX_INVOICE_TITLE_AR : noVat ? NO_VAT_RECEIPT_TITLE_AR : RECEIPT_TITLE_AR,
+    noVat,
+    amountRows,
     isTaxInvoice,
     qrPayload,
     issuedAt: billingDateTimeAr(order.paid_at),
@@ -161,7 +176,7 @@ export function receiptView(order: BillingOrder, company: unknown) {
     lastFour: typeof order.last_four === "string" && /^\d{4}$/.test(order.last_four) ? arabicDigits(order.last_four) : null,
     company: isBillingCompanyComplete(company) ? company as BillingCompany : null,
     companyNotice: "بيانات المنشأة غير مكتملة",
-    taxInvoiceNotice: isTaxInvoice ? TAX_INVOICE_NOTE_AR : NOT_TAX_INVOICE_AR[cause ?? "company"],
+    taxInvoiceNotice: isTaxInvoice ? TAX_INVOICE_NOTE_AR : noVat ? NO_VAT_LINE_AR : NOT_TAX_INVOICE_AR[cause ?? "company"],
   };
 }
 
@@ -175,7 +190,14 @@ export function creditNoteView(note: BillingCreditNote | null, company: unknown)
   if (!note || typeof note.number !== "string" || !note.number) return null;
   const amounts = [note.net_halalas, note.vat_halalas, note.total_halalas];
   if (note.currency !== "SAR" || !amounts.every(v => Number.isSafeInteger(v) && v >= 0) || note.total_halalas <= 0 || note.total_halalas !== note.net_halalas + note.vat_halalas) return null;
+  // l16 (A-01): a refund of an order charged with no VAT shows no VAT row
+  const noVat = note.vat_halalas === 0;
+  const total = formatHalalas(note.total_halalas);
   return {
+    noVat,
+    amountRows: (noVat
+      ? [["المبلغ المسترد", total]]
+      : [["المبلغ المسترد قبل الضريبة", formatHalalas(note.net_halalas)], ["ضريبة القيمة المضافة ١٥٪ المستردة", formatHalalas(note.vat_halalas)], ["الإجمالي المسترد شاملاً الضريبة", total]]) as Array<[string, string]>,
     title: "إشعار دائن",
     number: note.number,
     issuedAt: billingDateTimeAr(note.issued_at),
@@ -191,7 +213,9 @@ export function creditNoteView(note: BillingCreditNote | null, company: unknown)
     total: formatHalalas(note.total_halalas),
     company: isBillingCompanyComplete(company) ? company as BillingCompany : null,
     companyNotice: "بيانات المنشأة غير مكتملة",
-    feeNote: "يُردّ المبلغ كاملاً شاملاً ضريبة القيمة المضافة دون خصم أي رسوم، وتحدد جهة إصدار البطاقة مدة ظهوره في حسابك.",
+    feeNote: noVat
+      ? "يُردّ المبلغ كاملاً دون خصم أي رسوم، وتحدد جهة إصدار البطاقة مدة ظهوره في حسابك."
+      : "يُردّ المبلغ كاملاً شاملاً ضريبة القيمة المضافة دون خصم أي رسوم، وتحدد جهة إصدار البطاقة مدة ظهوره في حسابك.",
   };
 }
 

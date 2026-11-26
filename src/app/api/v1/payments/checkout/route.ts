@@ -5,6 +5,8 @@ import { MOYASAR_DISABLED_MESSAGE_AR } from "@/lib/payments/moyasarConfig";
 import { createMoyasarClient, type MoyasarClient } from "@/lib/payments/moyasarClient";
 import { parseCheckoutBody, resolveCallbackOrigin } from "@/lib/payments/checkoutRules";
 import { startCheckoutWith } from "@/lib/payments/checkoutCore";
+import { checkoutVatRegistered } from "@/lib/payments/vatStatus";
+import { vatPercentFor } from "@/lib/payments/catalog";
 import { parseFounderConsent } from "@/lib/payments/founderConsent";
 import { checkoutModeAllowed } from "@/lib/payments/testModeAccess";
 import { frozenAccountResponse } from "@/lib/auth/apiAuth";
@@ -123,6 +125,11 @@ export async function POST(request: NextRequest) {
     return reply({ error: MOYASAR_DISABLED_MESSAGE_AR }, 503);
   }
 
+  // l16 (A-01, owner 25 Nov §1.1): VAT is charged only once billing_company
+  // holds the VAT number (always so in live mode); a failed read never guesses
+  const vatRegistered = await checkoutVatRegistered(admin, cfg.mode);
+  if (vatRegistered === null) return unavailable();
+
   // S6b: one token per attempt; used for the founder membership only (step 0d)
   const turnstileSecret = process.env.TURNSTILE_SECRET_KEY;
   const captchaPolicy = checkoutCaptchaPolicy(
@@ -172,6 +179,7 @@ export async function POST(request: NextRequest) {
         publishableKey: cfg.publishableKey,
         // l7 decision 3: a test account's order is accepted in test mode only
         gatewayMode: cfg.mode,
+        vatPercent: vatPercentFor(vatRegistered),
       },
     );
     return reply(result.body, result.status);
