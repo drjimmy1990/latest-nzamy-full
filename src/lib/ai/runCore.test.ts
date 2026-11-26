@@ -1736,15 +1736,16 @@ const sentModels = (calls: Array<{ path: string }>) => calls.map((c) => ((c as {
 
 test("owner س٢١٩: the admin's model goes to n8n in the search writer's and the tool's packages", async () => {
   {
-    const { client } = modelDb({ model: "models/gemini-3.1-flash-lite" });
+    const { client } = modelDb({ model: AI_MODEL_DEFAULT });
     const calls: Array<{ path: string }> = [];
     const r = await startRunWith(client as never, libraryDeps({}, calls), LAWYER, QUICK_BODY);
     assert.equal(r.status, 200);
     assert.deepEqual(calls.map((c) => c.path), [LIB_QUERIES_PATH, "nzamy-ai/quick-answer"]);
-    assert.deepEqual(sentModels(calls), ["models/gemini-3.1-flash-lite", "models/gemini-3.1-flash-lite"]);
+    assert.deepEqual(sentModels(calls), [AI_MODEL_DEFAULT, AI_MODEL_DEFAULT]);
   }
-  // No row, an unknown name, or a read error: the default model, and the run goes on.
-  for (const stored of [undefined, { model: "models/gemini-9-ultra" }, { model: 5 }, new Error("down")]) {
+  // No row, an unknown name, a read error — or (owner ٢٢٦) the retired
+  // gemini-3.1-flash-lite still saved: the default model, and the run goes on.
+  for (const stored of [undefined, { model: "models/gemini-9-ultra" }, { model: 5 }, new Error("down"), { model: "models/gemini-3.1-flash-lite" }]) {
     const { client } = modelDb(stored);
     const calls: Array<{ path: string }> = [];
     const r = await quietly(() => startRunWith(client as never, libraryDeps({}, calls), LAWYER, QUICK_BODY));

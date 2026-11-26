@@ -37,6 +37,8 @@ interface ToolRow {
 interface ModelChoices {
   current: string;
   choices: Array<{ name: string; note: string | null }>;
+  /** Owner ٢٢٦: the saved value names a retired model; the tools already run on the default. */
+  retiredNote?: string | null;
 }
 
 interface RunRow {
@@ -303,11 +305,14 @@ export default function AdminAIUsagePage() {
                 <option key={c.name} value={c.name}>{c.name}</option>
               ))}
             </select>
-            <button disabled={saving || loading || modelChoice === aiModel.current} onClick={saveModel}
+            <button disabled={saving || loading || (modelChoice === aiModel.current && !aiModel.retiredNote)} onClick={saveModel}
               className="rounded-xl bg-[#C8A762] px-4 py-2 text-[12px] font-black text-black disabled:opacity-50">
               {saving ? "جارٍ الحفظ…" : "حفظ النموذج"}
             </button>
           </div>
+          {aiModel.retiredNote && (
+            <p className="mt-2 text-[11px] text-amber-300">{aiModel.retiredNote}</p>
+          )}
           {aiModel.choices.find((c) => c.name === modelChoice)?.note && (
             <p className="mt-2 text-[11px] text-amber-300">{aiModel.choices.find((c) => c.name === modelChoice)?.note}</p>
           )}

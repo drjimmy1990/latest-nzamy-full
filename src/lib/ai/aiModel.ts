@@ -25,18 +25,34 @@ import { MODEL_PRICES } from "./modelPrices.ts";
 export const AI_MODEL_SETTING = "ai_model";
 export const AI_MODEL_DEFAULT = "models/gemini-3.5-flash-lite";
 
+/**
+ * Owner answer ٢٢٦ (27 Nov 2026): a model Google refused is no longer offered.
+ * It keeps its price row (older runs are still priced by it), but it is not a
+ * choice: a setting that still names it reads as the default (parseAiModel),
+ * so no tool runs on it, and the admin page says so (retiredAiModelNoteAr).
+ */
+export const AI_MODEL_RETIRED: ReadonlySet<string> = new Set(["models/gemini-3.1-flash-lite"]);
+
 /** Every model the admin may choose ("models/<id>"), the default first. */
 export const AI_MODEL_CHOICES: readonly string[] = Object.freeze([
   AI_MODEL_DEFAULT,
   ...Object.keys(MODEL_PRICES)
     .map((id) => `models/${id}`)
-    .filter((m) => m !== AI_MODEL_DEFAULT),
+    .filter((m) => m !== AI_MODEL_DEFAULT && !AI_MODEL_RETIRED.has(m)),
 ]);
 
 /** Arabic notes the admin page shows next to a choice (none = no note). */
-export const AI_MODEL_NOTES_AR: Readonly<Record<string, string>> = Object.freeze({
-  "models/gemini-3.1-flash-lite": "رفضته Google يومي ٢٣ و٢٤ نوفمبر ٢٠٢٦ — لا يُختار إلا بعد التأكد من عودته",
-});
+export const AI_MODEL_NOTES_AR: Readonly<Record<string, string>> = Object.freeze({});
+
+/**
+ * The stored setting names a retired model → the note the admin page shows
+ * (the tools already run on the default); otherwise null.
+ */
+export function retiredAiModelNoteAr(value: unknown): string | null {
+  const m = value && typeof value === "object" && !Array.isArray(value) ? (value as { model?: unknown }).model : undefined;
+  if (typeof m !== "string" || !AI_MODEL_RETIRED.has(m.trim())) return null;
+  return `النموذج المحفوظ سابقًا (${aiModelId(m.trim())}) أُوقف لأن Google رفضته، فتعمل كل الأدوات الآن بالنموذج الافتراضي (${aiModelId(AI_MODEL_DEFAULT)}). احفظ النموذج من القائمة لإزالة هذا التنبيه.`;
+}
 
 /** "models/gemini-3.5-flash-lite" → "gemini-3.5-flash-lite" (the id usage.model and the price table use). */
 export const aiModelId = (model: string) => model.replace(/^models\//, "");
