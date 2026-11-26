@@ -158,9 +158,9 @@ test("shield is unsold: no on-sale price-book plan grants it, and a lock names n
   assert.equal(fa.lockTierLabelAr("not-a-tier"), null);
   // The gating and the holder's label are unchanged.
   assert.equal(fa.TIER_RANK.shield, 1);
-  assert.equal(fa.FEATURE_GATES.marketplace, "shield");
-  assert.equal(fa.FEATURE_GATES.reports, "shield");
-  assert.equal(fa.FEATURE_GATES["ai-contracts"], "shield");
+  // Owner ق٢٦-٦: the dead shield gates are gone — no feature requires the unsold tier.
+  for (const key of ["marketplace", "reports", "ai-contracts"]) assert.equal(fa.FEATURE_GATES[key], undefined, key);
+  assert.equal(Object.values(fa.FEATURE_GATES).includes("shield"), false);
   assert.equal(fa.TIER_LABELS_AR.shield, "عضوية الحماية القانونية"); // owner ٤٣٤
 });
 

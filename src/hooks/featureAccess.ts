@@ -53,9 +53,9 @@ export const TIER_LABELS_AR: Record<UserTier, string> = {
 };
 
 // ─── Tiers no plan on sale grants ─────────────────────────────────────────────
-// Wave 1 task 6 (H): `shield` («عضوية الحماية القانونية», owner ٤٣٤) is a tier KEY — rank 1, and
-// FEATURE_GATES still sets it as the minimum for marketplace, reports and
-// ai-contracts — but no plan on sale grants it (the price book's tiers are
+// Wave 1 task 6 (H): `shield` («عضوية الحماية القانونية», owner ٤٣٤) is a tier KEY — rank 1 (no
+// FEATURE_GATES entry requires it since ق٢٦-٦ removed the dead marketplace,
+// reports and ai-contracts gates) — but no plan on sale grants it (the price book's tiers are
 // ai / pro / max / corp / enterprise; ind-litigation, the plan that carried
 // the name, is retired, q329). A lock must not tell the user to buy it. The
 // gating itself (TIER_RANK, FEATURE_GATES, can()) is unchanged, and
@@ -87,11 +87,13 @@ export const FEATURE_GATES: Record<string, UserTier> = {
   "dept-reviews":       "pro",
   kanban:               "pro",
   "procedures-expert":  "ai",
-  marketplace:          "shield",
+  // Owner ق٢٦-٦ (package 2026-11-26): the dead shield gates on marketplace,
+  // reports and ai-contracts are gone — nothing read them (no gateKey, page
+  // or can() call), so removing them changes no screen; the tier key
+  // `shield` itself stays (TIER_RANK, the holder's label, UNSOLD_TIERS).
   "team-manage":        "pro",
   "team-legal-department": "pro", // legal_manager/legal_staff roster rows on the team page — same tier as the hasInternalLegal-gated siblings above (team-manage, hr-contracts, dept-reviews)
   finance:              "pro",
-  reports:              "shield",
   wallet:               "free",
   reviews:              "free",
   hearings:             "pro",
@@ -151,7 +153,6 @@ export const FEATURE_GATES: Record<string, UserTier> = {
 
   // AI features
   "ai-consult":         "free",
-  "ai-contracts":       "shield",
   "ai-corp":            "corp",
   "ai-gov":             "free",   // government users — free tier access to gov tools
   "ai-ngo":             "free",   // NGO users — free tier access to ngo tools
