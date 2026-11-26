@@ -92,6 +92,29 @@ export const LAWYER_NAV: NavItem[] = [
   { label: "المكتبة القانونية", labelEn: "Legal Library", href: "/laws" },
 ];
 
+/**
+ * l16 (A-14, owner 25 Nov §1.4.1): the INDEPENDENT legal consultant's top
+ * bar — the library and the client side of the market only, never the
+ * lawyer's pleading or office links. Every href is on the consultant
+ * allowlist (consultantScope.ts; navigation.navbar.test.ts fails otherwise).
+ */
+export const CONSULTANT_NAV: NavItem[] = [
+  { label: "لوحة التحكم", labelEn: "Dashboard", href: "/dashboard/lawyer" },
+  { label: "المكتبة القانونية", labelEn: "Legal Library", href: "/laws" },
+  { label: "مكتبتي", labelEn: "My Library", href: "/laws/my" },
+  { label: "اطلب خدمة", labelEn: "Request a service", href: "/marketplace/post" },
+  { label: "الباقات", labelEn: "Plans", href: "/pricing" },
+];
+
+/**
+ * The top bar of a session: the independent consultant (a lawyer session
+ * with practice_kind exactly 'consultant' and no active firm membership)
+ * gets CONSULTANT_NAV, everyone else getNavByUserType.
+ */
+export function getNavForSession(userType: UserType, independentConsultant: boolean): NavItem[] {
+  return userType === "lawyer" && independentConsultant ? CONSULTANT_NAV : getNavByUserType(userType);
+}
+
 // ── Firm Nav (شركة محاماة) ───────────────────────────────────────────────────
 export const FIRM_NAV: NavItem[] = [
   { label: "القضايا",   labelEn: "Cases",     href: "/dashboard/firm/cases" },

@@ -130,6 +130,7 @@ import type { MoyasarClient } from "./moyasarClient.ts";
 import { buyerAllowed, PAYABLE_ITEMS, quote, resolveItem, type Billing, type PayableItem } from "./catalog.ts";
 import { checkMinTopup } from "./minTopup.ts";
 import { readConsultantStanding } from "../auth/consultantScopeServer.ts";
+import { CONSULTANT_REFUSED_PLAN_ID_LIST } from "../pricing/audienceForUserType.ts";
 import { LIBRARY_ACCOUNT_LOCKED_AR, LIBRARY_ACCOUNT_LOCKED_CODE } from "../library/accountAccess.ts";
 import { isMissingPaymentsObject } from "./fulfillDecision.ts";
 import { MOYASAR_DISABLED_MESSAGE_AR } from "./moyasarConfig.ts";
@@ -191,7 +192,7 @@ export const CONSULTANT_PLAN_REFUSED_AR = "حساب المستشار القان�
 /** l16 (A-17): the consultant check could not be read — the office plans are never sold on a guess. */
 export const CONSULTANT_CHECK_FAILED_AR = "تعذّر التحقق من صلاحية الحساب الآن، حاول مرة أخرى بعد قليل";
 /** The plans an independent consultant may not buy (also read by the /checkout page pre-check and the pricing cards). */
-export const CONSULTANT_REFUSED_PLAN_IDS: ReadonlySet<string> = new Set(["lawyer-pro", "lawyer-bundle"]);
+export const CONSULTANT_REFUSED_PLAN_IDS: ReadonlySet<string> = new Set(CONSULTANT_REFUSED_PLAN_ID_LIST);
 export const UNKNOWN_ITEM_AR = "هذا المنتج غير متاح للدفع الإلكتروني";
 export const BILLING_NOT_OFFERED_AR = "مدة الاشتراك هذه غير متاحة لهذا المنتج";
 export { NOT_FOR_SALE_AR };

@@ -8,7 +8,8 @@ import { useUser } from "@/hooks/useUser";
 import { PricingCards } from "@/components/pricing/PricingCards";
 import { getPlanList } from "@/constants/pricingData";
 import type { AudienceTab, Billing } from "@/constants/pricingData";
-import { audienceForUserType, extraPlanIdsFor, withExtraPlans } from "@/lib/pricing/audienceForUserType";
+import { audienceForUserType, extraPlanIdsFor, withExtraPlans, withoutConsultantRefusedPlans } from "@/lib/pricing/audienceForUserType";
+import { isIndependentConsultantSession } from "@/lib/auth/consultantScope";
 import { displayCycle, offeredCycles } from "@/lib/pricing/cardPrice";
 import { BILLING_LABEL_AR, isCycle } from "@/lib/pricing/priceBook";
 import { CurrentPlanCard } from "@/components/payments/CurrentPlanCard";
@@ -69,7 +70,7 @@ import { LibraryGrantStatusCard } from "@/components/library/LibraryGrantStatusC
 const PLANS_ANCHOR = "account-plans";
 
 export function SubscriptionTab() {
-  const { userType, practiceKind, loading } = useUser();
+  const { userType, practiceKind, firmMembership, loading } = useUser();
   const audience = loading ? null : audienceForUserType(userType);
   const { state: billingRead } = useBillingData();
 
@@ -90,12 +91,17 @@ export function SubscriptionTab() {
         </div>
       ) : null}
 
-      <div id={PLANS_ANCHOR} className="scroll-mt-24">
+      {/* l16 (A-62): clear of the fixed Navbar when opened at #account-plans */}
+      <div id={PLANS_ANCHOR} className="scroll-mt-32">
         <SectionTitle>الباقات المتاحة لحسابك</SectionTitle>
         {loading ? (
           <PanelSkeleton />
         ) : audience ? (
-          <AccountPlans audience={audience} extraPlanIds={extraPlanIdsFor(userType, practiceKind, false)} />
+          <AccountPlans
+            audience={audience}
+            extraPlanIds={extraPlanIdsFor(userType, practiceKind, false)}
+            independentConsultant={isIndependentConsultantSession(userType, practiceKind, !!firmMembership)}
+          />
         ) : (
           <Link
             href="/pricing"
@@ -126,17 +132,25 @@ function PanelSkeleton() {
 }
 
 // ── The plans of the account's own family, as on /pricing ──
-function AccountPlans({ audience, extraPlanIds }: { audience: AudienceTab; extraPlanIds: readonly string[] }) {
+function AccountPlans({
+  audience,
+  extraPlanIds,
+  independentConsultant,
+}: {
+  audience: AudienceTab;
+  extraPlanIds: readonly string[];
+  independentConsultant: boolean;
+}) {
   const [billing, setBilling] = useState<Billing>("monthly");
   const [libraryModeState, setLibraryMode] = useState(false);
 
   const hasLibrary = audience === "lawyers" || audience === "firms";
   const libraryMode = hasLibrary && libraryModeState;
   // Library mode lists the library plans only (extraPlanIdsFor's rule).
-  const planList = withExtraPlans(
-    getPlanList(audience, true, { libraryMode }),
-    libraryMode ? [] : extraPlanIds,
-    getPlanList("providers", true),
+  // l16 (A-15): an independent consultant sees no «إدارة المكتب» / bundle card (checkout refuses them)
+  const planList = withoutConsultantRefusedPlans(
+    withExtraPlans(getPlanList(audience, true, { libraryMode }), libraryMode ? [] : extraPlanIds, getPlanList("providers", true)),
+    independentConsultant,
   );
   // Same rule as /pricing: the audience's allowed cycles that a card here
   // prices (offeredCycles); a toggle only with two or more.

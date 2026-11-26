@@ -19,7 +19,8 @@ import { PricingTestimonials } from "@/components/pricing/PricingTestimonials";
 import { PricingFAQ }          from "@/components/pricing/PricingFAQ";
 import { PricingCTA }          from "@/components/pricing/PricingCTA";
 import { GovernmentRolesInfo } from "@/components/pricing/GovernmentRolesInfo";
-import { audienceTabsView, extraPlanIdsFor, withExtraPlans } from "@/lib/pricing/audienceForUserType";
+import { audienceTabsView, extraPlanIdsFor, withExtraPlans, withoutConsultantRefusedPlans } from "@/lib/pricing/audienceForUserType";
+import { isIndependentConsultantSession } from "@/lib/auth/consultantScope";
 import { displayCycle, offeredCycles } from "@/lib/pricing/cardPrice";
 import { audienceFromParam } from "@/lib/pricing/founderCard";
 import FounderCampaignLink from "@/components/seo/FounderCampaignLink";
@@ -56,7 +57,7 @@ function PricingUrlReader({ onRead }: { onRead: (url: PricingUrl) => void }) {
 export default function PricingPage() {
   const { lang } = useTheme();
   const isAr = lang === "ar";
-  const { userType, practiceKind, isLoggedIn, loading: userLoading } = useUser();
+  const { userType, practiceKind, firmMembership, isLoggedIn, loading: userLoading } = useUser();
 
   const [billing,  setBilling]  = useState<Billing>("monthly");
   const [companySize,  setCompanySize]  = useState<CompanySize>("small");
@@ -95,7 +96,11 @@ export default function PricingPage() {
   // lawyers family (extraPlanIdsFor). Cards only: the comparison table has no
   // column for it.
   const extraPlanIds   = tabsView.kind === "locked" ? extraPlanIdsFor(userType, practiceKind, libraryMode) : [];
-  const cardPlanList   = withExtraPlans(planList, extraPlanIds, getPlanList("providers", isAr));
+  // l16 (A-15): an independent consultant sees no «إدارة المكتب» / bundle card (checkout refuses them)
+  const cardPlanList   = withoutConsultantRefusedPlans(
+    withExtraPlans(planList, extraPlanIds, getPlanList("providers", isAr)),
+    isLoggedIn && isIndependentConsultantSession(userType, practiceKind, !!firmMembership),
+  );
   const comparisonList = getComparisonList(audience, isAr);
   // The table's columns are the cards it has rows for: the individuals'
   // top-ups (owner ٣٠٢) are cards with no column.

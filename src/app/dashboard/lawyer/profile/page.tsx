@@ -12,6 +12,7 @@ import {
 import Link from "next/link";
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
+import { isIndependentConsultantSession } from "@/lib/auth/consultantScope";
 import { apiGet, isSupabaseMode } from "@/lib/services/api";
 import { BETA_MONOPOLY_MODE } from "@/lib/betaConfig";
 import { OverviewTab } from "@/components/dashboard/LawyerProfileForms";
@@ -217,6 +218,11 @@ export default function LawyerProfilePage() {
   const [loadError, setLoadError] = useState("");
 
   const [activeTab, setActiveTab] = useState<"about" | "services" | "reviews">("about");
+  // l16 (A-18, owner 25 Nov §1.4.3): the independent consultant has no
+  // services or pleading fees to list (library + the client side of the
+  // market), and /api/v1/lawyer/services is not his — no «الخدمات» tab, so no 403.
+  const independentConsultant = isIndependentConsultantSession(user.userType, user.practiceKind, !!user.firmMembership);
+  const shownTabs = independentConsultant ? TABS.filter((t) => t.id !== "services") : TABS;
 
   // ─── Services tab state (item 178) — honest states via listRead.ts, same
   // contract every other list on this dashboard follows. Loaded lazily, on
@@ -334,11 +340,11 @@ export default function LawyerProfilePage() {
 
   // Lazy: only fires the first time the lawyer opens the tab, not on mount.
   useEffect(() => {
-    if (activeTab === "services" && !servicesRequested) {
+    if (activeTab === "services" && !servicesRequested && !independentConsultant) {
       setServicesRequested(true);
       loadServices();
     }
-  }, [activeTab, servicesRequested, loadServices]);
+  }, [activeTab, servicesRequested, loadServices, independentConsultant]);
 
   // The held read, for deciding OUTSIDE a state updater whether to re-read.
   const servicesReadRef = useRef<ListRead<LawyerService> | null>(null);
@@ -846,7 +852,7 @@ export default function LawyerProfilePage() {
         print:hidden — the tab bar itself never prints.
       */}
       <div className={`${card} p-1.5 flex gap-1 print:hidden`}>
-        {TABS.map((t) => (
+        {shownTabs.map((t) => (
           <button
             key={t.id}
             type="button"
