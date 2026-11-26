@@ -168,6 +168,37 @@ export interface PaymentsGatewayWriteContext {
   stubAllowed: boolean;
   /** isBillingCompanyComplete() of the stored billing_company. */
   billingCompanyComplete: boolean;
+  /**
+   * Batch l16 (A-22, owner 25 Nov §1.5.1): who asks for "live". Only a
+   * super admin with a verified two-step factor, signed in with it in this
+   * session (aal2), may switch real payments on. Absent → refused (only
+   * "live" reads it; switching off or to test never does).
+   */
+  liveActor?: LiveGatewayActor;
+}
+
+/** The actor of a payments_gateway write that asks for "live" (A-22). */
+export interface LiveGatewayActor {
+  /** platform_staff.staff_role = 'super_admin'. */
+  superAdmin: boolean;
+  /** The GoTrue user has at least one VERIFIED factor (staffMfa.hasVerifiedFactor). */
+  verifiedFactor: boolean;
+  /** This request's session is aal2 (password + code). */
+  aal2: boolean;
+}
+
+export const LIVE_NEEDS_SUPER_ADMIN_AR = "تفعيل الدفع الحقيقي (live) للمشرف الأعلى وحده.";
+export const LIVE_NEEDS_MFA_AR =
+  "تفعيل الدفع الحقيقي (live) يتطلب تفعيل التحقق بخطوتين لحسابك أولاً (صفحة التحقق بخطوتين)، ثم أعد المحاولة.";
+export const LIVE_NEEDS_AAL2_AR =
+  "تفعيل الدفع الحقيقي (live) يتطلب الدخول برمز تطبيق المصادقة في هذه الجلسة: سجّل الخروج ثم ادخل بالرمز وأعد المحاولة.";
+
+/** Why this actor may not switch real payments on, or null when he may (A-22). */
+export function liveGatewayActorIssue(actor: LiveGatewayActor | undefined): string | null {
+  if (!actor || actor.superAdmin !== true) return LIVE_NEEDS_SUPER_ADMIN_AR;
+  if (actor.verifiedFactor !== true) return LIVE_NEEDS_MFA_AR;
+  if (actor.aal2 !== true) return LIVE_NEEDS_AAL2_AR;
+  return null;
 }
 
 /**
@@ -175,7 +206,9 @@ export interface PaymentsGatewayWriteContext {
  * - {status:"disabled", provider: null | absent | "moyasar"} — always;
  * - {status:"test", provider:"stub"} — only where the stub is allowed (unchanged);
  * - {status:"test", provider:"moyasar"} — always (the keys gate it at runtime);
- * - {status:"live", provider:"moyasar"} — only with a complete billing_company.
+ * - {status:"live", provider:"moyasar"} — only with a complete billing_company,
+ *   and (l16, A-22) only from a super admin with a verified two-step factor
+ *   signed in with it (liveGatewayActorIssue).
  */
 export function paymentsGatewaySettingIssue(
   value: unknown,
@@ -196,9 +229,10 @@ export function paymentsGatewaySettingIssue(
   if (provider === "moyasar") {
     if (status === "test") return null;
     if (status === "live") {
-      return ctx.billingCompanyComplete
-        ? null
-        : "لا يمكن تفعيل الدفع الحقيقي (live) قبل اكتمال بيانات المنشأة في billing_company: الاسم النظامي، السجل التجاري، الرقم الضريبي، العنوان";
+      if (!ctx.billingCompanyComplete) {
+        return "لا يمكن تفعيل الدفع الحقيقي (live) قبل اكتمال بيانات المنشأة في billing_company: الاسم النظامي، السجل التجاري، الرقم الضريبي، العنوان";
+      }
+      return liveGatewayActorIssue(ctx.liveActor);
     }
   }
   return 'قيمة payments_gateway غير صالحة — المسموح: status = "disabled" أو "test" أو "live" مع provider = "moyasar"';

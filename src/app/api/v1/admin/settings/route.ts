@@ -3,6 +3,8 @@ import { dbErrorJson } from "@/lib/api/dbError";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
 import { requireStaff } from "@/lib/access-control";
+import { aalFromAccessToken, hasVerifiedFactor } from "@/lib/auth/staffMfa";
+import { currentAccessToken } from "@/lib/auth/staffMfaServer";
 import { logAdminAction } from "@/lib/auth/adminAudit";
 import {
   founderCampaignSettingIssue,
@@ -23,6 +25,7 @@ import {
   billingCompanySettingIssue,
   isBillingCompanyComplete,
   paymentsGatewaySettingIssue,
+  type LiveGatewayActor,
 } from "@/lib/payments/moyasarConfig";
 import { feqhFreePagesIssue, libraryPublicProtectionIssue, publicRulingsIssue } from "@/lib/library/publicGuard";
 import { libraryMinPointsIssue } from "@/lib/library/pointsGate";
@@ -184,6 +187,8 @@ const ALLOWED_SETTINGS_KEYS = [
 interface SettingValidatorContext {
   /** isBillingCompanyComplete() of the stored billing_company (false on a read error). */
   billingCompanyComplete: () => Promise<boolean>;
+  /** l16 (A-22): the writer's role, verified factor and aal2 session — read only when "live" is asked for. */
+  liveActor: () => Promise<LiveGatewayActor>;
 }
 
 type SettingValidator = (
@@ -221,6 +226,7 @@ const SETTINGS_VALUE_VALIDATORS: Record<string, SettingValidator> = {
     return paymentsGatewaySettingIssue(value, {
       stubAllowed,
       billingCompanyComplete: wantsLive ? await ctx.billingCompanyComplete() : false,
+      liveActor: wantsLive ? await ctx.liveActor() : undefined,
     });
   },
   billing_company: billingCompanySettingIssue,
@@ -284,6 +290,28 @@ const SETTINGS_VALUE_VALIDATORS: Record<string, SettingValidator> = {
   // Batch l15: pure, covered by src/lib/phoneOtp/phoneOtp.test.ts.
   [SIGNUP_PHONE_OTP_KEY]: signupPhoneOtpIssue,
 };
+
+/**
+ * l16 (A-22): the actor of a "live" write — super admin, a verified factor
+ * on the GoTrue user, and this request's session at aal2. Anything that
+ * cannot be read counts as false, so live stays refused.
+ */
+async function readLiveActor(role: string): Promise<LiveGatewayActor> {
+  const actor: LiveGatewayActor = { superAdmin: role === "super_admin", verifiedFactor: false, aal2: false };
+  try {
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return actor;
+    return {
+      superAdmin: actor.superAdmin,
+      verifiedFactor: hasVerifiedFactor(user),
+      aal2: aalFromAccessToken(await currentAccessToken(supabase)) === "aal2",
+    };
+  } catch (err) {
+    console.error("[admin/settings] reading the live actor failed; live stays refused", err instanceof Error ? err.message : "unknown");
+    return actor;
+  }
+}
 
 /** A read error or a missing row counts as incomplete, so live stays refused. */
 async function readBillingCompanyComplete(): Promise<boolean> {
@@ -462,7 +490,10 @@ export async function PATCH(request: NextRequest) {
   // ── Validate the value shape for safety-critical keys ──────────────────────
   const validate = SETTINGS_VALUE_VALIDATORS[key];
   if (validate) {
-    const invalid = await validate(toStore, { billingCompanyComplete: readBillingCompanyComplete });
+    const invalid = await validate(toStore, {
+      billingCompanyComplete: readBillingCompanyComplete,
+      liveActor: () => readLiveActor(gate.role),
+    });
     if (invalid) {
       return NextResponse.json({ error: invalid }, { status: 400 });
     }
