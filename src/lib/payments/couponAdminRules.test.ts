@@ -114,7 +114,8 @@ test("the routes apply the rules (400 with the reason) and the page sends a mini
   assert.match(PATCH, /adminDiscountPatch\(existing as Record<string, unknown>, body, nextActive\)/);
   assert.match(PATCH, /Object\.assign\(updateData, discount\.fields\)/);
   assert.match(PAGE, /minOrderAmount: Number\(row\.min_order_amount \?\? 0\)/);
-  assert.match(PAGE, /setDraft\(\{ \.\.\.draft, minOrderAmount: Number\(event\.target\.value\) \}\)/);
+  assert.match(PAGE, /<NumberBox value=\{draft\.minOrderAmount\} min=\{1\} required onValue=\{\(n\) => setDraft\(\{ \.\.\.draft, minOrderAmount: n \}\)\}/);
+  assert.match(PAGE, /onValue\(event\.target\.value === \"\" \|\| !Number\.isFinite\(n\) \? 0 : n\)/);
 });
 
 // ── S6-T11: every rule is editable; company coupons target corporate ─────────

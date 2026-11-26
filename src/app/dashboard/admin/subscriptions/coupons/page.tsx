@@ -505,7 +505,7 @@ export default function AdminCouponsPage() {
               </Field>
               {draft.couponType === "points" ? (
                 <Field label="النقاط الممنوحة">
-                  <input type="number" value={draft.pointsGranted || 0} min={1} onChange={(event) => setDraft({ ...draft, pointsGranted: Number(event.target.value) })} className={inputClass(isDark)} />
+                  <NumberBox value={draft.pointsGranted} min={1} onValue={(n) => setDraft({ ...draft, pointsGranted: n })} isDark={isDark} />
                 </Field>
               ) : draft.couponType === "discount" ? (
                 <>
@@ -516,18 +516,18 @@ export default function AdminCouponsPage() {
                     </select>
                   </Field>
                   <Field label="القيمة">
-                    <input type="number" value={draft.value} min={1} max={draft.discountType === "percentage" ? draft.maxDiscountPct ?? 25 : undefined} onChange={(event) => setDraft({ ...draft, value: Number(event.target.value) })} className={inputClass(isDark)} />
+                    <NumberBox value={draft.value} min={1} max={draft.discountType === "percentage" ? draft.maxDiscountPct ?? 25 : undefined} onValue={(n) => setDraft({ ...draft, value: n })} isDark={isDark} />
                   </Field>
                   {/* P7 review: checkout honours every active discount coupon;
                       the server refuses one without a minimum and any coupon
                       on point top-ups. l14: the cap goes up to 100 % (default
                       25), above 25 only with a purpose. */}
                   <Field label="الحد الأدنى للطلب قبل الضريبة (ر.س) — مطلوب">
-                    <input type="number" value={draft.minOrderAmount ?? 0} min={1} required onChange={(event) => setDraft({ ...draft, minOrderAmount: Number(event.target.value) })} className={inputClass(isDark)} />
+                    <NumberBox value={draft.minOrderAmount} min={1} required onValue={(n) => setDraft({ ...draft, minOrderAmount: n })} isDark={isDark} />
                   </Field>
                   {draft.maxDiscountPct !== undefined && (
                     <Field label="سقف الخصم ٪ من صافي الطلب (الافتراضي ٢٥، وحتى ١٠٠)">
-                      <input type="number" value={draft.maxDiscountPct} min={1} max={100} onChange={(event) => setDraft({ ...draft, maxDiscountPct: Number(event.target.value) })} className={inputClass(isDark)} />
+                      <NumberBox value={draft.maxDiscountPct} min={1} max={100} onValue={(n) => setDraft({ ...draft, maxDiscountPct: n })} isDark={isDark} />
                     </Field>
                   )}
                 </>
@@ -563,7 +563,7 @@ export default function AdminCouponsPage() {
               )}
               
               <Field label="حد الاستخدام">
-                <input type="number" value={draft.usageLimit} min={1} onChange={(event) => setDraft({ ...draft, usageLimit: Number(event.target.value) })} className={inputClass(isDark)} />
+                <NumberBox value={draft.usageLimit} min={1} onValue={(n) => setDraft({ ...draft, usageLimit: n })} isDark={isDark} />
               </Field>
               <Field label="يبدأ في">
                 <input type="date" value={draft.startsAt} onChange={(event) => setDraft({ ...draft, startsAt: event.target.value })} className={inputClass(isDark)} />
@@ -874,6 +874,42 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       <span className="text-xs font-bold text-gray-500">{label}</span>
       {children}
     </label>
+  );
+}
+
+/**
+ * A number box of the coupon form (owner, 26 Nov: «يُكتب مبلغ كبير»). The
+ * form opens with ready values (10, 100, 25, 100). With a plain controlled
+ * number input, typing after a click APPENDED to them (10 → 1050) and an
+ * emptied box jumped back to 0. Here a click selects the whole number, so
+ * typing replaces it; an empty box stays empty while typing (stored as 0,
+ * which every field refuses on save via min=1); the mouse wheel does not
+ * change the number. type="number" stays, so Arabic digits still convert.
+ */
+function NumberBox({ value, onValue, min, max, required, isDark }: {
+  value: number | undefined;
+  onValue: (n: number) => void;
+  min?: number;
+  max?: number;
+  required?: boolean;
+  isDark: boolean;
+}) {
+  return (
+    <input
+      type="number"
+      inputMode="decimal"
+      value={value && Number.isFinite(value) ? value : ""}
+      min={min}
+      max={max}
+      required={required}
+      onFocus={(event) => event.currentTarget.select()}
+      onWheel={(event) => event.currentTarget.blur()}
+      onChange={(event) => {
+        const n = Number(event.target.value);
+        onValue(event.target.value === "" || !Number.isFinite(n) ? 0 : n);
+      }}
+      className={inputClass(isDark)}
+    />
   );
 }
 
