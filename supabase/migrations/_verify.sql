@@ -8672,9 +8672,9 @@ select 'l16 س٢٠٣: restore_case_document no longer lets the other party resto
 select 'l16 س٢٠٣: «طلب رفع الحجز» — append-only table closed to session writes; the definer RPC callable by signed-in users only (run 20261206_11)' as check,
        to_regclass('public.attachment_hold_lift_requests') is not null
        and coalesce((select c.relrowsecurity from pg_catalog.pg_class c where c.oid = to_regclass('public.attachment_hold_lift_requests')), false)
-       and not coalesce(has_table_privilege('authenticated', 'public.attachment_hold_lift_requests', 'INSERT'), true)
-       and not coalesce(has_table_privilege('authenticated', 'public.attachment_hold_lift_requests', 'UPDATE'), true)
-       and not coalesce(has_table_privilege('anon', 'public.attachment_hold_lift_requests', 'SELECT'), true)
+       and not coalesce(has_table_privilege('authenticated', to_regclass('public.attachment_hold_lift_requests'), 'INSERT'), true)
+       and not coalesce(has_table_privilege('authenticated', to_regclass('public.attachment_hold_lift_requests'), 'UPDATE'), true)
+       and not coalesce(has_table_privilege('anon', to_regclass('public.attachment_hold_lift_requests'), 'SELECT'), true)
        and exists (select 1 from pg_catalog.pg_trigger
                     where tgrelid = to_regclass('public.attachment_hold_lift_requests')
                       and tgname = 'trg_attachment_hold_lift_requests_append_only' and not tgisinternal)
@@ -8695,9 +8695,9 @@ select 'l16 س٢١٦: case_visible has no is_admin() arm, has the break-glass gr
 select 'l16 س٢١٦: the break-glass grant table is closed to sessions, guarded (no delete, no rewrite), and its RPCs are SECURITY DEFINER for signed-in users only (run 20261206_12)' as check,
        to_regclass('public.restricted_case_access_grants') is not null
        and coalesce((select c.relrowsecurity from pg_catalog.pg_class c where c.oid = to_regclass('public.restricted_case_access_grants')), false)
-       and not coalesce(has_table_privilege('authenticated', 'public.restricted_case_access_grants', 'SELECT'), true)
-       and not coalesce(has_table_privilege('authenticated', 'public.restricted_case_access_grants', 'INSERT'), true)
-       and not coalesce(has_table_privilege('anon', 'public.restricted_case_access_grants', 'SELECT'), true)
+       and not coalesce(has_table_privilege('authenticated', to_regclass('public.restricted_case_access_grants'), 'SELECT'), true)
+       and not coalesce(has_table_privilege('authenticated', to_regclass('public.restricted_case_access_grants'), 'INSERT'), true)
+       and not coalesce(has_table_privilege('anon', to_regclass('public.restricted_case_access_grants'), 'SELECT'), true)
        and exists (select 1 from pg_catalog.pg_trigger
                     where tgrelid = to_regclass('public.restricted_case_access_grants')
                       and tgname = 'trg_restricted_case_access_grants_guard' and not tgisinternal)
@@ -8841,7 +8841,7 @@ select 'l16 roles: cases & clients — free allowance set (0/0 by default), only
                          and pg_catalog.pg_get_triggerdef(oid) like '%requester_user_id%'), false)
        and (to_regclass('public.lawyer_clients') is null
             or coalesce((select count(*) = 1 from pg_catalog.pg_trigger
-                           where tgrelid = 'public.lawyer_clients'::regclass and tgname = 'trg_solo_lawyer_client_cap' and not tgisinternal), false)) as ok;
+                           where tgrelid = to_regclass('public.lawyer_clients') and tgname = 'trg_solo_lawyer_client_cap' and not tgisinternal), false)) as ok;
 select 'l16 roles: 1 GB free storage — setting row, quota trigger on storage.objects, my_storage_quota for sessions only (run 20261206_70 as supabase_admin)' as check,
        coalesce((select pg_catalog.jsonb_typeof(s.value -> 'gb') = 'number' from public.platform_settings s where s.key = 'free_storage_quota'), false)
        and (to_regclass('storage.objects') is null
