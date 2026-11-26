@@ -17,6 +17,13 @@
  *   ZERNIO_WHATSAPP_ACCOUNT_ID   required (the WhatsApp account in Zernio)
  *   ZERNIO_OTP_TEMPLATE          optional, default "nezamy_otp"
  *   ZERNIO_OTP_TEMPLATE_LANG     optional, default "ar"
+ *   ZERNIO_RESET_OTP_TEMPLATE    optional (batch l18, owner ٢٣١): the template
+ *                                of the PASSWORD-RESET code (purpose "reset");
+ *                                unset → the sign-up template above, so the
+ *                                reset keeps working with nezamy_otp until the
+ *                                owner's nezamy_password_reset is approved
+ *                                (same shape: the code in the body and in the
+ *                                copy-code button). Read at send time.
  * Either required one missing → 'unavailable' (nothing is sent).
  *
  * Answers: 'sent' (a 2xx that does not say success:false) | 'unavailable' |
@@ -47,13 +54,18 @@ const clean = (v: string | undefined) => {
   return s === "" ? null : s;
 };
 
-export function readZernioConfig(env: ZernioEnv): ZernioConfig {
+/** What the code is for: the sign-up / phone confirmation, or the l17 password reset. */
+export type ZernioPurpose = "signup" | "reset";
+
+export function readZernioConfig(env: ZernioEnv, purpose: ZernioPurpose = "signup"): ZernioConfig {
   const apiKey = clean(env.ZERNIO_API_KEY);
   const accountId = clean(env.ZERNIO_WHATSAPP_ACCOUNT_ID);
+  const signupTemplate = clean(env.ZERNIO_OTP_TEMPLATE) ?? ZERNIO_DEFAULT_TEMPLATE;
   return {
     apiKey,
     accountId,
-    template: clean(env.ZERNIO_OTP_TEMPLATE) ?? ZERNIO_DEFAULT_TEMPLATE,
+    // l18 (٢٣١): the reset's own template when set, else the sign-up one
+    template: purpose === "reset" ? clean(env.ZERNIO_RESET_OTP_TEMPLATE) ?? signupTemplate : signupTemplate,
     language: clean(env.ZERNIO_OTP_TEMPLATE_LANG) ?? ZERNIO_DEFAULT_TEMPLATE_LANG,
     ready: apiKey !== null && accountId !== null,
   };
@@ -78,8 +90,10 @@ export async function sendWhatsAppCode(input: {
   env: ZernioEnv;
   fetchImpl: FetchLike;
   timeoutMs?: number;
+  /** l18 (٢٣١): "reset" picks ZERNIO_RESET_OTP_TEMPLATE; default "signup". */
+  purpose?: ZernioPurpose;
 }): Promise<WhatsAppSendOutcome> {
-  const config = readZernioConfig(input.env);
+  const config = readZernioConfig(input.env, input.purpose ?? "signup");
   if (!config.ready) return { result: "unavailable", httpStatus: null };
   const participantId = zernioParticipantId(input.e164);
   if (!participantId || !/^\d{6}$/.test(input.code)) return { result: "failed", httpStatus: null };

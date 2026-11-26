@@ -92,7 +92,8 @@ export function serverResetDeps(svc: Svc, captcha: ResetDeps["captcha"]): ResetD
       const j = (data ?? {}) as { ok?: unknown; id?: unknown };
       return j.ok === true && typeof j.id === "string" ? { id: j.id } : null;
     },
-    send: async (e164, code) => (await sendWhatsAppCode({ e164, code, env: process.env, fetchImpl: fetch })).result,
+    // l18 (owner ٢٣١): the reset template (ZERNIO_RESET_OTP_TEMPLATE), else the sign-up one
+    send: async (e164, code) => (await sendWhatsAppCode({ e164, code, env: process.env, fetchImpl: fetch, purpose: "reset" })).result,
     markDelivery: async (id, sent) => {
       await svc
         .from("password_reset_challenges")

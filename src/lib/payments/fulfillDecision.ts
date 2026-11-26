@@ -331,8 +331,22 @@ export function isMissingPaymentsObject(code: string | null | undefined): boolea
  */
 export const FOUNDER_PENDING_REASON = "founder_pending_verification";
 
-/** l7 decision 1, the owner's sentence: a founder seat paid before the licence check. */
-export const FOUNDER_PENDING_SENTENCE_AR = "تُفعَّل الباقة بعد توثيق رخصتك، وإن لم تُوثَّق يُردّ المبلغ كاملاً.";
+/** l7 decision 1 (l18 wording, owner ٢٣٩): a founder seat paid before the licence approval. */
+export const FOUNDER_PENDING_SENTENCE_AR = "تُفعَّل الباقة بعد اعتماد التوثيق، وإن لم يُعتمد يُردّ المبلغ كاملاً.";
+
+/**
+ * l18 (owner ٢٣٩): a FulfillResult reason — a professional plan paid while
+ * the buyer's licence waits for the team: the order is paid and stamped
+ * (metadata.licence_pending), no subscription yet; it activates on the
+ * approval (heldPlanActivation.ts).
+ */
+export const LICENCE_PENDING_REASON = "licence_pending_verification";
+
+/** The owner's words for a held professional plan (٢٣٩). */
+export const LICENCE_PENDING_SENTENCE_AR =
+  "تُفعَّل الباقة بعد اعتماد التوثيق: تبدأ مدتها من يوم اعتماد الإدارة لتوثيقك، وإن لم يُعتمد يُردّ المبلغ كاملاً.";
+/** The state label wherever a held order is listed. */
+export const LICENCE_PENDING_STATE_AR = "بانتظار اعتماد التوثيق";
 
 export interface FulfilmentNotice {
   title: string;
@@ -348,10 +362,20 @@ export function fulfilmentNoticeAr(input: {
   alreadyEntitled: boolean;
   /** l7 (decision 1): a founder membership paid before the licence check — the seat waits. */
   founderPending?: boolean;
+  /** l18 (٢٣٩): a professional plan paid before the licence approval — held, not active. */
+  licencePending?: boolean;
 }): FulfilmentNotice {
   const label = `«${input.labelAr}»`;
   const receipt = input.receiptNumber ? ` رقم الإيصال: ${input.receiptNumber}.` : "";
   const href = "/dashboard/billing";
+
+  if (input.licencePending && input.kind === "plan" && !input.alreadyEntitled) {
+    return {
+      title: `تم الدفع — ${LICENCE_PENDING_STATE_AR}`,
+      body: `استلمنا دفعتك مقابل ${label} وحُجز اشتراكك.${receipt} ${LICENCE_PENDING_SENTENCE_AR}`,
+      href,
+    };
+  }
 
   if (input.founderPending && input.kind === "membership" && !input.alreadyEntitled) {
     // 20261127_10: the seat is held (counted, never expiring) until the admin

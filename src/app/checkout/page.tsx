@@ -18,7 +18,7 @@ import {
   NOT_FOR_SALE_AR,
   UNKNOWN_ITEM_AR,
 } from "@/lib/payments/checkoutCore";
-import { licenceGatedPurchase, licencePurchaseDecision, readLicencePurchaseFacts } from "@/lib/payments/licenceGate";
+import { LICENCE_HELD_NOTE_AR, licenceCheckoutDecision, licenceGatedPurchase, readLicenceFacts } from "@/lib/payments/licenceGate";
 import { readConsultantStanding } from "@/lib/auth/consultantScopeServer";
 import { buyerAllowed, formatHalalas, quote, sellableItem, vatPercentFor } from "@/lib/payments/catalog";
 import { readVatRegistered } from "@/lib/payments/vatStatus";
@@ -168,18 +168,21 @@ export default async function CheckoutPage({ searchParams }: { searchParams: Sea
     if (standing.readFailed) return <Notice title={CONSULTANT_CHECK_FAILED_AR} />;
     if (standing.scopeKind === "consultant") return <Notice title={CONSULTANT_PLAN_REFUSED_AR} />;
   }
-  // l18 (owner ق٢٦-٩): the founder plan and the professional plans wait for a
-  // verified, unexpired licence — the POST's rule (checkoutCore step 2d), told
-  // before the card form loads; a failed read refuses too, never a guess.
+  // l18 (owner ٢٣٩): the founder plan and the professional plans — a pending
+  // licence may pay and is told plainly that the plan activates after the
+  // approval; an unverified one is sent to verify first (the POST's rule,
+  // checkoutCore step 2d); a failed read refuses too, never a guess.
+  let licenceHeld = false;
   if (userType && licenceGatedPurchase(item, userType)) {
-    let facts: Awaited<ReturnType<typeof readLicencePurchaseFacts>> = null;
+    let facts: Awaited<ReturnType<typeof readLicenceFacts>> = null;
     try {
-      facts = await readLicencePurchaseFacts(await createServiceClient(), user.id, userType);
+      facts = await readLicenceFacts(await createServiceClient(), user.id, userType);
     } catch {
       facts = null;
     }
-    const licence = licencePurchaseDecision(userType, facts, new Date());
+    const licence = licenceCheckoutDecision(userType, facts);
     if (licence.ok === false) return <Notice title={licence.error} verifyHref={licence.verifyHref ?? null} />;
+    licenceHeld = licence.held;
   }
 
   // The price the POST will charge now: the launch price while its campaign
@@ -214,11 +217,13 @@ export default async function CheckoutPage({ searchParams }: { searchParams: Sea
       console.warn("[checkout] reading the library grants threw");
     }
   }
-  const notes = checkoutItemNotes(item, {
+  const itemNotes = checkoutItemNotes(item, {
     libraryMinPoints,
     libraryQuestionPoints: aiToolPointRange("library-assistant")[1],
     billing: parsed.billing,
   });
+  // l18 (٢٣٩): a pending licence — the plan activates after the approval
+  const notes = licenceHeld ? [LICENCE_HELD_NOTE_AR, ...itemNotes] : itemNotes;
 
   // l6-pay: before paying, what the POST will take off — the same server
   // functions checkout prices with (upgradeProration / founderDiscount). A

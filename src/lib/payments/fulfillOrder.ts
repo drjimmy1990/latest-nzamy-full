@@ -17,6 +17,7 @@ import { createServiceClient } from "@/lib/supabase/server";
 import { getMoyasarConfig, TIER_RANK } from "@/lib/access-control";
 import { recordNotification } from "@/lib/notify";
 import { grantLibraryAccess } from "@/lib/libraryAccessServer";
+import { licenceHoldFor } from "./heldPlanActivation.ts";
 import { createMoyasarClient } from "./moyasarClient.ts";
 import { sendPurchaseEvent } from "@/lib/analytics/analytics";
 import {
@@ -62,6 +63,8 @@ async function serverDeps(): Promise<FulfilDeps> {
       const { error } = await admin.rpc("library_monitor_notify_admins", { p_title: n.title, p_body: n.body, p_href: n.href });
       if (error) throw new Error(`library_monitor_notify_admins ${error.code ?? "error"}`);
     },
+    // l18 (owner ٢٣٩): a professional plan paid before the licence approval is held until it
+    licenceHold: (userId, item) => licenceHoldFor(admin, userId, item),
     // l7-analytics: GA4 Measurement Protocol; "off" unless NEXT_PUBLIC_GA4_ID
     // AND GA4_API_SECRET are set, "skipped" unless the buyer consented.
     reportPurchase: (p) =>

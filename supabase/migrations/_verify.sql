@@ -9022,3 +9022,14 @@ select 'l18 billing: billing_company holds CR 7049168854 (run 20261208_31 once; 
        coalesce((select s.value ->> 'cr_number' = '7049168854'
                    from public.platform_settings s where s.key = 'billing_company'), false) as ok;
 -- <<< verify:l18_pay
+-- >>> verify:l18_pay_held — supabase/tests/rls/l18_pay_held_plans.test.sql
+-- Batch l18-pay (owner ٢٣٩): a professional plan paid before the licence approval is held; the buyer
+-- sees it on /dashboard/billing through my_licence_held_orders(). 20261208_32 runs BEFORE the deploy.
+select 'l18 pay held: my_licence_held_orders() is SECURITY DEFINER with an empty search_path, keyed on auth.uid(), authenticated only (run 20261208_32)' as check,
+       coalesce((select p.prosecdef
+                        and p.proconfig @> array['search_path=""']
+                        and position('auth.uid()' in pg_catalog.pg_get_functiondef(p.oid)) > 0
+                        and not has_function_privilege('anon', p.oid, 'EXECUTE')
+                        and has_function_privilege('authenticated', p.oid, 'EXECUTE')
+                   from pg_catalog.pg_proc p where p.oid = to_regprocedure('public.my_licence_held_orders()')), false) as ok;
+-- <<< verify:l18_pay_held

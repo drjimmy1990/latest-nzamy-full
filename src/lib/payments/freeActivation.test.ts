@@ -1,6 +1,6 @@
 /**
  * freeActivation.test.ts — batch l18 (owner's urgent package of 26 Nov,
- * ق٢٦-١١ settling س٢٢٤; LIVE-11 / LIVE-13 / ق٢٦-٩): a discount code that
+ * ق٢٦-١١ settling س٢٢٤; LIVE-11 / LIVE-13 / ٢٣٩): a discount code that
  * covers the whole price is activated at 0 SAR with no card and no Moyasar,
  * the checkout's code box takes a free-plan / points code, the library and the
  * bundle are coupon targets, and the founder / professional plans wait for a
@@ -22,7 +22,7 @@ import { createCouponAttemptBudget } from "./couponAttempts.ts";
 import { COUPON_INVALID_AR, GRANT_CODE_AT_CHECKOUT_AR, GRANT_CODE_AT_CHECKOUT_CODE } from "./couponRules.ts";
 import { FREE_ACTIVATION_HIGHER_PLAN_AR, FREE_ACTIVATION_PAID_PLAN_RUNNING_AR, FREE_ACTIVATION_UNAVAILABLE_AR } from "./freeActivationCore.ts";
 import { parseCouponPreview, parseFreeActivation } from "./checkoutView.ts";
-import { LICENCE_PENDING_PURCHASE_AR, LICENCE_PURCHASE_CODE, type LicencePurchaseDecision } from "./licenceGate.ts";
+import { LICENCE_FREE_CODE_PENDING_AR, LICENCE_PURCHASE_CODE, LICENCE_UNVERIFIED_PURCHASE_AR } from "./licenceGate.ts";
 import { LIBRARY_ACCOUNT_LOCKED_AR } from "../library/accountAccess.ts";
 
 const ROOT = join(import.meta.dirname, "..", "..", "..");
@@ -309,53 +309,72 @@ test("redeem box: a free LIBRARY code grants the pass on the redemption (no plan
   assert.equal(rpcs(locked.log, "coupon_redeem_open").length, 0);
 });
 
-// ── ق٢٦-٩: the licence ───────────────────────────────────────────────────────
+// ── ٢٣٩ (replaces the ق٢٦-٩ block): pay now, activate after the approval ──
 
-const PENDING: LicencePurchaseDecision = { ok: false, status: 403, error: LICENCE_PENDING_PURCHASE_AR, code: LICENCE_PURCHASE_CODE, verifyHref: "/register/provider/verify" };
+const PENDING_FACTS = { userType: "lawyer", lawyerStatus: "pending", ownedFirmStatuses: [], memberFirmStatuses: [] };
+const REJECTED_FACTS = { ...PENDING_FACTS, lawyerStatus: "rejected" };
 
-test("ق٢٦-٩: a lawyer whose licence is pending cannot buy a professional plan — 403 with the code and the verify link, nothing written", async () => {
+test("٢٣٩: a lawyer whose licence is PENDING may pay for a professional plan — the intent is created (the plan is held at fulfilment)", async () => {
   const { client, log } = db({ userType: "lawyer" });
   const m = moyasar();
   const asked: string[] = [];
   const r = await startCheckoutWith(
-    deps(client, m, { licenceAllowed: async (id, type) => { asked.push(`${id}:${type}`); return PENDING; } }),
+    deps(client, m, { licenceFacts: async (id, type) => { asked.push(`${id}:${type}`); return PENDING_FACTS; } }),
     input({ itemId: "lawyer-pro", billing: "yearly", couponCode: null }),
   );
-  assert.deepEqual(r, { status: 403, body: { error: LICENCE_PENDING_PURCHASE_AR, code: LICENCE_PURCHASE_CODE, verifyHref: "/register/provider/verify" } });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
   assert.deepEqual(asked, [`${USER}:lawyer`]);
+  assert.equal(m.intents.length, 1);
+  assert.equal(orderWrites(log).filter((q) => q.op === "insert").length, 1);
+});
+
+test("٢٣٩: an unverified licence (rejected / none) is sent to verify first — 403 with the code and the link, nothing written; a failed read → 503", async () => {
+  const { client, log } = db({ userType: "lawyer" });
+  const m = moyasar();
+  const r = await startCheckoutWith(deps(client, m, { licenceFacts: async () => REJECTED_FACTS }), input({ itemId: "lawyer-pro", billing: "yearly", couponCode: null }));
+  assert.deepEqual(r, { status: 403, body: { error: LICENCE_UNVERIFIED_PURCHASE_AR, code: LICENCE_PURCHASE_CODE, verifyHref: "/register/provider/verify" } });
   assert.equal(orderWrites(log).length, 0);
   assert.equal(m.intents.length, 0);
-  // a failed check is a 503, never a sale
   const down = db({ userType: "lawyer" });
-  const r2 = await startCheckoutWith(deps(down.client, moyasar(), { licenceAllowed: async () => { throw new Error("down"); } }), input({ itemId: "lawyer-pro", billing: "yearly", couponCode: null }));
+  const r2 = await startCheckoutWith(deps(down.client, moyasar(), { licenceFacts: async () => { throw new Error("down"); } }), input({ itemId: "lawyer-pro", billing: "yearly", couponCode: null }));
   assert.equal(r2.status, 503);
 });
 
-test("ق٢٦-٩: the library, a top-up and an individual's plan are not asked about a licence", async () => {
+test("٢٣٩: a 100 % code for a professional plan needs a VERIFIED licence — refused before the code is opened (not used up)", async () => {
+  const { client, log } = db({ userType: "lawyer" });
+  const r = await startCheckoutWith(deps(client, moyasar(), { licenceFacts: async () => PENDING_FACTS }), input({ itemId: "lawyer-pro", billing: "yearly" }));
+  assert.deepEqual(r, { status: 403, body: { error: LICENCE_FREE_CODE_PENDING_AR, code: LICENCE_PURCHASE_CODE } });
+  assert.equal(rpcs(log, "coupon_redeem_full_open").length, 0);
+});
+
+test("٢٣٩: the library, a top-up and an individual's plan are not asked about a licence", async () => {
   let asked = 0;
-  const licenceAllowed = async () => { asked++; return PENDING; };
+  const licenceFacts = async () => { asked++; return REJECTED_FACTS; };
   const lib = db({ userType: "lawyer" });
-  await startCheckoutWith(deps(lib.client, moyasar(), { licenceAllowed }), input({ itemId: "lib-q1", billing: "once", couponCode: null }));
+  await startCheckoutWith(deps(lib.client, moyasar(), { licenceFacts }), input({ itemId: "lib-q1", billing: "once", couponCode: null }));
   const ind = db({ userType: "individual" });
-  await startCheckoutWith(deps(ind.client, moyasar(), { licenceAllowed }), input({ couponCode: null }));
+  await startCheckoutWith(deps(ind.client, moyasar(), { licenceFacts }), input({ couponCode: null }));
   assert.equal(asked, 0);
 });
 
-test("ق٢٦-٩: the free-plan box applies the same licence rule (a code is never a way around it)", async () => {
+test("٢٣٩: the free-plan box activates a professional plan only for a verified licence (the code is not opened)", async () => {
   const proCode = { ...FULL, id: "c-pro", code: "PROFREE", discount_type: "plan_upgrade", plan_granted: "lawyer-pro", points_granted: 0, metadata: { grant_billing: "yearly" } };
   const { client, log } = db({ userType: "lawyer", row: proCode });
   const r = await redeemCouponWith(
-    { admin: client, ranks: RANKS, giftValidDays: async () => 90, attempts: createCouponAttemptBudget(), now: () => NOW, licenceAllowed: async () => PENDING },
+    { admin: client, ranks: RANKS, giftValidDays: async () => 90, attempts: createCouponAttemptBudget(), now: () => NOW, licenceFacts: async () => PENDING_FACTS },
     { userId: USER, code: "PROFREE" },
   );
-  assert.deepEqual(r, { status: 403, body: { error: LICENCE_PENDING_PURCHASE_AR } });
+  assert.deepEqual(r, { status: 403, body: { error: LICENCE_FREE_CODE_PENDING_AR } });
   assert.equal(rpcs(log, "coupon_redeem_open").length, 0);
 });
 
-test("source contract: the checkout route wires the licence check; the page pre-checks it with the verify link", () => {
+test("source contract: the checkout route wires the licence facts; the page tells a pending buyer the plan activates after the approval", () => {
   const route = readFileSync(join(ROOT, "src", "app", "api", "v1", "payments", "checkout", "route.ts"), "utf8");
-  assert.match(route, /licenceAllowed: async \(userId, userType\) =>\s*licencePurchaseDecision\(userType, await readLicencePurchaseFacts\(admin, userId, userType\), new Date\(\)\),/);
+  assert.match(route, /licenceFacts: \(userId, userType\) => readLicenceFacts\(admin, userId, userType\),/);
   const page = readFileSync(join(ROOT, "src", "app", "checkout", "page.tsx"), "utf8");
-  assert.match(page, /if \(userType && licenceGatedPurchase\(item, userType\)\)/);
+  assert.match(page, /const licence = licenceCheckoutDecision\(userType, facts\);/);
   assert.match(page, /<Notice title=\{licence\.error\} verifyHref=\{licence\.verifyHref \?\? null\} \/>/);
+  assert.match(page, /const notes = licenceHeld \? \[LICENCE_HELD_NOTE_AR, \.\.\.itemNotes\] : itemNotes;/);
+  const redeem = readFileSync(join(ROOT, "src", "app", "api", "v1", "coupons", "redeem", "route.ts"), "utf8");
+  assert.match(redeem, /licenceFacts: \(userId, userType\) => readLicenceFacts\(admin, userId, userType\),/);
 });

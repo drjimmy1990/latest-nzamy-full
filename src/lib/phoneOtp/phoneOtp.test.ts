@@ -75,6 +75,19 @@ test("zernio: missing key or account → unavailable, nothing sent", async () =>
   assert.equal(readZernioConfig({}).ready, false);
 });
 
+test("zernio (l18, owner ٢٣١): the reset code uses ZERNIO_RESET_OTP_TEMPLATE when set, else the sign-up template; sign-up never reads it", async () => {
+  const sent = async (env: Record<string, string>, purpose?: "signup" | "reset") => {
+    const calls: Call[] = [];
+    await sendWhatsAppCode({ e164: PHONE, code: "123456", env, fetchImpl: fakeFetch(201, {}, calls), ...(purpose ? { purpose } : {}) });
+    return (JSON.parse(calls[0].init.body) as { templateName: string }).templateName;
+  };
+  assert.equal(await sent(ENV, "reset"), readZernioConfig(ENV).template, "unset → the sign-up template");
+  assert.equal(await sent({ ...ENV, ZERNIO_RESET_OTP_TEMPLATE: "nezamy_password_reset" }, "reset"), "nezamy_password_reset");
+  assert.equal(await sent({ ...ENV, ZERNIO_RESET_OTP_TEMPLATE: "nezamy_password_reset" }), readZernioConfig(ENV).template, "sign-up ignores it");
+  assert.equal(await sent({ ...ENV, ZERNIO_RESET_OTP_TEMPLATE: "  " }, "reset"), readZernioConfig(ENV).template, "blank = unset");
+  assert.equal(readZernioConfig({ ...ENV, ZERNIO_OTP_TEMPLATE: "custom_otp" }, "reset").template, "custom_otp");
+});
+
 test("zernio: non-2xx, success:false, a thrown fetch → failed (HTTP status kept)", async () => {
   assert.deepEqual(await sendWhatsAppCode({ e164: PHONE, code: "123456", env: ENV, fetchImpl: fakeFetch(401, {}, []) }), {
     result: "failed",

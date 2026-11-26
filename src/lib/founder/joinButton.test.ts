@@ -80,7 +80,7 @@ test("live (l7, decision 1): a pending lawyer may buy, and the owner's sentence 
   });
   const b = founderJoinButton({ ...base, cta, phase: "live" });
   assert.equal(b.kind === "cta" && b.cta.kind, "checkout");
-  assert.equal(b.kind === "cta" && b.cta.note, "تُفعَّل الباقة بعد توثيق رخصتك، وإن لم تُوثَّق يُردّ المبلغ كاملاً.");
+  assert.equal(b.kind === "cta" && b.cta.note, "تُفعَّل الباقة بعد اعتماد التوثيق، وإن لم يُعتمد يُردّ المبلغ كاملاً.");
 });
 test("l9 (owner file 15 row 63): checkout refuses a consultant with the very sentence the /founder button shows", () => {
   assert.equal(FOUNDER_NOT_ADVOCATE_AR, JOIN_LABELS.advocate_only);

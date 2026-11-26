@@ -2,9 +2,10 @@
  * verifiedProvider.ts — R9b / F11 (batch l11-sec): an account whose licence is
  * not verified yet may not CREATE contracts, invoices or fee statements.
  * Open requests already need a verified lawyer (20261127_70). Platform
- * checkout before verification was allowed (owner q٦١) until batch l18: the
- * founder plan and the professional plans now wait for a verified, unexpired
- * licence (owner ق٢٦-٩ — src/lib/payments/licenceGate.ts, which reuses this rule).
+ * checkout before verification stays allowed (owner q٦١, confirmed by ٢٣٩ on
+ * 27 Nov): a PENDING licence may pay for the founder plan or a professional
+ * plan, which activates only after the admin approves — licenceGate.ts and
+ * heldPlanActivation.ts reuse this rule.
  *
  * Who passes:
  *   - an admin (staff tools);

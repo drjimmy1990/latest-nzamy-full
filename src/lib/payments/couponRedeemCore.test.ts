@@ -242,5 +242,5 @@ test("source contract: the route is signed-in only, refuses a frozen account, an
   assert.match(route, /redeemCouponWith\(\s*\{\s*admin,\s*ranks: TIER_RANK,\s*giftValidDays: \(\) => readGiftValidDays\(admin\),/);
   // l18: checkout's gates on the box too — the library lock and the licence (ق٢٦-٩)
   assert.match(route, /libraryAccountAllowed: async \(userId\) => \(await readLibraryAccountAccess\(userId\)\)\.allowed,/);
-  assert.match(route, /licenceAllowed: async \(userId, userType\) =>\s*licencePurchaseDecision\(userType, await readLicencePurchaseFacts\(admin, userId, userType\), new Date\(\)\),/);
+  assert.match(route, /licenceFacts: \(userId, userType\) => readLicenceFacts\(admin, userId, userType\),/);
 });

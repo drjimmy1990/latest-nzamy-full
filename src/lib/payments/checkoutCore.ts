@@ -78,9 +78,12 @@
  *       activated at once at 0 SAR, no card, no intent, no payment_orders
  *       row (freeActivationCore.activateFullDiscountWith) → 201
  *       {freeActivation}.
- *   2d. (batch l18, owner ق٢٦-٩) The founder plan and the professional plans
- *       wait for a verified, unexpired licence (deps.licenceAllowed,
- *       licenceGate.ts) → 403 code licence_not_verified, nothing written.
+ *   2d. (batch l18, owner ٢٣٩) The founder plan and the professional plans:
+ *       a pending licence may pay (held until the admin approves — the plan
+ *       at fulfilment, the founder seat in pending_verification); an
+ *       unverified one → 403 code licence_not_verified, nothing written
+ *       (deps.licenceFacts, licenceGate.ts). A 0 SAR activation needs a
+ *       verified licence.
  *   5c. A LIMITED coupon (max_uses) is reserved for the order (the
  *       coupon_reserve RPC, 20261126_60) before any intent: exhausted → 400
  *       (the generic sentence), an RPC error → 503; the order is cancelled
@@ -180,7 +183,8 @@ import { CHECKOUT_CAPTCHA_CODE, CHECKOUT_CAPTCHA_REFUSED_AR } from "./checkoutCa
 import type { Attribution } from "../attribution/utmAttribution.ts";
 import type { OrderAnalytics } from "../analytics/analytics.ts";
 import { DEMO_NO_PAYMENT_AR, demoRefusal } from "../api/dbErrorCore.ts";
-import { LICENCE_CHECK_FAILED_AR, licenceGatedPurchase, type LicencePurchaseDecision } from "./licenceGate.ts";
+import { licenceCheckoutDecision, licenceFreeCodeDecision, licenceGatedPurchase } from "./licenceGate.ts";
+import type { VerifiedProviderFacts } from "../auth/verifiedProvider.ts";
 import {
   callbackUrlFor,
   cancelOrderAfterIntentCancel,
@@ -279,13 +283,14 @@ export interface CheckoutDeps {
    */
   libraryAccountAllowed?: (userId: string) => Promise<boolean>;
   /**
-   * Batch l18 (owner ق٢٦-٩, licenceGate.ts): the licence check of a lawyer or
-   * firm buying the founder plan or a professional plan (step 2d) — the
-   * route's readLicencePurchaseFacts + licencePurchaseDecision. Not ok → the
-   * refusal (403 with code licence_not_verified, or 503), nothing written. A
-   * throw is a 503. Absent → not asked.
+   * Batch l18 (owner ٢٣٩, licenceGate.ts): the verification facts of a lawyer
+   * or firm buying the founder plan or a professional plan (step 2d) — the
+   * route's readLicenceFacts. A PENDING licence may pay (the plan is held at
+   * fulfilment until the admin approves); an unverified one (rejected,
+   * suspended, none) is refused 403; a failed read / throw → 503; a 0 SAR
+   * activation (3f) needs a verified licence. Absent → not asked.
    */
-  licenceAllowed?: (userId: string, userType: string) => Promise<LicencePurchaseDecision>;
+  licenceFacts?: (userId: string, userType: string) => Promise<VerifiedProviderFacts | null>;
 }
 
 export interface CheckoutInput {
@@ -563,18 +568,21 @@ export async function startCheckoutWith(deps: CheckoutDeps, input: CheckoutInput
     if (standing.readFailed) return fail(503, CONSULTANT_CHECK_FAILED_AR);
     if (standing.scopeKind === "consultant") return fail(403, CONSULTANT_PLAN_REFUSED_AR);
   }
-  // 2d (batch l18, owner ق٢٦-٩ — licenceGate.ts). The founder plan and every
-  // professional plan wait for a verified, unexpired licence: a lawyer or firm
-  // whose licence is pending, under review, rejected, suspended or expired is
-  // refused here, before any price or write. Founder seats already held are
-  // untouched (this runs before founder_reserve_seat).
-  if (deps.licenceAllowed && licenceGatedPurchase(known, userType)) {
-    let decision: LicencePurchaseDecision;
+  // 2d (batch l18, owner ٢٣٩ — licenceGate.ts). The founder plan and the
+  // professional plans: a PENDING licence may pay — the plan is held at
+  // fulfilment and activated on the admin's approval (the founder seat waits
+  // in pending_verification, 20261127_10); an unverified one (rejected,
+  // suspended, none submitted) is refused before any price or write, since
+  // no approval would ever release it. The facts are kept for step 3f.
+  let licenceFacts: VerifiedProviderFacts | null | undefined;
+  const licenceGated = !!deps.licenceFacts && licenceGatedPurchase(known, userType);
+  if (licenceGated && deps.licenceFacts) {
     try {
-      decision = await deps.licenceAllowed(user.id, userType as string);
+      licenceFacts = await deps.licenceFacts(user.id, userType as string);
     } catch {
-      decision = { ok: false, status: 503, error: LICENCE_CHECK_FAILED_AR };
+      licenceFacts = null;
     }
+    const decision = licenceCheckoutDecision(userType as string, licenceFacts ?? null);
     if (decision.ok === false) {
       return {
         status: decision.status,
@@ -714,6 +722,12 @@ export async function startCheckoutWith(deps: CheckoutDeps, input: CheckoutInput
   // free-activation receipt (coupon_redemptions). Every gate above already
   // applied. (Before l18: 409 card_required / full_discount_pending.)
   if (couponMeta && couponQuote && isFullDiscount(total)) {
+    // l18 (٢٣٩): a free activation of a professional plan needs a VERIFIED
+    // licence (nothing paid to hold) — refused before the code is opened
+    if (licenceGated) {
+      const free = licenceFreeCodeDecision(userType as string, licenceFacts ?? null);
+      if (free.ok === false) return { status: free.status, body: { error: free.error, ...(free.code ? { code: free.code } : {}) } };
+    }
     return await activateFullDiscountWith(
       { admin, ranks: deps.ranks, catalog },
       {
