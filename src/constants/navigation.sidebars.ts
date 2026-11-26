@@ -538,7 +538,19 @@ export function getSidebarByUserType(
   }
 
   // ── Beta Monopoly Mode Filtering ──────────────────────────────────────────
-  // Hides public/unpromoted pages from the sidebars unless bypassed
+  // Hides public/unpromoted pages from the sidebars unless bypassed.
+  //
+  // Owner answer ٢٣٨ (27 Nov 2026, batch l18): «يُفتح السوق ويظهر في القوائم
+  // لجميع الأدوار (ولا يُخفى بوضع الإطلاق التجريبي)», keeping Nezamy's priority
+  // window (service_requests.marketplace_release_at, 20261206_40 — in the
+  // database, untouched here). So the switch no longer strips the dashboards'
+  // market pages (/dashboard/lawyer/marketplace, /dashboard/firm/marketplace,
+  // /dashboard/business/marketplace, /dashboard/provider/requests): each row
+  // now shows or hides on its own state like any other (a «قريباً» row is
+  // still dropped by finishMenu). What stays filtered are the links that the
+  // same switch redirects away — the public multi-vendor board /marketplace*
+  // (marketplace/layout.tsx → /services) and the lawyer directory
+  // /services/lawyers (Q151) — a menu row there would be a dead end.
   if (BETA_MONOPOLY_MODE && !isDemoBypass) {
     const hiddenHrefs = [
       "/marketplace",
@@ -547,10 +559,6 @@ export function getSidebarByUserType(
       "/marketplace/my-requests",
       "/marketplace?tab=my-requests",
       "/marketplace/profile",
-      "/dashboard/lawyer/marketplace",
-      "/dashboard/firm/marketplace",
-      "/dashboard/business/marketplace",
-      "/dashboard/provider/requests",
       "/services/lawyers",
       // "/community/lawyers" was listed here. Owner item ١٤٦ repointed both
       // legal sidebars at /community, so this string now matches no item and
