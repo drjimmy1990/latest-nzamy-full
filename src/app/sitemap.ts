@@ -14,10 +14,16 @@ type SitemapRoute = {
   changeFrequency: "weekly" | "monthly" | "yearly";
 };
 
+// Owner package 25-Nov (annex 09 GSC-01, gap A-74): only final, real pages.
+// Out: /precedents (a redirect to /laws?tab=precedents), /community/public (a
+// redirect to /community), /lawyers (always a redirect: /services/lawyers or
+// /lawyers/browse), and the «قريباً» pages /academy, /media and
+// /ai/legal-translate. /marketplace and /lawyers/browse redirect during the
+// single-firm beta, so they are filtered below while BETA_MONOPOLY_MODE is on.
+// Put a page back here the day it serves its own content.
 const publicRoutes: SitemapRoute[] = [
   { url: "/", priority: 1.0, changeFrequency: "weekly" },
   { url: "/about", priority: 0.7, changeFrequency: "yearly" },
-  { url: "/academy", priority: 0.65, changeFrequency: "monthly" },
   { url: "/academy/quiz", priority: 0.45, changeFrequency: "monthly" },
   { url: "/blog", priority: 0.8, changeFrequency: "weekly" },
   // No per-article entries here: article slugs come from the `articles` table and
@@ -25,7 +31,6 @@ const publicRoutes: SitemapRoute[] = [
   // advertising a 404 after the corpus was cleared. Emit them from the DB instead
   // — see REMAINING_WORK / خطة_المقالات for the pending dynamic-sitemap item.
   { url: "/community", priority: 0.75, changeFrequency: "weekly" },
-  { url: "/community/public", priority: 0.7, changeFrequency: "weekly" },
   { url: "/contact", priority: 0.7, changeFrequency: "monthly" },
   { url: "/erp", priority: 0.7, changeFrequency: "monthly" },
   { url: "/faq", priority: 0.7, changeFrequency: "monthly" },
@@ -36,7 +41,6 @@ const publicRoutes: SitemapRoute[] = [
     ? [{ url: "/founder-terms", priority: 0.5, changeFrequency: "yearly" } as const]
     : []),
   { url: "/join", priority: 0.7, changeFrequency: "monthly" },
-  { url: "/lawyers", priority: 0.85, changeFrequency: "weekly" },
   { url: "/lawyers/browse", priority: 0.8, changeFrequency: "weekly" },
   { url: "/laws", priority: 0.85, changeFrequency: "monthly" },
   // /laws/civil-procedure is NOT listed: it is a 308 alias (see
@@ -46,9 +50,7 @@ const publicRoutes: SitemapRoute[] = [
   // project and the self-hosted instance.
   { url: "/laws/companies-law", priority: 0.7, changeFrequency: "monthly" },
   { url: "/marketplace", priority: 0.8, changeFrequency: "weekly" },
-  { url: "/media", priority: 0.6, changeFrequency: "monthly" },
   { url: "/partners", priority: 0.6, changeFrequency: "monthly" },
-  { url: "/precedents", priority: 0.8, changeFrequency: "monthly" },
   { url: "/pricing", priority: 0.9, changeFrequency: "monthly" },
   { url: "/privacy", priority: 0.5, changeFrequency: "yearly" },
   { url: "/refund-policy", priority: 0.5, changeFrequency: "yearly" },
@@ -90,10 +92,12 @@ const publicRoutes: SitemapRoute[] = [
   // sign-in, registration, a member's own academy pages, the vault — every
   // path of src/lib/publicSeo/privatePages.ts stays out (filtered below too).
   { url: "/ai/collector", priority: 0.7, changeFrequency: "monthly" },
-  { url: "/ai/legal-translate", priority: 0.75, changeFrequency: "monthly" },
   { url: "/ai/monitor", priority: 0.7, changeFrequency: "monthly" },
   { url: "/ai/procedures", priority: 0.7, changeFrequency: "monthly" },
 ];
+
+/** Listed only outside the single-firm beta (each redirects while it is on). */
+const BETA_HIDDEN_ROUTES: readonly string[] = ["/lawyers/browse", "/marketplace"];
 
 interface PublishedArticleRow {
   id: string;
@@ -224,9 +228,10 @@ async function getCivilProcedureLawEntry(today: string): Promise<MetadataRoute.S
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const today = new Date().toISOString().split("T")[0];
 
-  // The multi-vendor lawyer directory is hidden during single-firm beta.
+  // The multi-vendor lawyer directory and the marketplace are hidden during
+  // the single-firm beta: both redirect (marketplace/layout.tsx → /services).
   const routes = (BETA_MONOPOLY_MODE
-    ? publicRoutes.filter((r) => r.url !== "/lawyers" && r.url !== "/lawyers/browse")
+    ? publicRoutes.filter((r) => !BETA_HIDDEN_ROUTES.includes(r.url))
     : publicRoutes
   ).filter((r) => !isPrivatePath(r.url));
 

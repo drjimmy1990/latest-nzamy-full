@@ -1,8 +1,12 @@
 // /blog — the list of every published article. The list itself is the client
 // component <BlogList>, shared with the category pages
-// (/blog/category/<slug>); its metadata is ./layout.tsx's. <BlogList> reads
-// the URL's `?category=`, so it renders inside <Suspense> (Next 16 asks for a
-// boundary around useSearchParams on a prerendered route).
+// (/blog/category/<slug>); its metadata is ./layout.tsx's. The URL's
+// `?category=` is read by <BlogListFromUrl> inside <Suspense> (Next 16 asks
+// for a boundary around useSearchParams on a prerendered route). The
+// boundary's fallback is the unfiltered <BlogList /> itself, so the server's
+// HTML carries the page, its <h1> and the JSON-LD below — before, the fallback
+// was null and a crawler read an empty body (owner package 25-Nov, annex 09
+// GSC-02).
 //
 // It sits in the (list) route group with its own loading.tsx (owner file 20 §2,
 // file 15 row 42; batch l9): a loading boundary above /blog/[slug] streamed a
@@ -12,7 +16,9 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
 import { buildMetadata, BASE_URL } from "@/lib/seo";
+import { buildBlogListJsonLd, serializeJsonLd } from "@/lib/publicSeo/structuredData";
 import BlogList from "../BlogList";
+import BlogListFromUrl from "../BlogListFromUrl";
 
 const base = buildMetadata({
   titleAr: "المدونة القانونية",
@@ -32,10 +38,19 @@ export const metadata: Metadata = {
   },
 };
 
+const jsonLd = buildBlogListJsonLd({
+  name: "المدونة القانونية",
+  description: "مقالات قانونية معمّقة في الأنظمة السعودية",
+  path: "/blog",
+});
+
 export default function BlogPage() {
   return (
-    <Suspense fallback={null}>
-      <BlogList />
-    </Suspense>
+    <>
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: serializeJsonLd(jsonLd) }} />
+      <Suspense fallback={<BlogList />}>
+        <BlogListFromUrl />
+      </Suspense>
+    </>
   );
 }

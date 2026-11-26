@@ -73,6 +73,31 @@ export default function Hero({ licence = "", licenceIssuer = "" }: { licence?: s
     mouseY.set(e.clientY - rect.top - rect.height / 2);
   };
 
+  // Owner package 25-Nov (A-68, annex 09 P-01): the background video (2.26 MB)
+  // no longer downloads on its own. `autoPlay` made the browser ignore
+  // preload="none" and fetch it on every visit; now the page shows its first
+  // frame as a still (/hero-poster.webp, 32 KB) and the file is asked for only
+  // after the visitor's first tap, click or key — never with reduced motion or
+  // the browser's data saver on.
+  const bgVideoRef = useRef<HTMLVideoElement>(null);
+  const [bgVideoOn, setBgVideoOn] = useState(false);
+  useEffect(() => {
+    const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
+    const saveData = (navigator as Navigator & { connection?: { saveData?: boolean } }).connection?.saveData === true;
+    if (reduceMotion || saveData) return;
+    const events = ["pointerdown", "keydown", "touchstart"] as const;
+    const stop = () => events.forEach((name) => window.removeEventListener(name, start));
+    function start() {
+      stop();
+      setBgVideoOn(true);
+    }
+    events.forEach((name) => window.addEventListener(name, start, { passive: true }));
+    return stop;
+  }, []);
+  useEffect(() => {
+    if (bgVideoOn) bgVideoRef.current?.play().catch(() => { /* the still stays */ });
+  }, [bgVideoOn]);
+
   // Close video modal with Escape key + lock body scroll
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
@@ -144,10 +169,13 @@ export default function Hero({ licence = "", licenceIssuer = "" }: { licence?: s
       {/* Aesthetic Video Background */}
       <div className="absolute inset-0 z-0">
         <video
-          autoPlay
+          ref={bgVideoRef}
           muted
           playsInline
           preload="none"
+          poster="/hero-poster.webp"
+          src={bgVideoOn ? "/hero-bg.mp4" : undefined}
+          aria-hidden="true"
           onTimeUpdate={(e) => {
             if (e.currentTarget.currentTime >= 5) {
               e.currentTarget.currentTime = 1;
@@ -155,9 +183,7 @@ export default function Hero({ licence = "", licenceIssuer = "" }: { licence?: s
             }
           }}
           className="h-full w-full object-cover opacity-30 dark:opacity-20 mix-blend-luminosity"
-        >
-          <source src="/hero-bg.mp4" type="video/mp4" />
-        </video>
+        />
         <div className={`absolute inset-0 bg-gradient-to-t ${isDark ? "from-dark-bg via-dark-bg/80 to-transparent" : "from-surface via-surface/80 to-transparent"}`} />
       </div>
 
@@ -168,13 +194,8 @@ export default function Hero({ licence = "", licenceIssuer = "" }: { licence?: s
         <FloatingOrb delay={4} size={200} x="80%" y="70%" />
       </div>
 
-      {/* Grain overlay */}
-      <div
-        className="pointer-events-none fixed inset-0 z-30 opacity-[0.02] mix-blend-overlay"
-        style={{
-          backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.2' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E")`,
-        }}
-      />
+      {/* No grain overlay (A-69, annex 09 P-02): a full-screen fixed feTurbulence
+          layer at 2% opacity — invisible, but repainted on every scroll. */}
 
       <div className="relative z-10 mx-auto max-w-[1400px] px-4">
         <div className="grid items-center gap-12 md:grid-cols-2 md:gap-8">

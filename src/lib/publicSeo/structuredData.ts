@@ -137,6 +137,55 @@ export function buildOrganizationJsonLd(
   };
 }
 
+/* ── /blog and its category pages: CollectionPage + BreadcrumbList ─────── */
+
+export interface BlogListPage {
+  /** The page's own heading (its <h1>). */
+  name: string;
+  description: string;
+  /** Site path, e.g. "/blog" or "/blog/category/labor". */
+  path: string;
+  /** Set on a category page: its label (the crumb after «المدونة القانونية»). */
+  categoryLabel?: string;
+}
+
+/**
+ * Owner package 25-Nov (annex 09 GSC-02): /blog printed no structured data at
+ * all. A CollectionPage of the site's Blog, published by the home page's
+ * Organization (its @id), with the breadcrumb الرئيسية › المدونة القانونية
+ * (› the category). Only what the page itself shows: no article list (each
+ * article carries its own Article JSON-LD), no counts.
+ */
+export function buildBlogListJsonLd(page: BlogListPage): Record<string, unknown> {
+  const url = `${SITE_URL}${page.path}`;
+  const crumbs: Array<{ name: string; item: string }> = [
+    { name: "الرئيسية", item: `${SITE_URL}/` },
+    { name: "المدونة القانونية", item: `${SITE_URL}/blog` },
+  ];
+  if (page.categoryLabel) crumbs.push({ name: page.categoryLabel, item: url });
+  return {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "CollectionPage",
+        "@id": `${url}#page`,
+        url,
+        name: page.name,
+        description: page.description,
+        inLanguage: "ar",
+        isPartOf: { "@type": "Blog", "@id": `${SITE_URL}/blog#blog`, name: "المدونة القانونية — نظامي", url: `${SITE_URL}/blog` },
+        publisher: { "@id": `${SITE_URL}/#organization` },
+        breadcrumb: { "@id": `${url}#breadcrumb` },
+      },
+      {
+        "@type": "BreadcrumbList",
+        "@id": `${url}#breadcrumb`,
+        itemListElement: crumbs.map((c, i) => ({ "@type": "ListItem", position: i + 1, name: c.name, item: c.item })),
+      },
+    ],
+  };
+}
+
 /* ── /founder: Product + Offer ───────────────────────────────────────────── */
 
 /** Halalas → "2996.00" (Latin digits, two decimals: audit ن5). */

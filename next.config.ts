@@ -394,6 +394,14 @@ const nextConfig: NextConfig = {
       { source: "/erp/library/:path*", destination: "/laws", permanent: true },
       { source: "/library", destination: "/laws", permanent: true },
       { source: "/library/:path*", destination: "/laws", permanent: true },
+      // ── Owner package 25-Nov (D-33 / D-77): two addresses that answered 404 ──
+      // /auth/login never existed (sign-in is /login); the settings page sent
+      // a signed-out visitor there. The query string is carried over.
+      { source: "/auth/login", destination: "/login", permanent: true },
+      // The individuals' «دراسة وتقييم القضايا» card linked a page that was
+      // never built; the service is ordered from the client services list,
+      // the same target as the navbar's entry (navigation.navbar.ts).
+      { source: "/services/individuals/case-study", destination: "/dashboard/client/services?cat=case-study", permanent: false },
     ];
   },
 };

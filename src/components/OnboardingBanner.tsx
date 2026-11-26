@@ -56,7 +56,7 @@ const ROLE_CONTENT: Record<RoleKey, RoleContent> = {
     actions: [
       { label: "أضف عضو في الفريق", href: "/dashboard/firm/team", primary: true },
       { label: "إنشاء قضية", href: "/dashboard/firm/cases" },
-      { label: "إعدادات المكتب", href: "/dashboard/firm/settings" },
+      { label: "إعدادات المكتب", href: "/settings" },
     ],
   },
   client: {
