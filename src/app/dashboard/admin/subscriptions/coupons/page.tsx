@@ -23,8 +23,12 @@ import type { AdminCoupon, AdminCouponStatus, AdminDiscountType, AdminEligibleRo
 import { COUPON_USER_TYPE_TO_ROLE, couponDateInput } from "@/lib/payments/couponAdminRules";
 import { couponPatchRequest, otherFirstOrderCodes } from "@/lib/payments/couponAdminDiff";
 import { excludedItemsOf } from "@/lib/payments/couponRules";
-import { isOnSale, PRICE_BOOK } from "@/lib/pricing/priceBook";
+import { BILLING_LABEL_AR, isOnSale, PRICE_BOOK } from "@/lib/pricing/priceBook";
 import { COUPON_USAGE_LIMIT, couponUsageDateAr, type CouponUsageView } from "@/lib/payments/couponUsageView";
+import { grantablePlans, newCouponDates, NEW_COUPON_MIN_ORDER_SAR } from "@/lib/payments/couponGrantRules";
+
+/** l16 (A-07): the plans a free-plan code may grant (on sale, no library part). */
+const GRANTABLE_PLANS = grantablePlans();
 
 /** The usage log of the coupon whose panel is open: «empty» is said only after a read that worked. */
 type UsageRead = { state: "loading" | "error" } | { state: "ready"; rows: CouponUsageView[] };
@@ -103,6 +107,7 @@ function mapRowToCoupon(row: Record<string, unknown>): AdminCoupon {
     minOrderAmount: Number(row.min_order_amount ?? 0),
     pointsGranted: Number(row.points_granted ?? 0),
     planGranted: typeof row.plan_granted === "string" ? row.plan_granted : undefined,
+    planBilling: typeof metadata?.grant_billing === "string" ? metadata.grant_billing : undefined,
     usedCount: Number(row.used_count ?? 0),
     usageLimit: Number(row.max_uses ?? 0) || 0,
     startsAt: toDateInput(row.valid_from),
@@ -160,19 +165,23 @@ const STATUS_LABEL: Record<AdminCouponStatus, string> = {
  * page can tell "no coupons saved" from "could not read" and say which.
  */
 
+/**
+ * l16 (A-06, owner §1.2): a new code opens ready to save — minimum 100 SAR
+ * (the server refuses 0), from today in Riyadh for 30 days, active. Built
+ * when the editor opens (newCouponDraft), so the dates are never stale.
+ */
 const EMPTY_COUPON: AdminCoupon = {
   code: "",
   couponType: "discount",
   discountType: "percentage",
   value: 10,
-  // P7: a discount coupon needs a minimum (the server refuses 0) — the admin types it
-  minOrderAmount: 0,
+  minOrderAmount: NEW_COUPON_MIN_ORDER_SAR,
   pointsGranted: 0,
   usedCount: 0,
   usageLimit: 100,
-  startsAt: "2026-05-20",
-  expiresAt: "2026-06-20",
-  status: "scheduled",
+  startsAt: "",
+  expiresAt: "",
+  status: "active",
   eligibleRoles: ["client"],
   maxDiscountPct: 25,
   excludedKinds: ["topup"],
@@ -287,7 +296,7 @@ export default function AdminCouponsPage() {
   function openNewCoupon() {
     setOriginal(null);
     setEditingId(null);
-    setDraft({ ...EMPTY_COUPON, code: `NZ-${coupons.length + 1}00` });
+    setDraft({ ...EMPTY_COUPON, ...newCouponDates(new Date()), code: `NZ-${coupons.length + 1}00` });
   }
 
   function openEditCoupon(coupon: AdminCoupon) {
@@ -523,12 +532,34 @@ export default function AdminCouponsPage() {
                   )}
                 </>
               ) : (
-                <Field label="الباقة الممنوحة">
-                  <select className={inputClass(isDark)}>
-                    <option value="pro">Pro</option>
-                    <option value="max">Max</option>
-                  </select>
-                </Field>
+                <>
+                  {/* l16 (A-07): the select is bound — a plan on sale and one of its billings */}
+                  <Field label="الباقة الممنوحة">
+                    <select
+                      value={draft.planGranted ?? ""}
+                      onChange={(event) => {
+                        const plan = GRANTABLE_PLANS.find((p) => p.id === event.target.value);
+                        setDraft({ ...draft, planGranted: event.target.value || undefined, planBilling: plan?.billings[plan.billings.length - 1] });
+                      }}
+                      className={inputClass(isDark)}
+                    >
+                      <option value="">— اختر الباقة —</option>
+                      {GRANTABLE_PLANS.map((p) => <option key={p.id} value={p.id}>{p.labelAr}</option>)}
+                    </select>
+                  </Field>
+                  <Field label="مدة الباقة الممنوحة">
+                    <select
+                      value={draft.planBilling ?? ""}
+                      onChange={(event) => setDraft({ ...draft, planBilling: event.target.value || undefined })}
+                      className={inputClass(isDark)}
+                    >
+                      <option value="">— اختر المدة —</option>
+                      {(GRANTABLE_PLANS.find((p) => p.id === draft.planGranted)?.billings ?? []).map((b) => (
+                        <option key={b} value={b}>{BILLING_LABEL_AR[b]}</option>
+                      ))}
+                    </select>
+                  </Field>
+                </>
               )}
               
               <Field label="حد الاستخدام">
@@ -560,7 +591,13 @@ export default function AdminCouponsPage() {
             {draft.couponType === "discount" && (draft.maxDiscountPct ?? 25) > 25 && (
               <p className={`flex items-start gap-1.5 text-xs font-bold leading-6 ${isDark ? "text-amber-400" : "text-amber-700"}`}>
                 <Warning size={14} weight="fill" className="mt-1 shrink-0" />
-                سقف الخصم فوق ٢٥٪ (القاعدة العامة ٢٥٪). الكود الذي يغطي المبلغ كاملًا لا يُفعَّل للمشتري إلا مع بطاقة دفع محفوظة في حسابه، وتفعيله الكامل قيد التفعيل حاليًا.
+                سقف الخصم فوق ٢٥٪ (القاعدة العامة ٢٥٪): كود إدارة يحفظه المشرف الأعلى وحده، مع الغرض وتاريخ انتهاء وحدّ لعدد مرات الاستخدام. وكود ١٠٠٪ لمنتجات المنصة ونقاطها فقط ولا يسري على خدمات المحامين والمكاتب. والكود الذي يغطي المبلغ كاملًا عند الدفع لا يُفعَّل للمشتري إلا مع بطاقة دفع محفوظة في حسابه، وتفعيله الكامل قيد التفعيل حاليًا.
+              </p>
+            )}
+            {(draft.couponType === "points" || draft.couponType === "free_plan") && (
+              <p className={`flex items-start gap-1.5 text-xs font-bold leading-6 ${isDark ? "text-amber-400" : "text-amber-700"}`}>
+                <Warning size={14} weight="fill" className="mt-1 shrink-0" />
+                كود الباقة المجانية أو النقاط كود إدارة: يحفظه المشرف الأعلى وحده، مع الغرض وتاريخ انتهاء وحدّ لعدد مرات الاستخدام. ويُفعّله صاحب الحساب من «تفعيل كود» في صفحة الاشتراك، ويصدر له إيصال تفعيل مجاني بثلاثة أسطر: السعر الكامل، ثم خصم ١٠٠٪، ثم الصافي صفر.
               </p>
             )}
             <div>

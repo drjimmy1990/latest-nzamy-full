@@ -51,6 +51,8 @@ export interface AdminCoupon {
   couponType?: AdminCouponType;
   pointsGranted?: number;
   planGranted?: string;
+  /** l16 (A-07): the granted plan's billing (coupons.metadata.grant_billing) */
+  planBilling?: string;
   createdAt?: string;
   createdByAdmin?: string;
   createdFromDevice?: string;
