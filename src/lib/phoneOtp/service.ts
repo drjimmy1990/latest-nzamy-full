@@ -30,7 +30,7 @@ import { needsOnboarding } from "@/lib/auth/onboardingGate";
 import { dashboardPathFor } from "@/lib/auth/userTypes";
 import { rateLimit } from "@/lib/rateLimit";
 import { readZernioConfig, sendWhatsAppCode } from "./zernioWhatsApp";
-import { maskSaudiMobile, PHONE_SEND_FAILED_AR } from "./phoneOtpRules";
+import { isFormSignup, maskSaudiMobile, PHONE_SEND_FAILED_AR } from "./phoneOtpRules";
 
 type Svc = Awaited<ReturnType<typeof createServiceClient>>;
 
@@ -229,6 +229,29 @@ export type VerifyOutcome =
   | { ok: true; home: string }
   | { ok: false; reason: "wrong" | "expired" | "locked" | "phone_changed" | "no_phone" | "unavailable"; error: string; attemptsLeft?: number };
 
+/**
+ * LIVE-01 (batch l18): an account that signed up through a form (isFormSignup:
+ * e-mail, no Google, the form's user_type in the sign-up metadata) answered
+ * everything the onboarding wizard asks on the form itself, so confirming its
+ * mobile also marks onboarding complete and it goes straight to its dashboard
+ * instead of a second, shorter form. A Google sign-up keeps the wizard (it
+ * has not chosen its role). Best-effort: a failed write leaves the wizard,
+ * which is today's behaviour, and never fails the confirmation.
+ */
+async function markFormSignupOnboarded(svc: Svc, user: User, profile: ProfileRow): Promise<ProfileRow> {
+  if (profile.onboarding_completed === true || !isFormSignup(user)) return profile;
+  const { error } = await svc
+    .from("profiles")
+    .update({ onboarding_completed: true })
+    .eq("id", user.id)
+    .eq("onboarding_completed", false);
+  if (error) {
+    console.error("[phone-otp] onboarding mark failed:", error.code);
+    return profile;
+  }
+  return { ...profile, onboarding_completed: true };
+}
+
 export async function verifyPhoneOtp(svc: Svc, user: User, code: string): Promise<VerifyOutcome> {
   const pepper = otpPepper(process.env.LAWYER_OTP_PEPPER);
   if (!pepper) return { ok: false, reason: "unavailable", error: "الخدمة غير متاحة مؤقتًا، حاول بعد قليل." };
@@ -249,7 +272,7 @@ export async function verifyPhoneOtp(svc: Svc, user: User, code: string): Promis
     return { ok: false, reason: "unavailable", error: "تعذّر التحقق الآن، حاول بعد قليل." };
   }
   const j = (data ?? {}) as { ok?: boolean; reason?: string; attempts_left?: number };
-  if (j.ok) return { ok: true, home: homeAfterVerify(profile) };
+  if (j.ok) return { ok: true, home: homeAfterVerify(await markFormSignupOnboarded(svc, user, profile)) };
   if (j.reason === "wrong") {
     const left = typeof j.attempts_left === "number" ? j.attempts_left : undefined;
     return {

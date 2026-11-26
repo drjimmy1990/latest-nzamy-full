@@ -14,10 +14,16 @@
  *   - At the timeout: the normal sign-out (useUser's logout — it also frees
  *     the library device slot), then /login?reason=idle.
  *   - Real (Supabase) sessions only; demo mode is untouched.
+ *   - LIVE-01 (batch l18): not on the sign-up / sign-in pages
+ *     (isSignupFlowPath). An account created a moment ago there may still be
+ *     waiting for its WhatsApp code, and its settings read would be refused
+ *     (phone_unverified) — which used to pull the user off the form.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+import { usePathname } from "next/navigation";
 import { isSupabaseMode } from "@/lib/runtimeMode";
 import { logout } from "@/hooks/useUser";
+import { isSignupFlowPath } from "@/lib/phoneOtp/phoneOtpRules";
 import {
   IDLE_ACTIVITY_KEY,
   IDLE_LOGIN_PATH,
@@ -66,10 +72,12 @@ export function useSessionIdleGuard(signedIn: boolean): SessionIdleState {
   const lastLocal = useRef<number>(Date.now());
   const lastWrite = useRef<number>(0);
   const signingOut = useRef(false);
+  // LIVE-01: re-evaluated when the user leaves a sign-up page in the app.
+  const onSignupPage = isSignupFlowPath(usePathname() ?? "");
 
   // The user's choice (re-read after SecurityTab saves).
   useEffect(() => {
-    if (!isSupabaseMode || !signedIn) {
+    if (!isSupabaseMode || !signedIn || onSignupPage) {
       setTimeoutMs(null);
       return;
     }
@@ -90,7 +98,7 @@ export function useSessionIdleGuard(signedIn: boolean): SessionIdleState {
       cancelled = true;
       window.removeEventListener(IDLE_SETTINGS_EVENT, load);
     };
-  }, [signedIn]);
+  }, [signedIn, onSignupPage]);
 
   const markActive = useCallback(() => {
     const now = Date.now();

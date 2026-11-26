@@ -54,10 +54,33 @@ export function savePendingPlan(
   plan: string | null | undefined,
   now: number = Date.now(),
 ): boolean {
+  return savePendingPlanChoice(storage, plan, null, now);
+}
+
+/**
+ * LIVE-04 (batch l18): the billing cycle chosen with the plan (/pricing's
+ * toggle, the provider sign-up's cycle switch). Kept beside the id so the
+ * plan reaches /checkout in the cycle the visitor picked; anything else is
+ * dropped and the plan alone is kept.
+ */
+const BILLING_VALUES: readonly string[] = ["monthly", "quarterly", "semiannual", "yearly", "once"];
+
+export function pendingBillingOrNull(value: unknown): string | null {
+  return typeof value === "string" && BILLING_VALUES.includes(value) ? value : null;
+}
+
+/** savePendingPlan plus the billing cycle (null or an unknown value: none). */
+export function savePendingPlanChoice(
+  storage: PlanStorage | null | undefined,
+  plan: string | null | undefined,
+  billing: string | null | undefined,
+  now: number = Date.now(),
+): boolean {
   const id = plan?.trim();
   if (!storage || !id || !PLAN_ID_RE.test(id)) return false;
+  const cycle = pendingBillingOrNull(billing);
   try {
-    storage.setItem(PENDING_PLAN_KEY, JSON.stringify({ plan: id, at: now }));
+    storage.setItem(PENDING_PLAN_KEY, JSON.stringify(cycle ? { plan: id, billing: cycle, at: now } : { plan: id, at: now }));
     return true;
   } catch {
     return false;
@@ -69,6 +92,14 @@ export function readPendingPlan(
   storage: PlanStorage | null | undefined,
   now: number = Date.now(),
 ): string | null {
+  return readPendingPlanChoice(storage, now)?.plan ?? null;
+}
+
+/** The saved plan id and its billing cycle (null when none was saved, or an older entry). */
+export function readPendingPlanChoice(
+  storage: PlanStorage | null | undefined,
+  now: number = Date.now(),
+): { plan: string; billing: string | null } | null {
   if (!storage) return null;
   let raw: string | null;
   try {
@@ -84,11 +115,11 @@ export function readPendingPlan(
     return null;
   }
   if (typeof parsed !== "object" || parsed === null) return null;
-  const { plan, at } = parsed as { plan?: unknown; at?: unknown };
+  const { plan, at, billing } = parsed as { plan?: unknown; at?: unknown; billing?: unknown };
   if (typeof plan !== "string" || !PLAN_ID_RE.test(plan)) return null;
   if (typeof at !== "number" || !Number.isFinite(at)) return null;
   if (now < at || now - at > PENDING_PLAN_TTL_MS) return null;
-  return plan;
+  return { plan, billing: pendingBillingOrNull(billing) };
 }
 
 export function clearPendingPlan(storage: PlanStorage | null | undefined): void {

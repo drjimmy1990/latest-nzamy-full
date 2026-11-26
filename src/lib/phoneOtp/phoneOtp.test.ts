@@ -8,6 +8,7 @@ import {
 } from "./zernioWhatsApp.ts";
 import {
   isPhoneGatedApiPath,
+  isSignupFlowPath,
   maskSaudiMobile,
   mayBeHeld,
   safePhoneNext,
@@ -160,7 +161,7 @@ test("rules: the post-verify destination is any path of this site, never another
   assert.equal(safePhoneNext("/register/provider/verify"), "/register/provider/verify");
   assert.equal(safePhoneNext("/dashboard/lawyer?x=1#top"), "/dashboard/lawyer?x=1");
   assert.equal(safePhoneNext("/invite/abc123"), "/invite/abc123");
-  assert.equal(safePhoneNext("/login?from=/dashboard/client"), "/login?from=/dashboard/client");
+  assert.equal(safePhoneNext("/dashboard/client/requests?tab=1"), "/dashboard/client/requests?tab=1");
   for (const bad of [
     "//evil.example",
     "//evil.com",
@@ -177,11 +178,34 @@ test("rules: the post-verify destination is any path of this site, never another
     "/x\u0000y",
     "/verify-phone",
     "/verify-phone?next=/x",
+    "/register",
+    "/register/",
+    "/register/client",
+    "/register/provider",
+    "/REGISTER/Client",
+    "/register/provider?type=firm",
+    "/login",
+    "/login?from=/dashboard/client",
+    "/forgot-password",
+    "/reset-password",
+    "/onboarding",
+    "/onboarding/step",
+    "/auth/callback",
+    "/auth/mfa?next=/x",
     "dashboard",
     null,
     5,
   ]) {
     assert.equal(safePhoneNext(bad), null, String(bad));
+  }
+});
+
+test("rules (LIVE-01): the sign-up flow pages are exact paths; the licence page is not one", () => {
+  for (const p of ["/register", "/register/", "/register/client", "/register/provider", "/register/provider/", "/login", "/forgot-password", "/reset-password", "/Login"]) {
+    assert.equal(isSignupFlowPath(p), true, p);
+  }
+  for (const p of ["/register/provider/verify", "/registered", "/register/clientx", "/login/x", "/verify-phone", "/", "/dashboard/lawyer", "/onboarding"]) {
+    assert.equal(isSignupFlowPath(p), false, p);
   }
 });
 
@@ -195,6 +219,10 @@ test("rules: the client handler only looks at same-origin /api/v1 calls", () => 
   assert.equal(sameOriginApiV1Path(42, o), null);
   assert.equal(verifyPhoneUrlFrom("/laws/x", "?a=1"), "/verify-phone?next=%2Flaws%2Fx%3Fa%3D1");
   assert.equal(verifyPhoneUrlFrom("/verify-phone", ""), null);
+  // LIVE-01 (l18): never back to a sign-up page — a bare /verify-phone (home after).
+  assert.equal(verifyPhoneUrlFrom("/register/client", ""), "/verify-phone");
+  assert.equal(verifyPhoneUrlFrom("/register/provider", "?type=lawyer"), "/verify-phone");
+  assert.equal(verifyPhoneUrlFrom("/register/provider/verify", ""), "/verify-phone?next=%2Fregister%2Fprovider%2Fverify");
 });
 
 test("rules: the masked number shows the last four digits only", () => {

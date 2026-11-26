@@ -11,10 +11,16 @@
  * to /verify-phone?next=<this page>, once. The response itself is handed back
  * untouched; every other request passes through without being read.
  * No dependencies beyond the pure rules (no node: modules in this chain).
+ *
+ * LIVE-01 (batch l18): silent on the sign-up / sign-in pages
+ * (isSignupFlowPath). They run their own phone step — /register/client goes
+ * to /verify-phone itself, the lawyer's code stays inline on the last step of
+ * /register/provider, where LawyerVerificationPanel handles its own 403 — and
+ * a trip from here used to land the user back on step 1 of the form.
  */
 
 import { useEffect } from "react";
-import { PHONE_UNVERIFIED_CODE, sameOriginApiV1Path, verifyPhoneUrlFrom } from "@/lib/phoneOtp/phoneOtpRules";
+import { isSignupFlowPath, PHONE_UNVERIFIED_CODE, sameOriginApiV1Path, verifyPhoneUrlFrom } from "@/lib/phoneOtp/phoneOtpRules";
 
 let installed = false;
 let leaving = false;
@@ -27,6 +33,7 @@ function install() {
     const res = await base(input, init);
     if (res.status !== 403 || leaving) return res;
     if (!sameOriginApiV1Path(input, window.location.origin)) return res;
+    if (isSignupFlowPath(window.location.pathname)) return res;
     try {
       const body = (await res.clone().json()) as { code?: unknown } | null;
       if (body?.code === PHONE_UNVERIFIED_CODE) {

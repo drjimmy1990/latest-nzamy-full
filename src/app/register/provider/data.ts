@@ -1,6 +1,5 @@
 import { Gavel, Buildings, Stamp, Shield, Scales, Briefcase } from "@phosphor-icons/react";
 import { ProviderType } from "./types";
-import { bookPriceText } from "@/lib/pricing/priceBook";
 
 export const providerTypes = {
   ar: [
@@ -29,71 +28,64 @@ export const specializations = {
   en: ["Labor", "Commercial", "Family", "Criminal", "Administrative", "Real Estate", "IP", "Banking/Finance", "Corporate", "Enforcement"],
 };
 
-export const plans = {
-  ar: [
-    {
-      id: "lite",
-      name: "إدارة الممارسة",
+/**
+ * LIVE-03 (batch l18): step 4 no longer reads a fixed three-card list for all
+ * six roles. The paid cards are the price book's plans for the role
+ * (src/lib/pricing/signupPlan.ts), named and described as /pricing describes
+ * them; only the free card is written here, per role. Its promise is what the
+ * free account gets today (owner س٢١٢, src/lib/auth/officePlan.ts): the
+ * profile, the point tools and 1 GB of files — cases, clients, hearings and
+ * tasks are «إدارة المكتب», a paid plan.
+ */
+export type FreeCardText = { name: string; price: string; desc: string; features: string[] };
+
+type FreeCardKind = "office" | "consultant" | "provider";
+
+const FREE_CARDS: Record<"ar" | "en", Record<FreeCardKind, FreeCardText>> = {
+  ar: {
+    office: {
+      name: "الحساب المجاني",
       price: "مجاني",
-      period: "",
-      desc: "ERP مجاني للمحامي الفرد صاحب الحساب النشط",
-      features: ["إدارة القضايا", "الجلسات والمهل", "المهام والتقويم", "ملف مهني وسوق المهنيين"],
-      cta: "ابدأ مجاناً",
-      highlighted: false,
+      desc: "ابدأ مجانًا؛ إدارة المكتب (القضايا والموكّلون والجلسات والمهام) ضمن الباقات المدفوعة",
+      features: ["الملف المهني", "أدوات الذكاء الاصطناعي بالنقاط من حزم الشحن", "مساحة ١ جيجابايت لحفظ ملفاتك"],
     },
-    {
-      id: "ai",
-      // Batch l14 (owner 23 Nov, §حادي عشر #2): lawyer-pro is «إدارة المكتب»,
-      // sold quarterly / half-yearly / yearly; the yearly price is shown.
-      name: "إدارة المكتب",
-      price: bookPriceText("lawyer-pro", "yearly", "ar"),
-      period: "ر.س / سنة",
-      desc: `اشتراك إدارة المكتب، أو ${bookPriceText("lawyer-pro", "quarterly", "ar")} ر.س لثلاثة أشهر و${bookPriceText("lawyer-pro", "semiannual", "ar")} ر.س لستة أشهر`,
-      features: ["كل مميزات إدارة الممارسة", `مع المكتبة القانونية: ${bookPriceText("lawyer-bundle", "yearly", "ar")} ر.س سنوياً (خصم ١٥٪)`, "النقاط بحزم الشحن فقط", `حزم شحن من ${bookPriceText("topup-500", "once", "ar")} ر.س`, "أسعار الأدوات بالنقاط حسب قائمة الأسعار"],
-      cta: "اشترك الآن",
-      highlighted: true,
+    consultant: {
+      name: "الحساب المجاني",
+      price: "مجاني",
+      desc: "ابدأ مجانًا، واشترك في باقة المستشار المستقل متى شئت",
+      features: ["الملف المهني", "أدوات الذكاء الاصطناعي بالنقاط من حزم الشحن"],
     },
-    {
-      id: "pro",
-      name: "إدارة مكتب المحاماة",
-      price: bookPriceText("firm-basic", "yearly", "ar"),
-      period: "ر.س / سنة · ٥ مقاعد",
-      desc: "إدارة المكتب بمقاعده وصلاحيات أعضائه",
-      features: ["إدارة القضايا والجلسات والمهام", "٥ مقاعد مشمولة", "صلاحيات أعضاء المكتب", `شركة المحاماة: ${bookPriceText("firm-enterprise", "yearly", "ar")} ر.س/سنة بخمسة عشر مقعداً`, "مقاعد إضافية: تواصل مع المبيعات"],
-      cta: "ابدأ كمكتب",
-      highlighted: false,
+    provider: {
+      name: "الحساب المجاني",
+      price: "مجاني",
+      desc: "حسابك مجاني الآن، والباقات المدفوعة لنوع حسابك قيد التفعيل",
+      features: ["الملف المهني"],
     },
-  ],
-  en: [
-    {
-      id: "lite",
-      name: "Practice Management",
+  },
+  en: {
+    office: {
+      name: "Free account",
       price: "Free",
-      period: "",
-      desc: "Free ERP for an active solo lawyer account",
-      features: ["Case management", "Hearings and deadlines", "Tasks and calendar", "Professional profile and marketplace"],
-      cta: "Start Free",
-      highlighted: false,
+      desc: "Start free; office management (cases, clients, hearings and tasks) comes with the paid plans",
+      features: ["Professional profile", "AI tools paid in points from top-ups", "1 GB for your files"],
     },
-    {
-      id: "ai",
-      name: "Office Management",
-      price: bookPriceText("lawyer-pro", "yearly", "en"),
-      period: "SAR / year",
-      desc: `Office management, or SAR ${bookPriceText("lawyer-pro", "quarterly", "en")} for 3 months and SAR ${bookPriceText("lawyer-pro", "semiannual", "en")} for 6 months`,
-      features: ["All practice-management features", `With the legal library: SAR ${bookPriceText("lawyer-bundle", "yearly", "en")} a year (15% off)`, "Points from top-ups only", `Top-ups from SAR ${bookPriceText("topup-500", "once", "en")}`, "Tool prices in points per the price list"],
-      cta: "Subscribe",
-      highlighted: true,
+    consultant: {
+      name: "Free account",
+      price: "Free",
+      desc: "Start free, and subscribe to the independent consultant plan whenever you like",
+      features: ["Professional profile", "AI tools paid in points from top-ups"],
     },
-    {
-      id: "pro",
-      name: "Law Firm Management",
-      price: bookPriceText("firm-basic", "yearly", "en"),
-      period: "SAR / year · 5 seats",
-      desc: "Office management with seats and member permissions",
-      features: ["Cases, hearings, and tasks", "5 seats included", "Firm member permissions", `Law firm: SAR ${bookPriceText("firm-enterprise", "yearly", "en")}/year with 15 seats`, "Extra seats: contact sales"],
-      cta: "Start as an office",
-      highlighted: false,
+    provider: {
+      name: "Free account",
+      price: "Free",
+      desc: "Your account is free for now; paid plans for your account type are being activated",
+      features: ["Professional profile"],
     },
-  ],
+  },
 };
+
+export function freeCardFor(providerType: ProviderType, isAr: boolean): FreeCardText {
+  const kind: FreeCardKind =
+    providerType === "lawyer" || providerType === "firm" ? "office" : providerType === "consultant" ? "consultant" : "provider";
+  return FREE_CARDS[isAr ? "ar" : "en"][kind];
+}

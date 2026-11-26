@@ -18,7 +18,8 @@ const code = (p: string) => read(p).replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\
 test("the lawyer's sign-up keeps the WhatsApp step but never leaves the page for it", () => {
   const page = code("src/app/register/provider/page.tsx");
   assert.doesNotMatch(page, /verify-phone\?next=\/register\/provider\/verify/, "no full redirect that drops the File");
-  assert.match(page, /if \(signUpData\.session && \(await phoneOtpRequiredNow\(\)\)\) \{\s*if \(!needsLicenceProofFor\(providerType\)\) \{\s*window\.location\.assign\("\/verify-phone"\);/);
+  // l18 LIVE-04: the chosen plan is saved for /verify-phone just before it.
+  assert.match(page, /if \(signUpData\.session && \(await phoneOtpRequiredNow\(\)\)\) \{\s*if \(!needsLicenceProofFor\(providerType\)\) \{\s*if \(selectedBilling\) savePendingPlanChoice\(sessionStorageOrNull\(\), selectedPlan, selectedBilling\);\s*window\.location\.assign\("\/verify-phone"\);/);
   assert.match(page, /setPhoneStepPending\(true\)/);
   // The phone panel first; the licence panel (with the File) only after it.
   const phone = page.indexOf("<PhoneOtpPanel");
