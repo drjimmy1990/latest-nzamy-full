@@ -78,9 +78,15 @@
 --     run, the client's choice is stored in metadata and ignored, the open-now
 --     button answers that it is not available yet; nothing is held.
 --   Needs 20261202_70 (market open) and 20261127_70.
---   RE-RUN HAZARD: re-running 20261202_70 (or 20261127_70) after this file
---   puts back the guard / listable / open-list functions WITHOUT the hold and
---   drops the admin view's release_at column — re-run this file after them.
+--   RE-RUN HAZARD (text corrected in the l16 review, checked in Docker):
+--   * re-running 20261202_70 after this file STOPS at its section 4h with
+--     42P13 «cannot change return type of existing function»
+--     (marketplace_open_requests_admin carries release_at since this file)
+--     and, being one transaction, changes nothing. To re-run it on purpose:
+--     drop function public.marketplace_open_requests_admin(integer, integer);
+--     run 20261202_70; then run THIS file again.
+--   * re-running 20261127_70 after this file succeeds and puts back its guard
+--     and lawyers' list WITHOUT the hold — re-run this file after it.
 --
 -- ROLLBACK (one transaction):
 --   drop function if exists public.service_request_market_hold(text);
