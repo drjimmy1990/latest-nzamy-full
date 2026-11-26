@@ -9,10 +9,8 @@
 --   role (src/app/api/v1/admin/**: settings, library, library-access,
 --   marketplace/settings, marketplace/priority, community/settings,
 --   founder/sale), where the staff permission and the extra checks of each
---   setting are applied. The session-side policy «Admins can modify platform
---   settings» (20260627, re-created by 20261016_09 as FOR ALL TO authenticated
---   USING is_admin()) let any admin session write the table straight through
---   the data API instead, around those checks.
+--   setting are applied. This file tightens the session-side policies to
+--   match: sessions read, the admin routes write.
 --
 --   This file makes the table READ-ONLY for every session:
 --     1. drops the FOR ALL policy and puts a SELECT-only admin policy in its
