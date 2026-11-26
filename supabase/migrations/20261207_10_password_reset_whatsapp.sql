@@ -40,8 +40,9 @@
 --
 -- RUN ORDER: after 20261205_10_phone_otp.sql (profiles.phone_verified_at) and
 --   20260627 (platform_settings). BEFORE the deploy of batch l17 — until it
---   runs, the WhatsApp choice answers «الخدمة غير متاحة مؤقتًا» (and is hidden
---   while the sign-up WhatsApp switch is off). Then _verify.sql (block
+--   runs, «start» still gives its uniform answer but no code can be issued,
+--   and «verify» answers «الخدمة غير متاحة مؤقتًا» (the choice is hidden
+--   anyway while the sign-up WhatsApp switch is off). Then _verify.sql (block
 --   l17_pwreset) after the deploy.
 -- SAFE TO RE-RUN: yes (if not exists / create or replace).
 -- ROLLBACK (turning the sign-up WhatsApp switch off already hides the choice):

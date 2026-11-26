@@ -45,7 +45,7 @@ type Calls = {
   lookups: string[];
   issued: Array<{ userId: string; targetHash: string; codeHash: string }>;
   sent: Array<{ e164: string; code: string }>;
-  verified: Array<{ codeHash: string }>;
+  verified: Array<{ codeHash: string; phone: string }>;
   passwords: Array<{ userId: string; password: string }>;
   revoked: string[];
   audits: number;
@@ -88,8 +88,8 @@ function world(opts: {
       return "sent";
     },
     markDelivery: async () => {},
-    verify: async ({ codeHash }) => {
-      calls.verified.push({ codeHash });
+    verify: async ({ codeHash, phone }) => {
+      calls.verified.push({ codeHash, phone });
       const at = stored.indexOf(codeHash);
       if (at === -1) return false;
       stored.splice(at, 1);
@@ -371,4 +371,15 @@ test("proxy bucket: POST start / verify only, its own bucket (not the strict one
   const proxy = readFileSync(new URL("../../proxy.ts", import.meta.url), "utf8");
   assert.match(proxy, /rateLimiter\.check\("password-reset-whatsapp-ip", ip, PASSWORD_RESET_WHATSAPP_IP_RATE_LIMIT\)/);
   assert.match(proxy, /rateLimiter\.check\("password-reset-whatsapp", key, PASSWORD_RESET_WHATSAPP_RATE_LIMIT\)/);
+});
+
+test("verify: the database compares the number as profiles.phone holds it; the hash and the send use E.164", async () => {
+  const stored: ResetTarget = { userId: USER, phone: PHONE, storedPhone: "+966500001701" };
+  const w = world({ accounts: { "reset.ok@example.test": stored } });
+  const code = await sentCode(w, "reset.ok@example.test");
+  await verifyWhatsAppReset(w.deps, { email: "reset.ok@example.test", code, password: GOOD_PASSWORD, confirm: GOOD_PASSWORD });
+  assert.equal(w.calls.verified[0].phone, "+966500001701");
+  assert.equal(w.calls.sent[0].e164, PHONE);
+  const server = readFileSync(new URL("./whatsappResetServer.ts", import.meta.url), "utf8");
+  assert.match(server, /return \{ userId: j\.user_id, phone: phone\.e164, storedPhone: stored \}/);
 });

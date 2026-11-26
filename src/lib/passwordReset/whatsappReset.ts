@@ -45,8 +45,13 @@ import {
   WHATSAPP_UNAVAILABLE_AR,
 } from "./passwordResetRules.ts";
 
-/** An account that may receive a reset code: its id and its confirmed E.164 mobile. */
-export type ResetTarget = { userId: string; phone: string };
+/**
+ * An account that may receive a reset code: its id, its confirmed mobile in
+ * E.164 (hashed and sent to) and the value exactly as profiles.phone holds it
+ * (what pw_reset_verify compares; the same string on every row that passes
+ * the E.164 check).
+ */
+export type ResetTarget = { userId: string; phone: string; storedPhone?: string };
 
 export type ResetDeps = {
   /** The code pepper (LAWYER_OTP_PEPPER), raw — checked here with otpPepper. */
@@ -182,7 +187,7 @@ export async function verifyWhatsAppReset(
     hit = await deps.verify({
       userId: target.userId,
       targetHash: hashOtpTarget(pepper, target.phone),
-      phone: target.phone,
+      phone: target.storedPhone ?? target.phone,
       codeHash: hashOtpCode(pepper, target.userId, "password_reset", code),
     });
   } catch (err) {

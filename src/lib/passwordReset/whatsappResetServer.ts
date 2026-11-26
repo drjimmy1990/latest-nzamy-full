@@ -50,12 +50,13 @@ async function lookup(svc: Svc, email: string): Promise<ResetTarget | null> {
   if (error) throw new Error(`pw_reset_target failed: ${error.code ?? "error"}`);
   const j = (data ?? {}) as { ok?: unknown; user_id?: unknown; phone?: unknown };
   if (j.ok !== true || typeof j.user_id !== "string") return null;
-  const phone = normalizeSaudiMobile(typeof j.phone === "string" ? j.phone : "");
+  const stored = typeof j.phone === "string" ? j.phone : "";
+  const phone = normalizeSaudiMobile(stored);
   if (!phone.ok) return null;
   const { data: got, error: userError } = await svc.auth.admin.getUserById(j.user_id);
   // Fail closed: an account whose standing cannot be read gets no code.
   if (userError || !got?.user || !authUserMayReset(got.user)) return null;
-  return { userId: j.user_id, phone: phone.e164 };
+  return { userId: j.user_id, phone: phone.e164, storedPhone: stored };
 }
 
 export function serverResetDeps(svc: Svc, captcha: ResetDeps["captcha"]): ResetDeps {
