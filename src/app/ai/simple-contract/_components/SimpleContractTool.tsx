@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { PLAN_ALLOWANCE_COPY, PLAN_ALLOWANCE_TOPUP_HREF } from "@/lib/ai/planAllowance";
 import { useRouter } from "next/navigation";
 import { ArrowCounterClockwise, FileText, Info, PencilSimpleLine } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
@@ -275,6 +276,12 @@ function SimpleContractForm({ price }: { price: number | null }) {
                 <button type="button" onClick={() => { run.reset(); router.refresh(); }} className="ms-2 font-bold underline">
                   اعرض التكلفة الجديدة
                 </button>
+              )}
+              {/* ق٢٦-٦ (l19): the plan's works of this month are used and the points do not cover it. */}
+              {run.code === "plan_allowance_used" && (
+                <Link href={PLAN_ALLOWANCE_TOPUP_HREF} className="ms-2 font-bold underline">
+                  {PLAN_ALLOWANCE_COPY.topupLink}
+                </Link>
               )}
             </div>
           )}

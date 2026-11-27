@@ -6,6 +6,7 @@ import {
   ChatCircleDots, CaretLeft, Sparkle, ArrowCounterClockwise,
 } from "@phosphor-icons/react";
 import Link from "next/link";
+import { PLAN_ALLOWANCE_COPY, PLAN_ALLOWANCE_TOPUP_HREF } from "@/lib/ai/planAllowance";
 import { useTheme } from "@/components/ThemeProvider";
 import AiResultActions from "@/components/AiResultActions";
 import { asCitations, CitedText, SourceList, stripCitationMarkers } from "@/components/ai/CitedAnswer";
@@ -244,6 +245,15 @@ function QuickAnswerTool() {
         {run.phase === "error" && run.error && !libraryRefusal && (
           <p role="alert" className={`text-[12px] leading-relaxed ${isDark ? "text-red-400" : "text-red-600"}`}>
             {quickAnswerRefusalText(run.code) ?? run.error}
+            {/* ق٢٦-٦ (l19): the plan's questions of this month are used and the points do not cover one. */}
+            {run.code === "plan_allowance_used" && (
+              <>
+                {" "}
+                <Link href={PLAN_ALLOWANCE_TOPUP_HREF} className="font-bold underline">
+                  {PLAN_ALLOWANCE_COPY.topupLink}
+                </Link>
+              </>
+            )}
           </p>
         )}
         <p className={`text-[11px] leading-relaxed ${muted}`}>

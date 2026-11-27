@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { parseToolPointsAnswer, toolPointsView, type ToolPointsAnswer } from "@/lib/points/toolPointsView";
 import type { PointsAvailableTool } from "@/lib/ai/pointsStanding";
+import { PLAN_ALLOWANCE_TOPUP_HREF } from "@/lib/ai/planAllowance";
 
 /**
  * ToolPointsAvailable — «المتاح لهذه العملية: X نقطة» beside a paid AI tool's
@@ -41,7 +42,8 @@ export default function ToolPointsAvailable({ tool, price, leading = "", recheck
       {view.short && (
         <>
           {" "}
-          <Link href="/pricing" className="font-bold text-[#0B3D2E] underline dark:text-[#C8A762]">
+          {/* ق٢٦-٦ (l19): an ind-ai subscriber tops up from his wallet (the 100 / 250 packs). */}
+          <Link href={answer?.planAllowance ? PLAN_ALLOWANCE_TOPUP_HREF : "/pricing"} className="font-bold text-[#0B3D2E] underline dark:text-[#C8A762]">
             اشحن رصيدك
           </Link>
         </>
