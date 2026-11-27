@@ -94,6 +94,7 @@ import {
   type RefGroupOut,
   type RefItemOut,
 } from "@/app/api/library/laws/[slug]/citations/_shape";
+import { fetchJsonWithin } from "@/app/api/library/laws/[slug]/citations/_bounded";
 import { buildCitation } from "./_citation";
 import { lawStatusPill, statusPill } from "./_cite-status";
 import { scrollToReaderAnchor } from "./_reader-anchors";
@@ -144,14 +145,19 @@ function subscribeBulk(l: () => void) {
  * Starts the law's links request once per page view. The page calls it beside
  * its own law request (it never waits for the law), the provider again with the
  * law's canonical slug.
+ *
+ * POST-L18-01 (owner package 27 Nov, batch l19): the request has a deadline
+ * (fetchJsonWithin, LINKS_FETCH_TIMEOUT_MS — longer than the server's own
+ * budget). A slow, failed or 502 answer ends in «failed»: the articles show
+ * without their links and the per-article fallback below takes over; nothing
+ * waits for ever.
  */
 export function prefetchLawLinks(lawSlug: string): void {
   if (!lawSlug || bulkStore.has(lawSlug)) return;
   bulkStore.set(lawSlug, { status: "loading" });
   emitBulk();
-  fetch(`/api/library/laws/${apiSlug(lawSlug)}/citations?bulk=1`)
-    .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
-    .then((d: { available?: boolean } & Partial<LawLinks>) => {
+  fetchJsonWithin<{ available?: boolean } & Partial<LawLinks>>(`/api/library/laws/${apiSlug(lawSlug)}/citations?bulk=1`)
+    .then((d) => {
       bulkStore.set(
         lawSlug,
         d?.available === true && d.items && d.articles
@@ -209,9 +215,9 @@ function fetchArticleRefs(lawSlug: string, articleId: string): Promise<Refs> {
   if (pending) return pending;
   const p = new Promise<Refs>((resolve, reject) => {
     queue.push(() => {
-      fetch(`/api/library/laws/${apiSlug(lawSlug)}/citations?article=${encodeURIComponent(articleId)}`)
-        .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
-        .then((d: Refs) => resolve(d))
+      // POST-L18-01: bounded like the law's request — a slot of the three is never held for ever.
+      fetchJsonWithin<Refs>(`/api/library/laws/${apiSlug(lawSlug)}/citations?article=${encodeURIComponent(articleId)}`)
+        .then((d) => resolve(d))
         .catch(reject)
         .finally(() => {
           running--;

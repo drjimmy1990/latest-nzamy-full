@@ -42,6 +42,16 @@ import {
   linksCacheKey,
   serverTiming,
 } from './_cache';
+import {
+  FLAGS_BUDGET_MS,
+  GATE_BUDGET_MS,
+  GRAPH_BUDGET_MS,
+  VIEWER_BUDGET_MS,
+  closedViewer,
+  createSingleFlight,
+  orFallback,
+  withinBudget,
+} from './_bounded';
 
 /**
  * GET /api/library/laws/[slug]/citations — the law reader's citation data
@@ -79,6 +89,16 @@ import {
  * links answers (?bulk=1 and ?article=) are kept LINKS_CACHE_TTL_MS in this
  * process (_cache.ts) — after the public guard, before the per-viewer decree
  * mask — and carry a `Server-Timing` header.
+ *
+ * POST-L18-01 (owner package 27 Nov, batch l19): no step waits without end
+ * (_bounded.ts). The public guard, the admin switch, the graph read and the
+ * per-viewer lock read each have a budget; the viewer read runs BESIDE the
+ * graph read; concurrent cache misses of one law share one graph read. Past a
+ * budget: the guard or the graph → 503 `links_busy` (no-store; the reader
+ * shows the article without its links), the viewer read → every article's
+ * links hidden (fails closed, owner ٢٣٦), the switch → the similar section
+ * off. `Server-Timing` names each step (gate, flags, graph, viewer) and a
+ * `*_timeout` step when a budget ran out.
  */
 const CACHE = 'private, max-age=300';
 const ARTICLE_COLUMNS = 'id, number, title, status, instrument';
@@ -160,20 +180,53 @@ function tierJson(body: unknown, timing?: string) {
   });
 }
 
+/**
+ * POST-L18-01: a step ran out of its budget. Never cached; the reader keeps
+ * the law's text and shows the article without its links.
+ */
+function linksBusy(timing: string) {
+  return NextResponse.json(
+    { error: 'تعذّر تحميل الإحالات الآن', code: 'links_busy' },
+    { status: 503, headers: { 'Cache-Control': 'no-store', 'Retry-After': '30', 'Server-Timing': timing } },
+  );
+}
+
+/** viewerLinksAccess within VIEWER_BUDGET_MS; a throw or a timeout fails closed. */
+async function boundedViewer(db: ServiceClient, slug: string) {
+  const started = performance.now();
+  const [viewer, timedOut] = await orFallback(
+    viewerLinksAccess(db, slug).catch(() => closedViewer()),
+    VIEWER_BUDGET_MS,
+    closedViewer(),
+  );
+  if (timedOut) console.warn('[citations] viewer read over budget; links hidden for this answer');
+  return { viewer, timedOut, ms: performance.now() - started };
+}
+
 type ServiceClient = Awaited<ReturnType<typeof createServiceClient>>;
+/** The link types the reader asks for (readerLinkTypes, the similar switch). */
+type ReaderLinkTypes = ReturnType<typeof readerLinkTypes>;
 
 /** The links answers before the per-viewer mask (batch l14, owner file 07 §14). */
 const bulkCache = createTtlCache<ReturnType<typeof cleanLawLinks>>(BULK_CACHE_ENTRIES, LINKS_CACHE_TTL_MS);
 const articleCache = createTtlCache<ReturnType<typeof withHrefs>>(ARTICLE_CACHE_ENTRIES, LINKS_CACHE_TTL_MS);
+
+/** A graph read's outcome; only `ok` is ever kept in the caches above. */
+type GraphLoad<V> = { kind: 'ok'; value: V } | { kind: 'missing' } | { kind: 'timeout' } | { kind: 'error' };
+
+/** POST-L18-01: concurrent misses of one key share one graph read (_bounded.ts). */
+const bulkFlight = createSingleFlight<GraphLoad<ReturnType<typeof cleanLawLinks>>>();
+const articleFlight = createSingleFlight<GraphLoad<ReturnType<typeof withHrefs>>>();
 
 /**
  * The law's own title, to tell another copy of it apart (file 07 §3); '' when
  * it cannot be read — then only the exact self link is dropped, and the answer
  * is not kept.
  */
-async function lawTitleOf(serverOnly: ServiceClient, slug: string): Promise<string> {
+async function lawTitleOf(serverOnly: ServiceClient, slug: string, signal?: AbortSignal): Promise<string> {
   try {
-    const { data, error } = await serverOnly.schema('library').from('laws').select('title').eq('slug', slug).limit(1);
+    const read = serverOnly.schema('library').from('laws').select('title').eq('slug', slug).limit(1);
+    const { data, error } = await (signal ? read.abortSignal(signal) : read);
     if (error) return '';
     const title = (data?.[0] as { title?: unknown } | undefined)?.title;
     return typeof title === 'string' ? title : '';
@@ -190,14 +243,139 @@ function safeArticleStatus(raw: unknown): string {
   }
 }
 
+/**
+ * A graph stage within GRAPH_BUDGET_MS: its reads carry one abort signal (the
+ * connection is let go when the time is up), and the wait itself is bounded
+ * too, should a read not honour the signal.
+ */
+async function boundedGraph<V>(run: (signal: AbortSignal) => Promise<GraphLoad<V>>): Promise<GraphLoad<V>> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), GRAPH_BUDGET_MS);
+  try {
+    const r = await withinBudget(
+      run(controller.signal).catch((err): GraphLoad<V> => {
+        if (controller.signal.aborted) return { kind: 'timeout' };
+        const e = err as { code?: string; message?: string };
+        console.error('[citations] graph stage failed:', e?.code ?? 'no-code', e?.message ?? String(err));
+        return { kind: 'error' };
+      }),
+      GRAPH_BUDGET_MS + 250,
+    );
+    if (r.timedOut) {
+      controller.abort();
+      return { kind: 'timeout' };
+    }
+    return r.value.kind === 'error' && controller.signal.aborted ? { kind: 'timeout' } : r.value;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** The whole law's links (batch l12, L1) before the per-viewer step; kept in bulkCache when complete. */
+function loadLawLinks(serverOnly: ServiceClient, slug: string, types: ReaderLinkTypes, autoTagOn: boolean, key: string) {
+  return boundedGraph<ReturnType<typeof cleanLawLinks>>(async (signal) => {
+    const [{ data, error }, lawTitle] = await Promise.all([
+      serverOnly
+        .rpc('graph_rag_law_article_links', {
+          p_law_slug: slug,
+          p_per_type: BULK_PER_TYPE,
+          p_types: types,
+        })
+        .abortSignal(signal),
+      lawTitleOf(serverOnly, slug, signal),
+    ]);
+    if (error) {
+      if (signal.aborted) return { kind: 'timeout' };
+      if (graphFunctionMissing(error.code)) return { kind: 'missing' };
+      console.error('[citations] law links failed:', error.code ?? 'no-code', error.message);
+      return { kind: 'error' };
+    }
+    const shaped = cleanLawLinks(shapeLawLinks(data, slug, types, safeArticleStatus, lawStatusForDetail, autoTagOn), slug, lawTitle);
+    if (shaped.found && lawTitle) bulkCache.set(key, shaped);
+    return { kind: 'ok', value: shaped };
+  });
+}
+
+/** One article's links box (owner item 6, decision ٦٠) before the per-viewer mask; kept in articleCache when complete. */
+function loadArticleLinks(serverOnly: ServiceClient, id: string, slug: string, types: ReaderLinkTypes, autoTagOn: boolean, key: string) {
+  return boundedGraph<ReturnType<typeof withHrefs>>(async (signal) => {
+    const lawTitleRead = lawTitleOf(serverOnly, slug, signal);
+    // One call per query group (READER_SECTION_QUERIES, graphLinkTypes.ts):
+    // hundreds of principles citing an article, or its many «إحالة» links,
+    // never crowd out its amendment and regulation links. A group whose
+    // types are switched off (SIMILAR_TO, Q133) is not asked.
+    const queries = READER_SECTION_QUERIES
+      .map((q) => ({ section: q.section, types: q.types.filter((t) => types.includes(t)) }))
+      .filter((q) => q.types.length > 0);
+    const answers = await Promise.all(
+      queries.map((q) =>
+        serverOnly
+          .rpc('graph_rag_explore_neighborhood', {
+            p_node_key: centerKeyOf(id, slug),
+            p_depth: 1,
+            p_edge_types: q.types,
+            p_limit: NEIGHBORHOOD_LIMIT,
+          })
+          .abortSignal(signal),
+      ),
+    );
+    const failed = answers.find((a) => a.error)?.error;
+    if (failed) {
+      if (signal.aborted) return { kind: 'timeout' };
+      if (graphFunctionMissing(failed.code)) return { kind: 'missing' };
+      console.error('[citations] article links failed:', failed.code ?? 'no-code', failed.message);
+      return { kind: 'error' };
+    }
+    const shaped = mergeSectionRefs(
+      queries.map((q, i) => ({ section: q.section, refs: shapeArticleRefs(answers[i].data, id, slug, q.types) })),
+    );
+    // Statuses from library.* now, not the graph's copy. A vanished anchor
+    // links to its document and is named by it (never a confirmed article);
+    // a vanished document is dropped (applyLiveRows).
+    const ids = refIds(shaped);
+    const none = Promise.resolve({ data: [], error: null });
+    const lib = serverOnly.schema('library');
+    const [arts, laws, principles, collections, decrees] = await Promise.all([
+      ids.articles.length ? lib.from('articles').select('id, status').in('id', ids.articles).abortSignal(signal) : none,
+      ids.laws.length ? lib.from('laws').select('slug, status, title').in('slug', ids.laws).abortSignal(signal) : none,
+      ids.principles.length ? lib.from('principles').select('id').in('id', ids.principles).abortSignal(signal) : none,
+      ids.collections.length ? lib.from('judicial_collections').select('id, title').in('id', ids.collections).abortSignal(signal) : none,
+      ids.decrees.length ? lib.from('decrees_circulars').select('id').in('id', ids.decrees).abortSignal(signal) : none,
+    ]);
+    for (const r of [arts, laws, principles, collections, decrees]) if (r.error) throw r.error;
+    const live = applyLiveRows(
+      shaped,
+      {
+        articles: (arts.data ?? []) as Array<{ id: unknown; status: unknown }>,
+        laws: (laws.data ?? []) as Array<{ slug: unknown; status: unknown; title: unknown }>,
+        principles: (principles.data ?? []) as Array<{ id: unknown }>,
+        collections: (collections.data ?? []) as Array<{ id: unknown; title: unknown }>,
+        decrees: (decrees.data ?? []) as Array<{ id: unknown }>,
+      },
+      safeArticleStatus,
+      lawStatusForDetail,
+    );
+    const lawTitle = await lawTitleRead;
+    const out = withHrefs(withAutoTags(orderRefs(cleanArticleRefs(live, id, slug, lawTitle), slug), autoTagOn));
+    if (lawTitle) articleCache.set(key, out);
+    return { kind: 'ok', value: out };
+  });
+}
+
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ slug: string }> },
 ) {
   const started = performance.now();
-  const gate = await libraryGate();
-  if (gate) return gate;
+  // POST-L18-01: the public guard within its budget — past it, a 503 (never
+  // an open answer: the guard decides who may read at all).
+  const gateRun = await withinBudget(libraryGate(), GATE_BUDGET_MS);
   const gateMs = performance.now() - started;
+  if (gateRun.timedOut) {
+    console.warn('[citations] library guard over budget');
+    return linksBusy(serverTiming([['gate', gateMs], ['gate_timeout', GATE_BUDGET_MS]], 'miss'));
+  }
+  if (gateRun.value) return gateRun.value;
 
   const { slug } = await params;
   const url = new URL(request.url);
@@ -208,39 +386,58 @@ export async function GET(
     // featureFlags.ts). Same for every viewer. Owner Q171 (22 Nov, batch l13):
     // no «رابط آلي» label — the unreviewed-automatic mark is always cleared.
     const wantsLinks = url.searchParams.has('article') || url.searchParams.get('bulk') === '1';
-    const flags = wantsLinks ? await getFeatureFlags() : null;
+    const flagsStart = performance.now();
+    // POST-L18-01: the switch within its budget; past it, the similar section is off.
+    const [flags, flagsLate] = wantsLinks
+      ? await orFallback(getFeatureFlags().catch(() => null), FLAGS_BUDGET_MS, null)
+      : [null, false];
+    const flagsMs = performance.now() - flagsStart;
     const types = readerLinkTypes(flags?.library_similar_links ?? false);
     const autoTagOn = false;
+    /** The Server-Timing steps every links answer carries. */
+    const baseSteps = (): Array<[string, number]> => [
+      ['gate', gateMs],
+      ['flags', flagsMs],
+      ...(flagsLate ? ([['flags_timeout', FLAGS_BUDGET_MS]] as Array<[string, number]>) : []),
+    ];
 
     // ── Every article of the law at once (batch l12, owner L1) ───────────────
     if (url.searchParams.get('bulk') === '1') {
       const key = linksCacheKey('bulk', slug, null, types);
+      // Owner ٢٣٦: who is reading — started BESIDE the graph read (it does
+      // not depend on it), within its own budget (POST-L18-01).
+      const viewerRead = boundedViewer(serverOnly, slug);
       let shapedLaw = bulkCache.get(key);
       const hit = !!shapedLaw;
       const graphStart = performance.now();
       if (!shapedLaw) {
-        const [{ data, error }, lawTitle] = await Promise.all([
-          serverOnly.rpc('graph_rag_law_article_links', {
-            p_law_slug: slug,
-            p_per_type: BULK_PER_TYPE,
-            p_types: types,
-          }),
-          lawTitleOf(serverOnly, slug),
-        ]);
-        if (error) {
-          if (graphFunctionMissing(error.code)) return json({ available: false });
-          console.error('[citations] law links failed:', error.code ?? 'no-code', error.message);
-          return json({ error: 'تعذّر تحميل الإحالات' }, 500);
+        const load = await bulkFlight.run(key, () => loadLawLinks(serverOnly, slug, types, autoTagOn, key));
+        const graphMs = performance.now() - graphStart;
+        if (load.kind === 'missing') return json({ available: false });
+        if (load.kind === 'timeout') {
+          return linksBusy(serverTiming([...baseSteps(), ['graph', graphMs], ['graph_timeout', GRAPH_BUDGET_MS]], 'miss'));
         }
-        shapedLaw = cleanLawLinks(shapeLawLinks(data, slug, types, safeArticleStatus, lawStatusForDetail, autoTagOn), slug, lawTitle);
-        if (shapedLaw.found && lawTitle) bulkCache.set(key, shapedLaw);
+        if (load.kind === 'error') return json({ error: 'تعذّر تحميل الإحالات' }, 500);
+        shapedLaw = load.value;
       }
       const graphMs = performance.now() - graphStart;
       // Owner ٢٣٦: per viewer, after the shared cache — a locked article's
       // links (groups, counts, titles) leave the answer.
-      const viewer = await viewerLinksAccess(serverOnly, slug);
+      const { viewer, timedOut: viewerLate, ms: viewerMs } = await viewerRead;
       const body = { available: true, ...maskDecreeTitlesForViewer(withoutLockedArticles(shapedLaw, viewer.openIds), viewer.isSubscriber) };
-      return tierJson(body, serverTiming([['gate', gateMs], ['graph', graphMs], ['total', performance.now() - started]], hit ? 'hit' : 'miss'));
+      return tierJson(
+        body,
+        serverTiming(
+          [
+            ...baseSteps(),
+            ['graph', graphMs],
+            ['viewer', viewerMs],
+            ...(viewerLate ? ([['viewer_timeout', VIEWER_BUDGET_MS]] as Array<[string, number]>) : []),
+            ['total', performance.now() - started],
+          ],
+          hit ? 'hit' : 'miss',
+        ),
+      );
     }
 
     // ── One article's links: the links box (owner item 6, decision ٦٠) ──────
@@ -249,86 +446,44 @@ export async function GET(
       if (!id) return json({ error: 'bad article' }, 400);
       // Owner ٢٣٦: a locked article's box answers nothing — no item, no total.
       // The lock is read from the article's own law, never only from the URL's
-      // slug (articleBoxLockedByOwnLaw).
-      const viewer = await viewerLinksAccess(serverOnly, slug);
-      const boxLocked = await articleBoxLockedByOwnLaw(id, slug, {
-        isSubscriber: viewer.isSubscriber,
-        urlOpenIds: viewer.openIds,
-        ownLawSlug: (articleId) => articleLawSlugOf(serverOnly, articleId),
-        openIdsFor: async (lawSlug) => (await viewerLinksAccess(serverOnly, lawSlug)).openIds,
-      });
-      if (boxLocked) {
-        return tierJson({ available: true, ...lockedArticleRefs() });
+      // slug (articleBoxLockedByOwnLaw). POST-L18-01: both reads within the
+      // viewer budget; a timeout keeps the box locked (fails closed).
+      const { viewer, timedOut: viewerLate, ms: viewerMs } = await boundedViewer(serverOnly, slug);
+      const lockRun = await withinBudget(
+        articleBoxLockedByOwnLaw(id, slug, {
+          isSubscriber: viewer.isSubscriber,
+          urlOpenIds: viewer.openIds,
+          ownLawSlug: (articleId) => articleLawSlugOf(serverOnly, articleId),
+          openIdsFor: async (lawSlug) => (await viewerLinksAccess(serverOnly, lawSlug)).openIds,
+        }).catch(() => true),
+        VIEWER_BUDGET_MS,
+      );
+      const viewerSteps: Array<[string, number]> = [
+        ['viewer', viewerMs],
+        ...(viewerLate || lockRun.timedOut ? ([['viewer_timeout', VIEWER_BUDGET_MS]] as Array<[string, number]>) : []),
+      ];
+      if (lockRun.timedOut || lockRun.value) {
+        return tierJson({ available: true, ...lockedArticleRefs() }, serverTiming([...baseSteps(), ...viewerSteps], 'miss'));
       }
       const key = linksCacheKey('article', slug, id, types);
       const kept = articleCache.get(key);
       if (kept) {
         return tierJson(
           { available: true, ...maskDecreeTitlesForViewer(kept, viewer.isSubscriber) },
-          serverTiming([['gate', gateMs], ['total', performance.now() - started]], 'hit'),
+          serverTiming([...baseSteps(), ...viewerSteps, ['total', performance.now() - started]], 'hit'),
         );
       }
       const graphStart = performance.now();
-      const lawTitleRead = lawTitleOf(serverOnly, slug);
-      // One call per query group (READER_SECTION_QUERIES, graphLinkTypes.ts):
-      // hundreds of principles citing an article, or its many «إحالة» links,
-      // never crowd out its amendment and regulation links. A group whose
-      // types are switched off (SIMILAR_TO, Q133) is not asked.
-      const queries = READER_SECTION_QUERIES
-        .map((q) => ({ section: q.section, types: q.types.filter((t) => types.includes(t)) }))
-        .filter((q) => q.types.length > 0);
-      const answers = await Promise.all(
-        queries.map((q) =>
-          serverOnly.rpc('graph_rag_explore_neighborhood', {
-            p_node_key: centerKeyOf(id, slug),
-            p_depth: 1,
-            p_edge_types: q.types,
-            p_limit: NEIGHBORHOOD_LIMIT,
-          }),
-        ),
-      );
-      const failed = answers.find((a) => a.error)?.error;
-      if (failed) {
-        if (graphFunctionMissing(failed.code)) return json({ available: false });
-        console.error('[citations] article links failed:', failed.code ?? 'no-code', failed.message);
-        return json({ error: 'تعذّر تحميل الإحالات' }, 500);
-      }
-      const shaped = mergeSectionRefs(
-        queries.map((q, i) => ({ section: q.section, refs: shapeArticleRefs(answers[i].data, id, slug, q.types) })),
-      );
-      // Statuses from library.* now, not the graph's copy. A vanished anchor
-      // links to its document and is named by it (never a confirmed article);
-      // a vanished document is dropped (applyLiveRows).
-      const ids = refIds(shaped);
-      const none = Promise.resolve({ data: [], error: null });
-      const lib = serverOnly.schema('library');
-      const [arts, laws, principles, collections, decrees] = await Promise.all([
-        ids.articles.length ? lib.from('articles').select('id, status').in('id', ids.articles) : none,
-        ids.laws.length ? lib.from('laws').select('slug, status, title').in('slug', ids.laws) : none,
-        ids.principles.length ? lib.from('principles').select('id').in('id', ids.principles) : none,
-        ids.collections.length ? lib.from('judicial_collections').select('id, title').in('id', ids.collections) : none,
-        ids.decrees.length ? lib.from('decrees_circulars').select('id').in('id', ids.decrees) : none,
-      ]);
-      for (const r of [arts, laws, principles, collections, decrees]) if (r.error) throw r.error;
-      const live = applyLiveRows(
-        shaped,
-        {
-          articles: (arts.data ?? []) as Array<{ id: unknown; status: unknown }>,
-          laws: (laws.data ?? []) as Array<{ slug: unknown; status: unknown; title: unknown }>,
-          principles: (principles.data ?? []) as Array<{ id: unknown }>,
-          collections: (collections.data ?? []) as Array<{ id: unknown; title: unknown }>,
-          decrees: (decrees.data ?? []) as Array<{ id: unknown }>,
-        },
-        safeArticleStatus,
-        lawStatusForDetail,
-      );
-      const lawTitle = await lawTitleRead;
-      const out = withHrefs(withAutoTags(orderRefs(cleanArticleRefs(live, id, slug, lawTitle), slug), autoTagOn));
-      if (lawTitle) articleCache.set(key, out);
+      const load = await articleFlight.run(key, () => loadArticleLinks(serverOnly, id, slug, types, autoTagOn, key));
       const graphMs = performance.now() - graphStart;
+      if (load.kind === 'missing') return json({ available: false });
+      if (load.kind === 'timeout') {
+        return linksBusy(serverTiming([...baseSteps(), ...viewerSteps, ['graph', graphMs], ['graph_timeout', GRAPH_BUDGET_MS]], 'miss'));
+      }
+      if (load.kind === 'error') return json({ error: 'تعذّر تحميل الإحالات' }, 500);
       return tierJson(
-        { available: true, ...maskDecreeTitlesForViewer(out, viewer.isSubscriber) },
-        serverTiming([['gate', gateMs], ['graph', graphMs], ['total', performance.now() - started]], 'miss'),
+        { available: true, ...maskDecreeTitlesForViewer(load.value, viewer.isSubscriber) },
+        serverTiming([...baseSteps(), ...viewerSteps, ['graph', graphMs], ['total', performance.now() - started]], 'miss'),
       );
     }
 
