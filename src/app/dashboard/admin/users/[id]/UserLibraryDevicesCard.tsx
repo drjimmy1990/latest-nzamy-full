@@ -10,7 +10,10 @@ interface DeviceRow {
   label: string;
   firstSeen: string | null;
   lastSeen: string | null;
+  kind?: "mobile" | "desktop" | null;
 }
+
+const KIND_AR = { mobile: "جوال", desktop: "حاسوب" } as const;
 
 const fmt = (iso: string | null) => {
   if (!iso) return "—";
@@ -20,9 +23,11 @@ const fmt = (iso: string | null) => {
 };
 
 /**
- * «أجهزة المكتبة» on the admin user page (owner ٤٢٧): the user's authorised
- * library devices and «إعادة تعيين الأجهزة» (revokes them all; the rows are
- * kept). GET / POST /api/v1/admin/users/[id]/library-devices. The reset is
+ * «أجهزة الحساب» on the admin user page — batch l19, owner ٢٣٣: one mobile +
+ * one computer for the whole account (it was the library's only, owner ٤٢٧).
+ * The user's authorised devices and «إعادة تعيين الأجهزة» (revokes them all;
+ * the rows are kept); afterwards the first phone and the first computer the
+ * user opens register silently. GET / POST /api/v1/admin/users/[id]/library-devices. The reset is
  * library.lock_lift (super admin and operations), like lifting a library
  * lock; the server decides either way.
  */
@@ -86,9 +91,11 @@ export default function UserLibraryDevicesCard({ userId, isDark, card }: { userI
 
   return (
     <div className={`${card} p-5`}>
-      <p className={`text-[13px] font-bold mb-1 ${tp}`}>أجهزة المكتبة</p>
+      <p className={`text-[13px] font-bold mb-1 ${tp}`}>أجهزة الحساب (جوال واحد + حاسوب واحد)</p>
       <p className={`text-[11px] mb-3 ${ts}`}>
-        {enabled ? "حد الأجهزة مفعّل." : "حد الأجهزة غير مفعّل حالياً (من الأمان والحماية ← أجهزة المكتبة)."}
+        {enabled
+          ? "حد الأجهزة مفعّل على الحساب كله. لتبديل جهاز المستخدم أعِد تعيين أجهزته."
+          : "حد الأجهزة غير مفعّل حالياً (من الأمان والحماية ← حد الأجهزة)."}
       </p>
       {loading ? (
         <p className={`text-[11px] ${ts}`}>جارٍ التحميل…</p>
@@ -99,7 +106,10 @@ export default function UserLibraryDevicesCard({ userId, isDark, card }: { userI
       ) : (
         devices.map((d, i) => (
           <div key={d.id} className={`flex items-center justify-between py-2 ${i < devices.length - 1 ? `border-b ${isDark ? "border-white/[0.04]" : "border-slate-50"}` : ""}`}>
-            <span className={`text-[11px] ${tv}`}>{d.label}</span>
+            <span className={`text-[11px] ${tv}`}>
+              {d.kind ? `${KIND_AR[d.kind]} · ` : ""}
+              {d.label}
+            </span>
             <span className={`text-[10px] ${ts}`}>آخر استخدام: {fmt(d.lastSeen)}</span>
           </div>
         ))
@@ -117,7 +127,7 @@ export default function UserLibraryDevicesCard({ userId, isDark, card }: { userI
             </button>
           ) : (
             <>
-              <span className={`text-[11px] ${tv}`}>تُلغى كل أجهزته المصرّحة ويسجّل أجهزته من جديد عند القراءة. متابعة؟</span>
+              <span className={`text-[11px] ${tv}`}>تُلغى كل أجهزته المصرّحة، ويُسجَّل أول جوال وأول حاسوب يدخل منهما بعد ذلك. متابعة؟</span>
               <button
                 type="button"
                 onClick={reset}

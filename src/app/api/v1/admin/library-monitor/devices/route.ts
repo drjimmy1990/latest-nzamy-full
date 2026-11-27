@@ -2,32 +2,35 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireStaff } from "@/lib/access-control";
 import { logAdminAction } from "@/lib/auth/adminAudit";
 import { createServiceClient } from "@/lib/supabase/server";
-import { isMissingDeviceSchema, parseDeviceSettingsPatch } from "@/lib/library/deviceLimit";
-import { deviceCodesAvailable, forgetLibraryDeviceSetting } from "@/lib/library/deviceLimitServer";
+import { isMissingAccountDeviceSchema, parseAccountSwitchPatch } from "@/lib/devices/accountDevice";
+import { forgetLibraryDeviceSetting } from "@/lib/library/deviceLimitServer";
 
 /**
- * «أجهزة المكتبة» — the two device-limit columns of the library settings row
- * (public.library_monitor_settings, 20261108_20; owner ٤٢٧).
+ * «حد الأجهزة للحساب كله» — batch l19, owner ٢٣٣ (LIVE-17): one mobile + one
+ * computer per account across the whole platform. The switch is
+ * public.library_monitor_settings.account_device_limit_enabled (20261209_40);
+ * the number is fixed (1 + 1), so there is nothing else to set. The old
+ * library-only columns (device_limit_enabled / device_limit, owner ٤٢٧) are no
+ * longer read or written.
  *
  * Kept OUT of /api/v1/admin/library-monitor/settings on purpose: that route
- * reads a fixed column list, and adding these two would 500 the whole
+ * reads a fixed column list, and adding this one would 500 the whole
  * «نشاط المكتبة» settings screen until the migration runs.
  *
- * GET — any admin (requireStaff("read")): { enabled, limit, available }.
- *       Before 20261108_20: { enabled: false, limit: 2, available: false }.
- * PUT { enabled?, limit? } — requireStaff("settings.write"), audited. Takes
- *       effect for new reads within a minute on other server processes.
+ * GET — any admin (requireStaff("read")): { enabled, available }.
+ *       Before 20261209_40: { enabled: false, available: false }.
+ * PUT { enabled } — requireStaff("settings.write"), audited. Takes effect
+ *       within 30 seconds on every server process.
  */
 export const dynamic = "force-dynamic";
 
-const COLUMNS = "device_limit_enabled, device_limit";
-const MISSING_AR = "شغّل ملف الترحيل 20261108_20_library_device_limit.sql أولاً";
+const COLUMNS = "account_device_limit_enabled";
+// 20261209_40 not run yet — said without the file name (l16 C46).
+const MISSING_AR = "هذه الميزة لم تُفعَّل بعد على الخادم، ويتولّى ذلك الفريق التقني.";
+const NO_STORE = { "Cache-Control": "private, no-store" };
 
-function settingsOf(row: Record<string, unknown> | null): { enabled: boolean; limit: number } {
-  return {
-    enabled: row?.device_limit_enabled === true,
-    limit: typeof row?.device_limit === "number" ? row.device_limit : 2,
-  };
+function enabledOf(row: Record<string, unknown> | null): boolean {
+  return row?.account_device_limit_enabled === true;
 }
 
 export async function GET() {
@@ -37,20 +40,13 @@ export async function GET() {
     const service = await createServiceClient();
     const { data, error } = await service.from("library_monitor_settings").select(COLUMNS).eq("id", true).maybeSingle();
     if (error) {
-      if (isMissingDeviceSchema(error.code)) return NextResponse.json({ enabled: false, limit: 2, available: false });
+      if (isMissingAccountDeviceSchema(error.code)) return NextResponse.json({ enabled: false, available: false }, { headers: NO_STORE });
       console.error("[admin/library-monitor/devices GET] failed:", error.code);
       return NextResponse.json({ error: "تعذّر تحميل الإعداد." }, { status: 500 });
     }
     return NextResponse.json(
-      {
-        ...settingsOf((data ?? null) as Record<string, unknown> | null),
-        available: Boolean(data),
-        // Owner ٤٠: whether this server can e-mail the code of a new device
-        // (an e-mail provider and a code key). Without it a new device with
-        // room registers at once, as before.
-        codesAvailable: deviceCodesAvailable(),
-      },
-      { headers: { "Cache-Control": "private, no-store" } },
+      { enabled: enabledOf((data ?? null) as Record<string, unknown> | null), available: Boolean(data) },
+      { headers: NO_STORE },
     );
   } catch (err) {
     console.error("[admin/library-monitor/devices GET] unexpected:", err instanceof Error ? err.name : "error");
@@ -68,41 +64,38 @@ export async function PUT(request: NextRequest) {
     } catch {
       return NextResponse.json({ error: "بيانات غير صالحة" }, { status: 400 });
     }
-    const patch = parseDeviceSettingsPatch(body);
+    const patch = parseAccountSwitchPatch(body);
     if (!patch.ok) return NextResponse.json({ error: patch.error }, { status: 400 });
 
     const service = await createServiceClient();
     const before = await service.from("library_monitor_settings").select(COLUMNS).eq("id", true).maybeSingle();
-    if (before.error && isMissingDeviceSchema(before.error.code)) {
+    if (before.error && isMissingAccountDeviceSchema(before.error.code)) {
       return NextResponse.json({ error: MISSING_AR }, { status: 503 });
     }
     const { data, error } = await service
       .from("library_monitor_settings")
-      .update({ ...patch.columns, updated_at: new Date().toISOString(), updated_by: gate.userId })
+      .update({ account_device_limit_enabled: patch.enabled, updated_at: new Date().toISOString(), updated_by: gate.userId })
       .eq("id", true)
       .select(COLUMNS)
       .maybeSingle();
     if (error) {
-      if (isMissingDeviceSchema(error.code)) return NextResponse.json({ error: MISSING_AR }, { status: 503 });
+      if (isMissingAccountDeviceSchema(error.code)) return NextResponse.json({ error: MISSING_AR }, { status: 503 });
       console.error("[admin/library-monitor/devices PUT] failed:", error.code);
-      return NextResponse.json(
-        { error: error.code === "23514" ? "قيمة خارج الحدود المسموحة." : "تعذّر حفظ الإعداد." },
-        { status: error.code === "23514" ? 400 : 500 },
-      );
+      return NextResponse.json({ error: "تعذّر حفظ الإعداد." }, { status: 500 });
     }
     if (!data) return NextResponse.json({ error: MISSING_AR }, { status: 503 });
     forgetLibraryDeviceSetting();
 
-    const after = settingsOf(data as Record<string, unknown>);
+    const after = { enabled: enabledOf(data as Record<string, unknown>) };
     await logAdminAction({
       actorId: gate.userId,
-      action: "library_device_limit_updated",
+      action: "account_device_limit_updated",
       targetType: "library_monitor_settings",
       targetId: "library_monitor_settings",
-      before: settingsOf((before.data ?? null) as Record<string, unknown> | null),
+      before: { enabled: enabledOf((before.data ?? null) as Record<string, unknown> | null) },
       after,
     });
-    return NextResponse.json({ ...after, available: true });
+    return NextResponse.json({ ...after, available: true }, { headers: NO_STORE });
   } catch (err) {
     console.error("[admin/library-monitor/devices PUT] unexpected:", err instanceof Error ? err.name : "error");
     return NextResponse.json({ error: "خطأ غير متوقع" }, { status: 500 });

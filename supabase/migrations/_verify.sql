@@ -9144,3 +9144,23 @@ select 'l18 review: the owner of a verified firm reads the open requests, with e
 select 'l18 review: exactly one index on the confirmed mobiles — the plain one of 20261208_20 until 20261208_50''s unique index exists, then only the unique one (run 20261208_20, then 20261208_50)' as check,
        (to_regclass('public.profiles_confirmed_phone_idx') is not null) <> (to_regclass('public.profiles_confirmed_phone_unique') is not null) as ok;
 -- <<< verify:l18_review
+-- >>> verify:l19_devices — supabase/tests/rls/l19_account_device_gate.test.sql
+-- Batch l19 devices (owner ٢٣٣ / LIVE-17): one mobile + one computer per account. 20261209_40 runs
+-- BEFORE the deploy. Before it runs each check answers ok = false («run 20261209_40»).
+select 'l19 devices: account_device_gate(uuid,text,text,text) is SECURITY DEFINER with an empty search_path, reads the account switch, exempts admins and platform_staff, service_role only (run 20261209_40)' as check,
+       coalesce((select p.prosecdef
+                        and p.proconfig @> array['search_path=""']
+                        and position('account_device_limit_enabled' in pg_catalog.pg_get_functiondef(p.oid)) > 0
+                        and position('platform_staff' in pg_catalog.pg_get_functiondef(p.oid)) > 0
+                        and position('''exempt''' in pg_catalog.pg_get_functiondef(p.oid)) > 0
+                        and position('d.kind = v_kind' in pg_catalog.pg_get_functiondef(p.oid)) > 0
+                        and not has_function_privilege('anon', p.oid, 'EXECUTE')
+                        and not has_function_privilege('authenticated', p.oid, 'EXECUTE')
+                   from pg_catalog.pg_proc p where p.oid = to_regprocedure('public.account_device_gate(uuid,text,text,text)')), false) as ok;
+select 'l19 devices: library_monitor_settings.account_device_limit_enabled and user_devices.kind (mobile/desktop) exist (run 20261209_40)' as check,
+       coalesce(exists (select 1 from pg_catalog.pg_attribute
+                         where attrelid = to_regclass('public.library_monitor_settings')
+                           and attname = 'account_device_limit_enabled' and not attisdropped)
+                and exists (select 1 from pg_catalog.pg_constraint
+                             where conrelid = to_regclass('public.user_devices') and conname = 'user_devices_kind_check'), false) as ok;
+-- <<< verify:l19_devices

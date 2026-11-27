@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { isAuthUnavailable, authUnavailableResponse, frozenAccountResponse } from "@/lib/auth/apiAuth";
 import { isUuidString } from "@/lib/library/deviceLimit";
-import { currentDeviceHash, readLibraryDevices, revokeLibraryDevice } from "@/lib/library/deviceLimitServer";
+import { ACCOUNT_DEVICE_SWITCH_AR } from "@/lib/devices/accountDevice";
+import { accountDeviceLimitOn, currentDeviceHash, readLibraryDevices, revokeLibraryDevice } from "@/lib/library/deviceLimitServer";
 
 /**
  * POST /api/v1/library/devices/[id]/revoke — «تسجيل خروج هذا الجهاز» (owner
@@ -13,6 +14,10 @@ import { currentDeviceHash, readLibraryDevices, revokeLibraryDevice } from "@/li
  * refused third device: it frees a slot without holding the other device
  * (an owner question in the B1 report). The user is always the session's,
  * never the body's.
+ *
+ * Batch l19 (owner ٢٣٣): while the ACCOUNT device limit is on, a user cannot
+ * remove his own devices (403 device_switch_admin_only): «لفتح جهاز جديد أو
+ * تبديله يُرجى التواصل مع … إدارة نظامي». The admin reset is the way.
  */
 export const dynamic = "force-dynamic";
 const NO_STORE = { "Cache-Control": "private, no-store" };
@@ -26,6 +31,12 @@ export async function POST(_request: Request, context: { params: Promise<{ id: s
     // D6: a frozen account (a pending deletion) writes nothing.
     const frozen = frozenAccountResponse(user);
     if (frozen) return frozen;
+    if (await accountDeviceLimitOn()) {
+      return NextResponse.json(
+        { error: ACCOUNT_DEVICE_SWITCH_AR, code: "device_switch_admin_only" },
+        { status: 403, headers: NO_STORE },
+      );
+    }
 
     const { id } = await context.params;
     if (!isUuidString(id)) return NextResponse.json({ error: "معرّف الجهاز غير صالح." }, { status: 400, headers: NO_STORE });

@@ -45,13 +45,15 @@ test("the banner sits on the console home and on «الأمان والحماية
   assert.match(panel, /border-amber-500\/40/);
 });
 
-test("the device-limit panel offers one device or two, and never touches the switch by itself", () => {
+// Batch l19 (owner ٢٣٣): the limit is the whole account's, fixed at one phone + one computer —
+// one switch, no number (the l14 «one device or two» choice is gone with the library-only limit).
+test("the device-limit panel is one switch for the whole account (1 phone + 1 computer), and never touches the switch by itself", () => {
   const panel = read("src", "app", "dashboard", "admin", "security", "LibraryDevicesPanel.tsx");
-  assert.match(panel, /<option value=\{1\}>جهاز واحد<\/option>/);
-  assert.match(panel, /<option value=\{2\}>جهازان<\/option>/);
-  assert.doesNotMatch(panel, /max=\{10\}/);
-  assert.match(panel, /body: JSON\.stringify\(\{ enabled, limit \}\)/);
+  assert.match(panel, /جوال واحد \+ حاسوب واحد/);
+  assert.doesNotMatch(panel, /<option value=/);
+  assert.match(panel, /body: JSON\.stringify\(\{ enabled \}\)/);
   assert.match(panel, /useState\(false\)/);
+  assert.doesNotMatch(panel, /ملف الترحيل/);
 });
 
 test("l16 C46: the admin screens print no server variable, migration file, question number or English console title", () => {

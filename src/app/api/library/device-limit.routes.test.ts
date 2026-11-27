@@ -64,20 +64,19 @@ for (const r of ROUTES) {
   });
 }
 
+// Batch l19 (owner ٢٣٣): the library's check is the whole account's (accountDeviceGate.ts —
+// its own tests hold the timeout, the fail-open and the alert). Ruling E is retired with the
+// library-only limit: a Bearer caller with no cookie jar is not device-checked and is never
+// handed a minted cookie (question ٢٠٧ is still open; said in the l19 report).
 test("the server half fails open and keys the cookie strictly", () => {
   const src = read("lib/library/deviceLimitServer.ts");
   assert.match(src, /if \(!userId \|\| !entitled\) return null;/);
-  // Ruling E: a Bearer caller with no device cookie is NOT waved through — it
-  // goes to cookielessGateDecision (403 device_cookie_required while the limit
-  // is on), and is never handed a minted cookie.
-  const bearer = src.indexOf('if (isBearerWithoutDeviceCookie(hdrs.get("authorization"), id)) {');
-  assert.ok(bearer > 0, "the Bearer branch exists");
-  const branch = src.slice(bearer, src.indexOf("}", bearer));
-  assert.match(branch, /return finish\(userId, null, cookielessGateDecision\(await readCookielessState\(\)\)\);/);
-  assert.ok(bearer < src.indexOf("newDeviceId("), "decided before any id is minted");
-  assert.doesNotMatch(src, /isBearerWithoutDeviceCookie\([^)]*\)\) return null;/);
-  assert.match(src, /abortSignal\(AbortSignal\.timeout\(RPC_TIMEOUT_MS\)\)/);
-  assert.match(src, /noteMissing\(error\.code\)/);
+  assert.match(src, /const bearerOnly = isBearerWithoutDeviceCookie\(hdrs\.get\("authorization"\), raw\);/);
+  assert.match(src, /deviceId: isValidDeviceId\(raw\) \? raw : null,/);
+  assert.match(src, /if \(bearerOnly\) return null;/);
+  assert.ok(src.indexOf("if (bearerOnly) return null;") < src.indexOf("await accountDeviceOutcome({"), "a Bearer read is decided before any id is minted");
+  assert.match(src, /if \(outcome\.setDeviceId\) \{/);
+  assert.match(src, /console\.error\("\[library-device\] check threw:"[\s\S]{0,80}return null;/);
   assert.match(src, /"Cache-Control": "private, no-store"/);
   // never decides from the request body or a client-sent user id
   assert.doesNotMatch(src, /request\.json\(/);

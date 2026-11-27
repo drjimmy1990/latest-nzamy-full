@@ -87,11 +87,14 @@ test("verify answers in Arabic, with the attempts left", () => {
   assert.match(deviceCodeVerifyMessageAr("too_many", null) ?? "", /المحاولات/);
 });
 
-test("server: the gate first, the old check until 20261127_60 runs; nothing suspends or freezes the account (owner ٦٣)", () => {
+// Batch l19 (owner ٢٣٣): the library reads go through the whole-account gate (one mobile + one
+// computer, registered silently — no e-mail code); library_device_gate / library_device_check
+// are no longer called by a read. The pins on what must NEVER happen stay.
+test("server: the account gate, no e-mail code on a read; nothing suspends or freezes the account (owner ٦٣)", () => {
   const src = read("lib/library/deviceLimitServer.ts");
-  assert.ok(src.includes('.rpc("library_device_gate", {'));
-  assert.ok(src.includes("p_code_required: deviceCodesAvailable(),"), "no e-mail → no lock-out");
-  assert.ok(src.includes('.rpc("library_device_check", { p_user: userId, p_device_hash: hash, p_label: label })'));
+  assert.ok(src.includes("await accountDeviceOutcome({"));
+  assert.equal(src.includes('.rpc("library_device_gate"'), false);
+  assert.equal(src.includes("p_code_required"), false, "a new device is never held for an e-mail code");
   for (const gone of ["suspendForThirdDevice", "suspendAccountWith", "freezeEntitlementsWith", "user_suspended_device_limit", "logAdminAction"]) {
     assert.equal(src.includes(gone), false, `no ${gone} in the device gate`);
   }

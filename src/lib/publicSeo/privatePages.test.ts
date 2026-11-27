@@ -90,7 +90,7 @@ test("robots.txt does not newly disallow a private page whose noindex must be re
 /** The top-level private sections that have (or now get) a server layout printing the meta tag. */
 const META_LAYOUTS = [
   "dashboard", "settings", "login", "register", "forgot-password", "reset-password", "onboarding",
-  "auth", "demo-login", "invite", "group", "account-frozen", "account-suspended", "share", "review",
+  "auth", "demo-login", "invite", "group", "account-frozen", "account-suspended", "device-limit", "share", "review",
   "cases", "academy/my-courses", "academy/certificates",
 ];
 
