@@ -70,6 +70,8 @@ export interface VerificationFilters {
   status?: string;
   search?: string;
   type?: ProviderType;
+  /** l19 review (pay S1): one account's rows only (the renewed-licence bell). */
+  userId?: string;
 }
 
 // ─── Mock data (matches existing page.tsx) ────────────────────────────────────
@@ -145,6 +147,7 @@ export async function getVerificationRequests(
         status: filters?.status,
         search: filters?.search,
         type: filters?.type,
+        user: filters?.userId,
       },
     );
     // This route's envelope is `{ verifications, total }`, not `{ data }`, so

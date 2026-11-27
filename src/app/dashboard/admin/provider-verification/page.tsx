@@ -221,15 +221,19 @@ export default function ProviderVerificationPage() {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   // When the current list (and so its signed licence links) was read.
   const readAt = useRef(0);
-  // l19 review (pay S1): the bell of a renewed licence opens this page as ?user=<id> — that account only.
-  const [onlyUser, setOnlyUser] = useState<string | null>(null);
+  // l19 review (pay S1): the bell of a renewed licence opens this page as ?user=<id> — that
+  // account only, asked from the server (not filtered out of the newest 50). undefined = the
+  // address is not read yet (the list waits for it).
+  const [onlyUser, setOnlyUser] = useState<string | null | undefined>(undefined);
   useEffect(() => {
+    let id: string | null = null;
     try {
-      const id = new URLSearchParams(window.location.search).get("user");
-      if (id && /^[0-9a-f-]{36}$/i.test(id)) setOnlyUser(id);
+      const raw = new URLSearchParams(window.location.search).get("user");
+      if (raw && /^[0-9a-f-]{36}$/i.test(raw)) id = raw;
     } catch {
       // no filter
     }
+    setOnlyUser(id);
   }, []);
 
   const card = isDark
@@ -238,20 +242,21 @@ export default function ProviderVerificationPage() {
 
   // ── Fetch data ─────────────────────────────────────────────────────────────
   const fetchData = useCallback(async () => {
+    if (onlyUser === undefined) return;
     setLoading(true);
     // getVerificationRequests no longer rejects — it answers `ok: false`, so
     // the `catch { setError(…) }` that used to be the only failure branch here
     // could never fire again. The try/catch stays as a floor for an unexpected
     // throw, but the real failure signal is now the value itself.
     try {
-      setRead(await getVerificationRequests());
+      setRead(await getVerificationRequests(onlyUser ? { userId: onlyUser } : undefined));
       readAt.current = Date.now();
     } catch {
       setRead(listFailed<VerificationRequest>());
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [onlyUser]);
 
   useEffect(() => {
     fetchData();

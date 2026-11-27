@@ -16,6 +16,8 @@ import { readSignupViews } from "@/lib/lawyerSignup/adminViewServer";
  *   - type ('lawyer' | 'firm' | 'notary' | 'arbitrator' | 'bailiff')
  *   - limit (default: 50)
  *   - offset (default: 0)
+ *   - user (l19 review, pay S1): one account's rows only — its lawyer / provider
+ *     row by user_id, its firm by owner_user_id (the renewed-licence bell)
  *
  * Requires: a staff role that may read (requireStaff("read"), l16 C34)
  *
@@ -38,6 +40,8 @@ export async function GET(request: NextRequest) {
   const type = searchParams.get("type");
   const limit = parseInt(searchParams.get("limit") ?? "50", 10);
   const offset = parseInt(searchParams.get("offset") ?? "0", 10);
+  const rawUser = searchParams.get("user");
+  const onlyUser = rawUser && /^[0-9a-f-]{36}$/i.test(rawUser) ? rawUser : null;
 
   // Use service client to bypass RLS for admin operations
   const adminClient = await createServiceClient();
@@ -52,6 +56,7 @@ export async function GET(request: NextRequest) {
   if (status !== "all") {
     lawyerQuery = lawyerQuery.eq("verification_status", status as VerificationStatus);
   }
+  if (onlyUser) lawyerQuery = lawyerQuery.eq("user_id", onlyUser);
 
   const { data: lawyerData, error: lawyerError } = await lawyerQuery;
 
@@ -98,6 +103,7 @@ export async function GET(request: NextRequest) {
   if (status !== "all") {
     providerQuery = providerQuery.eq("verification_status", status as VerificationStatus);
   }
+  if (onlyUser) providerQuery = providerQuery.eq("user_id", onlyUser);
 
   const { data: providerData, error: providerError } = await providerQuery;
 
@@ -115,6 +121,7 @@ export async function GET(request: NextRequest) {
   if (status !== "all") {
     firmQuery = firmQuery.eq("verification_status", status as VerificationStatus);
   }
+  if (onlyUser) firmQuery = firmQuery.eq("owner_user_id", onlyUser);
 
   const { data: firmData, error: firmError } = await firmQuery;
 

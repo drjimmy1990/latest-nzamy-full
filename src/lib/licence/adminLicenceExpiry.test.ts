@@ -65,6 +65,12 @@ test("the screen shows the date on lawyer and firm cards; the list carries it; t
   assert.match(page, /\(r\.type === "lawyer" \|\| r\.type === "firm"\) && \(\s*<LicenceExpiryField/);
   assert.match(page, /await setLicenceExpiry\(userId, holder, next\)/);
   assert.match(page, /\(!onlyUser \|\| r\.user_id === onlyUser\)/);
+  // the one account is asked from the server, not filtered out of the newest 50
+  assert.match(page, /getVerificationRequests\(onlyUser \? \{ userId: onlyUser \} : undefined\)/);
+  assert.match(list, /if \(onlyUser\) lawyerQuery = lawyerQuery\.eq\("user_id", onlyUser\);/);
+  assert.match(list, /if \(onlyUser\) providerQuery = providerQuery\.eq\("user_id", onlyUser\);/);
+  assert.match(list, /if \(onlyUser\) firmQuery = firmQuery\.eq\("owner_user_id", onlyUser\);/);
+  assert.match(read("lib/services/adminService.ts"), /user: filters\?\.userId,/);
   assert.match(read("lib/services/adminService.ts"), /\{ action: "set_licence_expiry", holder, licenseExpiry \}/);
   const bell = read("app/api/v1/lawyer/licence-image/route.ts");
   assert.match(bell, /p_href: `\/dashboard\/admin\/provider-verification\?user=\$\{user\.id\}`/);

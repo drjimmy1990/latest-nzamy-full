@@ -34,9 +34,13 @@
 --           NOTICE  l19_office_insert_guard verify: OK …  and a row with `t`.
 --   Rows changed: none.
 --
--- RUN ORDER: BEFORE OR AFTER THE DEPLOY (the routes already refuse the same
--- accounts; this closes the direct path). Requires 20261206_70 (on prod). A
--- table that does not exist is skipped (order-tolerant); safe to re-run.
+-- RUN ORDER: AFTER THE DEPLOY of the l19 code. The four routes' office gate
+-- is new in this batch (origin/main's routes do not call officePlanRefusal):
+-- run before the deploy, the old code would meet a raw 42501 from the
+-- trigger instead of its own Arabic refusal. After the deploy the routes
+-- refuse the same accounts first and the trigger closes the direct path.
+-- Requires 20261206_70 (on prod). A table that does not exist is skipped
+-- (order-tolerant); safe to re-run.
 --
 -- ROLLBACK:
 --   drop trigger if exists trg_office_plan_insert_guard on public.time_entries;
