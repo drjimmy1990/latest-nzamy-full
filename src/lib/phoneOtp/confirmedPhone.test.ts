@@ -32,7 +32,7 @@ test("l19 (owner ٢٣٥): the owner's sentence word for word, and his three link
   assert.doesNotMatch(PHONE_TAKEN_AR, /موثّق|محامٍ|محامي|عميل|موظف/, "never says what kind the other account is");
   assert.equal(PHONE_TAKEN_CODE, "phone_taken");
   assert.deepEqual(PHONE_TAKEN_LINKS.map((l) => l.href), ["/login", "/forgot-password", "/contact"]);
-  assert.deepEqual(PHONE_TAKEN_LINKS.map((l) => l.signOutFirst), [true, true, false], "the signed-in new account signs out before /login and the reset");
+  assert.deepEqual(PHONE_TAKEN_LINKS.map((l) => l.signOutFirst), [true, true, true], "the signed-in (often phone-held) new account signs out before each page, or it is bounced back");
   assert.equal(isPhoneTakenText(PHONE_TAKEN_AR), true);
   assert.equal(isPhoneTakenText("تعذّر استعمال هذا الرقم، استعمل رقمًا آخر أو تواصل معنا"), false);
   assert.equal(isPhoneTakenText(undefined), false);
@@ -144,6 +144,10 @@ test("l19: settings and the onboarding phone step show the notice for the senten
   const ob = read("src/app/onboarding/page.tsx");
   assert.match(ob, /\{saveError && isPhoneTakenText\(saveError\) && <PhoneTakenNotice isAr=\{isAr\} className="mb-4" \/>\}/);
   assert.match(ob, /\{saveError && !isPhoneTakenText\(saveError\) && \(/);
+  // the server's Arabic text reaches saveError unchanged (so the match can fire)
+  assert.ok(ob.includes("return /[\\u0600-\\u06ff]/.test(raw) ? raw : GENERIC_SAVE_ERROR;"), "arabicError keeps Arabic text");
+  assert.match(ob, /setSaveError\(arabicError\(err\)\);/);
+  assert.ok(/return \/\[.{3}\]\/\.test\(raw\) \? raw : /.test(tab), "arabicProfileError keeps Arabic text");
 });
 
 test("20261208_50: the guard fires after the clearing guard, on INSERT and UPDATE OF phone, phone_verified_at; the index only without duplicates", () => {

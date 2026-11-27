@@ -8,11 +8,12 @@
  *
  * The person who sees it is signed in — to the NEW account (sign-up, the
  * WhatsApp step) or to his own (settings). /login would send a signed-in
- * visitor straight back to his dashboard or to /verify-phone, and a password
- * reset ends on /login, so «تسجيل الدخول» and «استعادة كلمة المرور» sign this
- * browser out first (this device only) and then open the page. «تواصل معنا»
- * is a plain link. Never used on /login or /forgot-password: their answers
- * stay neutral.
+ * visitor straight back to his dashboard or to /verify-phone, a password
+ * reset ends on /login, and on /contact a new account still held by the
+ * WhatsApp code is sent back to /verify-phone (PhoneGateRedirect on the
+ * 403 of any /api/v1 call). So all three links sign this browser out first
+ * (this device only) and then open the page. Never used on /login or
+ * /forgot-password: their answers stay neutral.
  */
 
 import { useState } from "react";

@@ -39,7 +39,7 @@ export function isPhoneTakenText(text: unknown): boolean {
 export const PHONE_TAKEN_LINKS = Object.freeze([
   Object.freeze({ href: "/login", ar: "تسجيل الدخول", en: "Sign in", signOutFirst: true }),
   Object.freeze({ href: "/forgot-password", ar: "استعادة كلمة المرور", en: "Reset the password", signOutFirst: true }),
-  Object.freeze({ href: "/contact", ar: "تواصل معنا", en: "Contact us", signOutFirst: false }),
+  Object.freeze({ href: "/contact", ar: "تواصل معنا", en: "Contact us", signOutFirst: true }),
 ]);
 
 /**
