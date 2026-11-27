@@ -1774,7 +1774,11 @@ function LawSystemPageContent() {
               {/* Owner item 6 (18 Nov): the links of the article in view, beside it
                  (_ref-box.tsx). It replaced the «وثائق وأنظمة ذات صلة» card; since l12
                  the same links also sit under each article, from one cache. */}
-              {viewMode !== "regulation" && <RefBox articleId={activeArticle?.id ?? null} />}
+              {/* Owner ٢٣٦ (27 Nov, batch l18): no «الإحالات المرتبطة» box while the article in view is
+                 locked for this reader (the same lock as the article card: !free and no full access). */}
+              {viewMode !== "regulation" && (
+                <RefBox articleId={activeArticle && (activeArticle.free || viewerHasFullAccess === true) ? activeArticle.id : null} />
+              )}
               {viewMode !== "regulation" && <LawRefsBox />}
               <button
                 onClick={() => setShowCommunity(true)}

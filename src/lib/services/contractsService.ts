@@ -141,6 +141,12 @@ export interface ContractDetail extends Contract {
   parties: ContractParty[];
   obligations: ContractObligation[];
   payments: ContractPayment[];
+  /**
+   * Owner ٢٢٩ (batch l18): true when this is a firm contract and the viewer is
+   * not the firm owner, managing partner or finance manager — `payments` is
+   * then empty because it is not his to see, not because there are none.
+   */
+  paymentsHidden?: boolean;
 }
 
 // ─── What the CLIENT receives (owner #4, l9-secleak) ────────────────────────

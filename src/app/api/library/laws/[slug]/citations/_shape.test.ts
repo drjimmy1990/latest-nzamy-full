@@ -501,8 +501,9 @@ test("Q101 (l12 integration): a non-subscriber's links never carry a decree's nu
   const route = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
   // bulk, and the per-article answer from the l14 cache or fresh: masked on every request.
   assert.equal((route.match(/maskDecreeTitlesForViewer\(/g) ?? []).length, 3, "bulk and per-article answers");
-  assert.match(route, /const body = \{ available: true, \.\.\.maskDecreeTitlesForViewer\(shapedLaw, await viewerIsSubscriber\(\)\) \};/);
-  assert.match(route, /\{ available: true, \.\.\.maskDecreeTitlesForViewer\(kept, await viewerIsSubscriber\(\)\) \}/);
+  // Owner ٢٣٦ (batch l18): the viewer is read once (viewerLinksAccess) for the mask and the locked-article strip.
+  assert.match(route, /const body = \{ available: true, \.\.\.maskDecreeTitlesForViewer\(withoutLockedArticles\(shapedLaw, viewer\.openIds\), viewer\.isSubscriber\) \};/);
+  assert.match(route, /\{ available: true, \.\.\.maskDecreeTitlesForViewer\(kept, viewer\.isSubscriber\) \}/);
   assert.match(route, /'Cache-Control': TIER_SHAPED_CACHE_CONTROL/);
   // The client box imports _shape: the decree helpers stay out of it.
   assert.doesNotMatch(readFileSync(new URL("./_shape.ts", import.meta.url), "utf8"), /decreeDisplay/);

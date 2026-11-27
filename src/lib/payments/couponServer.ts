@@ -40,7 +40,11 @@
  *     Batch l14: a code that leaves less than 1 SAR to pay (a full
  *     discount) answers checkout's 409 (card_required /
  *     full_discount_pending — fullDiscount.ts), never a 200 the pay button
- *     could not honour.
+ *     could not honour. Batch l18 (owner ق٢٦-١١, س٢٢٤ settled): it answers
+ *     200 {freeActivation: true} with listNet → 100 % → 0 — checkout
+ *     activates it at 0 SAR with no card (freeActivationCore.ts). A
+ *     free-plan / points code answers 409 "grant_code" (LIVE-13): the page
+ *     activates it through the code box instead of calling it «غير صالح».
  *   - recordCouponUsage — fulfilment's half: one coupon_usage row for a paid
  *     LIVE order that carried a coupon and was granted, idempotent (unique
  *     order_id, 20261026_20). It never blocks what the buyer paid for.
@@ -60,6 +64,9 @@ import {
   COUPONS_UNAVAILABLE_AR,
   couponRefusalAr,
   evaluateCoupon,
+  GRANT_CODE_AT_CHECKOUT_AR,
+  GRANT_CODE_AT_CHECKOUT_CODE,
+  grantCodeOpen,
   isFirstOrderCoupon,
   type CouponRow,
   type DiscountedQuote,
@@ -79,7 +86,7 @@ import {
   isActiveFounder,
 } from "./founderDiscount.ts";
 import type { TierRankTable } from "../entitlementGrantRules.ts";
-import { fullDiscountDecision, hasUsableSavedCard, isFullDiscount } from "./fullDiscount.ts";
+import { isFullDiscount } from "./fullDiscount.ts";
 
 export const COUPON_COLUMNS =
   "id, code, discount_type, discount_value, min_order_amount, eligible_user_types, max_uses, used_count, valid_from, valid_until, active, max_discount_pct, excluded_kinds, metadata";
@@ -146,7 +153,7 @@ export const COUPON_OPEN_ORDER_LIFETIME_MS = SUPERSEDE_WINDOW_MS;
 
 export type CouponPricing =
   | { ok: true; coupon: { id: string; code: string; limited: boolean }; quote: DiscountedQuote }
-  | { ok: false; status: 400 | 503; error: string };
+  | { ok: false; status: 400 | 409 | 503; error: string; code?: string };
 
 export interface CouponPricingInput {
   code: string;
@@ -363,6 +370,12 @@ export async function priceWithCoupon(admin: SupabaseClient, input: CouponPricin
   }
   const row = data as CouponRow | null;
   if (!row) return { ok: false, status: 400, error: COUPON_INVALID_AR };
+  // l18 (LIVE-13): a free-plan / points code is activated by the code box, not priced
+  if (row.discount_type === "plan_upgrade" || row.discount_type === "points_grant") {
+    return grantCodeOpen(row, { userType: input.userType, now: input.now })
+      ? { ok: false, status: 409, error: GRANT_CODE_AT_CHECKOUT_AR, code: GRANT_CODE_AT_CHECKOUT_CODE }
+      : { ok: false, status: 400, error: COUPON_INVALID_AR };
+  }
 
   const used = await alreadyUsed(admin, row.id, input.userId);
   if (used === null) return unavailable();
@@ -440,6 +453,8 @@ export type ValidateReply =
         source?: "founder";
         /** l11 O8: present only for an active founder member whose coupon beats his founder discount — the coupon replaces it (never both). */
         replacesFounder?: true;
+        /** l18 (ق٢٦-١١): the code covers the whole price — activated at 0 SAR without a card (the quote is listNet → 100 % → 0). */
+        freeActivation?: true;
         quote: { listNet: number; discount: number; net: number; vat: number; total: number };
       };
     }
@@ -491,7 +506,7 @@ export async function validateCouponWith(deps: ValidateDeps, input: ValidateInpu
     book: deps.book,
     vatPercent: input.vatPercent,
   });
-  if (!priced.ok) return { status: priced.status, body: { error: priced.error } };
+  if (!priced.ok) return { status: priced.status, body: { error: priced.error, ...(priced.code ? { code: priced.code } : {}) } };
 
   // l11 O8 (F12d): checkout's step 3c, the same reads and the same rule — a
   // founder member's discount off the LISTED price against what the other
@@ -522,15 +537,19 @@ export async function validateCouponWith(deps: ValidateDeps, input: ValidateInpu
   }
 
   const d = priced.quote;
-  // batch l14 (owner item 67ب): checkout's step 3f — a code that leaves less
-  // than 1 SAR to pay is told before the pay button: a saved card is
-  // required, and the full activation is not built yet
+  // l18 (owner ق٢٦-١١, settles س٢٢٤): checkout's step 3f — a code that
+  // leaves less than 1 SAR to pay is activated at 0 SAR without a card. The
+  // preview shows exactly that record: the listed net, a 100 % discount, 0.
   if (isFullDiscount(d.totalHalalas)) {
-    const decision = fullDiscountDecision(await hasUsableSavedCard(admin, input.userId, input.gatewayMode, now));
-    if (!decision.ok) {
-      return { status: decision.status, body: { error: decision.error, ...(decision.code ? { code: decision.code } : {}) } };
-    }
-    return { status: 503, body: { error: PREVIEW_FAILED_AR } };
+    return {
+      status: 200,
+      body: {
+        code: priced.coupon.code,
+        ...(replacesFounder ? { replacesFounder: true as const } : {}),
+        freeActivation: true as const,
+        quote: { listNet: d.listNetHalalas, discount: d.listNetHalalas, net: 0, vat: 0, total: 0 },
+      },
+    };
   }
   return {
     status: 200,

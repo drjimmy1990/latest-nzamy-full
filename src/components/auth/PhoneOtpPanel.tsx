@@ -153,8 +153,11 @@ export function PhoneOtpPanel({
         setResendAt(Date.now() + body.retryAfterSec * 1000);
         setNow(Date.now());
       }
+      // Owner ٢٣٥: the number is confirmed on another account — open the
+      // number field so another one can be typed straight away.
+      if (body?.reason === "phone_taken") setChanging(true);
       const fallback = isAr ? PHONE_SEND_FAILED_AR : "We could not send the code right now. Try again shortly.";
-      setMessage({ ok: false, text: isAr ? body?.error || fallback : fallback });
+      setMessage({ ok: false, text: isAr ? body?.error || fallback : body?.reason === "phone_taken" ? "This number cannot be used. Use another number or contact us." : fallback });
     } catch {
       if (needsCaptcha) captcha.spend();
       setMessage({ ok: false, text: isAr ? PHONE_SEND_FAILED_AR : "We could not send the code right now. Try again shortly." });
@@ -179,8 +182,12 @@ export function PhoneOtpPanel({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ code: clean }),
       });
-      const body = (await res.json().catch(() => null)) as { ok?: boolean; home?: string; error?: string; code?: string } | null;
+      const body = (await res.json().catch(() => null)) as { ok?: boolean; home?: string; error?: string; code?: string; reason?: string } | null;
       if (res.status === 409 && body?.code === "phone_otp_not_required") return void (await refresh());
+      if (body?.reason === "phone_taken") {
+        setChanging(true);
+        setSent(false);
+      }
       if (res.ok && body?.ok) {
         setDone(true);
         setMessage({ ok: true, text: t("تمّ تأكيد رقم جوالك. جارٍ نقلك…", "Your mobile is confirmed. Taking you on…") });

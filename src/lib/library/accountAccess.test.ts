@@ -31,9 +31,9 @@ test("owner item 9: the account keys — consultant by practice_kind, business t
   assert.equal(libraryAccountKey(undefined, null), null);
 });
 
-test("owner item 9: the defaults — lawyer open, every other type closed", () => {
+test("owner ق٢٦-٢: the defaults — lawyer, consultant and firm open, every other type closed", () => {
   assert.deepEqual({ ...LIBRARY_ACCESS_DEFAULTS }, {
-    lawyer: true, consultant: false, firm: false, individual: false, business: false, provider: false,
+    lawyer: true, consultant: true, firm: true, individual: false, business: false, provider: false,
   });
   assert.deepEqual(parseLibraryAccessMap(null), { ...LIBRARY_ACCESS_DEFAULTS });
   assert.deepEqual(parseLibraryAccessMap({ firm: "yes", individual: true, extra: true }), {
@@ -50,16 +50,20 @@ test("the decision: admin always, an exception wins both ways, else the switch; 
   assert.deepEqual(libraryAccessDecision({ userType: "lawyer", practiceKind: null, map, override: false }),
     { allowed: false, accountKey: "lawyer", via: "override" });
   assert.equal(libraryAccessDecision({ userType: "individual", practiceKind: null, map, override: null }).allowed, true);
-  assert.equal(libraryAccessDecision({ userType: "firm", practiceKind: null, map, override: null }).allowed, false);
-  assert.equal(libraryAccessDecision({ userType: "lawyer", practiceKind: "consultant", map: null, override: null }).allowed, false);
+  // ق٢٦-٢: an unsaved firm / consultant key reads as the new default (open); a saved false stays closed.
+  assert.equal(libraryAccessDecision({ userType: "firm", practiceKind: null, map, override: null }).allowed, true);
+  assert.equal(libraryAccessDecision({ userType: "firm", practiceKind: null, map: { firm: false }, override: null }).allowed, false);
+  assert.equal(libraryAccessDecision({ userType: "lawyer", practiceKind: "consultant", map: null, override: null }).allowed, true);
+  assert.equal(libraryAccessDecision({ userType: "lawyer", practiceKind: "consultant", map: { consultant: false }, override: null }).allowed, false);
+  assert.equal(libraryAccessDecision({ userType: "corporate", practiceKind: null, map: null, override: null }).allowed, false);
   assert.equal(libraryAccessDecision({ userType: "lawyer", practiceKind: "advocate", map: null, override: null }).allowed, true);
   assert.deepEqual(libraryAccessDecision({ userType: null, practiceKind: null, map, override: true }),
     { allowed: false, accountKey: null, via: "no_profile" });
   assert.equal(libraryAccessDecision({ userType: "martian", practiceKind: null, map: { lawyer: true }, override: null }).allowed, false);
 });
 
-test("the locked answer carries the owner's exact sentence and a code", () => {
-  assert.equal(LIBRARY_ACCOUNT_LOCKED_AR, "المكتبة القانونية متاحة حالياً للمحامين فقط، وستُفتح لحسابات أخرى قريباً");
+test("the locked answer carries the owner's sentence (ق٢٦-٢ wording) and a code", () => {
+  assert.equal(LIBRARY_ACCOUNT_LOCKED_AR, "المكتبة القانونية متاحة حالياً للمحامين والمستشارين القانونيين ومكاتب المحاماة، وستُفتح لحسابات أخرى قريباً");
   const body = libraryAccountLockedBody();
   assert.equal(body.error, LIBRARY_ACCOUNT_LOCKED_AR);
   assert.equal(body.code, LIBRARY_ACCOUNT_LOCKED_CODE);

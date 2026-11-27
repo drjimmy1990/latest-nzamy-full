@@ -4,6 +4,7 @@ import { assertRole } from "@/lib/auth/assertRole";
 import { parseIsoDate } from "@/lib/services/deadlineEngine";
 import { isPaymentStage, isPaymentStatus } from "@/lib/services/contractVocabulary";
 import { PAYMENT_SELECT, ISO_DATE_RE, toPaymentDto, dbErrorResponse, type PaymentRow } from "../../../_shared";
+import { CONTRACT_FEES_FIRM_ONLY_AR, contractFeesAllowed } from "@/lib/contracts/contractFeeAccess";
 
 /**
  * PATCH/DELETE /api/v1/lawyer/contracts/[id]/payments/[pid] — Phase 3.
@@ -38,7 +39,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
   try {
     const auth = await assertRole(["lawyer", "firm"]);
     if (!auth.ok) return auth.response;
-    const { supabase } = auth;
+    const { user, supabase } = auth;
     const { id, pid } = await context.params;
 
     const { contract, error: contractError } = await resolveContract(supabase, id);
@@ -47,6 +48,11 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     }
     if (!contract) {
       return NextResponse.json({ error: "العقد غير موجود" }, { status: 404 });
+    }
+    // Owner ٢٢٩ (batch l18): a firm contract's fee schedule is the firm
+    // owner's, managing partner's and finance manager's only (20261208_53).
+    if (!(await contractFeesAllowed(supabase, user.id, contract.firm_id as string | null))) {
+      return NextResponse.json({ error: CONTRACT_FEES_FIRM_ONLY_AR }, { status: 403 });
     }
 
     const { data: previousRow, error: previousError } = await supabase
@@ -151,7 +157,7 @@ export async function DELETE(_request: NextRequest, context: { params: Promise<{
   try {
     const auth = await assertRole(["lawyer", "firm"]);
     if (!auth.ok) return auth.response;
-    const { supabase } = auth;
+    const { user, supabase } = auth;
     const { id, pid } = await context.params;
 
     const { contract, error: contractError } = await resolveContract(supabase, id);
@@ -160,6 +166,11 @@ export async function DELETE(_request: NextRequest, context: { params: Promise<{
     }
     if (!contract) {
       return NextResponse.json({ error: "العقد غير موجود" }, { status: 404 });
+    }
+    // Owner ٢٢٩ (batch l18): a firm contract's fee schedule is the firm
+    // owner's, managing partner's and finance manager's only (20261208_53).
+    if (!(await contractFeesAllowed(supabase, user.id, contract.firm_id as string | null))) {
+      return NextResponse.json({ error: CONTRACT_FEES_FIRM_ONLY_AR }, { status: 403 });
     }
 
     const { error, count } = await supabase

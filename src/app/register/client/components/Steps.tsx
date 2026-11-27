@@ -572,6 +572,7 @@ export function Step4({
   clientType,
   requestedPlan,
   canRequestNow = false,
+  billing = null,
 }: {
   isAr: boolean;
   clientType: ClientType;
@@ -579,6 +580,8 @@ export function Step4({
   requestedPlan?: { id: string; name: string } | null;
   /** signUp returned a session, so an entitlement request can be sent now. */
   canRequestNow?: boolean;
+  /** LIVE-04: the cycle chosen on /pricing (?billing=). */
+  billing?: string | null;
 }) {
   const typeLabel = {
     individual: isAr ? "فرد" : "Individual",
@@ -625,7 +628,7 @@ export function Step4({
             cards that sat here are gone: neither plan is sold any more
             (pricingApprovals.test.ts), and the micro CTA's old `plan=shield`
             would have shown a micro signup the individual founder offer. */}
-        {requestedPlan && <PlanRequestCard plan={requestedPlan} canRequestNow={canRequestNow} />}
+        {requestedPlan && <PlanRequestCard plan={requestedPlan} canRequestNow={canRequestNow} billing={billing} />}
         {[
           { icon: Star, labelAr: "انتقل إلى لوحة التحكم", labelEn: "Go to Dashboard", href: dashboardHref },
           { icon: Scales, labelAr: "احجز استشارتك الأولى", labelEn: "Book your first consultation", href: "/services/consultations" },

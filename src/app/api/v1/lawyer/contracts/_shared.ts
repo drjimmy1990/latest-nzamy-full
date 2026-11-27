@@ -16,6 +16,7 @@ import type {
 } from "@/lib/services/contractsService";
 import { caseRelationshipFilter, caseLinkIssue } from "@/lib/services/contractCaseLink";
 import { readCounterparty } from "@/lib/services/contractCounterparty";
+import { contractFeesAllowed } from "@/lib/contracts/contractFeeAccess";
 
 // ─── selects (column lists the tables actually have — 20260905_phase3) ───────
 
@@ -307,8 +308,13 @@ export async function contractListExtras(
  * The contract with all four child lists, RLS-scoped through `supabase`
  * (the caller's client: a lawyer, a firm colleague or the client account).
  * null when RLS hides it or it does not exist — the route answers 404.
+ *
+ * Owner ٢٢٩ (batch l18): a FIRM contract's fee schedule is read only for the
+ * firm owner, managing partner or finance manager (contractFeesAllowed);
+ * anyone else gets `payments: []` with `paymentsHidden: true`, so the page
+ * says who sees it instead of showing an empty schedule.
  */
-export async function loadContractDetail(supabase: SupabaseClient, id: string): Promise<ContractDetail | null> {
+export async function loadContractDetail(supabase: SupabaseClient, id: string, viewerId: string): Promise<ContractDetail | null> {
   const { data: row, error } = await supabase.from("contracts").select(CONTRACT_SELECT).eq("id", id).maybeSingle();
   if (error) {
     console.error("[contracts/_shared] contract read failed:", error.message, error.code);
@@ -317,11 +323,15 @@ export async function loadContractDetail(supabase: SupabaseClient, id: string): 
   if (!row) return null;
   const contract = row as unknown as ContractRow;
 
+  const feesVisible = await contractFeesAllowed(supabase, viewerId, contract.firm_id);
+  const noRows = Promise.resolve({ data: [], error: null });
   const [versions, parties, obligations, payments] = await Promise.all([
     supabase.from("contract_versions").select(VERSION_SELECT).eq("contract_id", id).order("version_no", { ascending: false }),
     supabase.from("contract_parties").select(PARTY_SELECT).eq("contract_id", id).order("position").order("created_at"),
     supabase.from("contract_obligations").select(OBLIGATION_SELECT).eq("contract_id", id).order("due_on"),
-    supabase.from("contract_payments").select(PAYMENT_SELECT).eq("contract_id", id).order("position").order("due_on"),
+    feesVisible
+      ? supabase.from("contract_payments").select(PAYMENT_SELECT).eq("contract_id", id).order("position").order("due_on")
+      : noRows,
   ]);
   for (const [name, res] of [["versions", versions], ["parties", parties], ["obligations", obligations], ["payments", payments]] as const) {
     if (res.error) {
@@ -347,5 +357,6 @@ export async function loadContractDetail(supabase: SupabaseClient, id: string): 
     parties: ((parties.data ?? []) as unknown as PartyRow[]).map(toPartyDto),
     obligations: obligationRows.map(toObligationDto),
     payments: ((payments.data ?? []) as unknown as PaymentRow[]).map(toPaymentDto),
+    ...(feesVisible ? {} : { paymentsHidden: true }),
   };
 }

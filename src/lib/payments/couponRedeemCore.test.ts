@@ -147,7 +147,8 @@ test("unknown / inactive / expired / used / exhausted all answer the one sentenc
     [{ coupon: { ...PLAN_COUPON, valid_until: "2026-11-01T00:00:00Z" } }, "expired"],
     [{ open: { status: "already_used" } }, "used"],
     [{ open: { status: "exhausted" } }, "exhausted"],
-    [{ coupon: { ...PLAN_COUPON, plan_granted: "lawyer-bundle" } }, "a plan that cannot be granted"],
+    // l18: the bundle is a coupon target now — a retired plan still cannot be granted
+    [{ coupon: { ...PLAN_COUPON, plan_granted: "ind-preventive" } }, "a plan that cannot be granted"],
   ];
   for (const [o, label] of cases) {
     const budget = createCouponAttemptBudget();
@@ -238,5 +239,8 @@ test("source contract: the route is signed-in only, refuses a frozen account, an
   const route = readFileSync(new URL("../../app/api/v1/coupons/redeem/route.ts", import.meta.url), "utf8");
   assert.match(route, /if \(!user\) return reply\(\{ error: "سجّل الدخول لتفعيل الكود" \}, 401\);/);
   assert.match(route, /const frozen = frozenAccountResponse\(user\);/);
-  assert.match(route, /redeemCouponWith\(\s*\{ admin, ranks: TIER_RANK, giftValidDays: \(\) => readGiftValidDays\(admin\) \}/);
+  assert.match(route, /redeemCouponWith\(\s*\{\s*admin,\s*ranks: TIER_RANK,\s*giftValidDays: \(\) => readGiftValidDays\(admin\),/);
+  // l18: checkout's gates on the box too — the library lock and the licence (ق٢٦-٩)
+  assert.match(route, /libraryAccountAllowed: async \(userId\) => \(await readLibraryAccountAccess\(userId\)\)\.allowed,/);
+  assert.match(route, /licenceFacts: \(userId, userType\) => readLicenceFacts\(admin, userId, userType\),/);
 });

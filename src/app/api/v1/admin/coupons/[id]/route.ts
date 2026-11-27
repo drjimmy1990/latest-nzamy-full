@@ -132,7 +132,8 @@ export async function PATCH(
       updateData.active = nextActive;
     }
 
-    const discount = adminDiscountPatch(existing as Record<string, unknown>, body, nextActive);
+    // l18 (ق٢٦-١١): the writer's role — the super admin's code is not held to the staff's 25 % cap
+    const discount = adminDiscountPatch(existing as Record<string, unknown>, body, nextActive, gate.role);
     if (!discount.ok) {
       return NextResponse.json({ error: discount.error }, { status: 400 });
     }

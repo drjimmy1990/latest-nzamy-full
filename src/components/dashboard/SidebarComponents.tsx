@@ -29,6 +29,17 @@ import { useTheme } from "@/components/ThemeProvider";
 import { useSubscription, tierLabelAr } from "@/hooks/useSubscription";
 import { type SidebarGroup, type SidebarItem } from "@/constants/navigation";
 import { toArabicDigits } from "@/lib/services/arabicCount";
+import { OFFICE_LOCK_BADGE_AR, type OfficeLockAudience } from "@/constants/navigation.officeLock";
+
+/**
+ * What a locked row hands the upgrade dialog besides its name: for an office
+ * row (owner ق٢٦-١) the page itself — still readable, so the dialog offers it —
+ * and whose office plan opens it.
+ */
+export interface LockedClickOptions {
+  continueHref?: string;
+  officeAudience?: OfficeLockAudience;
+}
 
 // ─── Icon resolver ─────────────────────────────────────────────────────────────
 const ICON_MAP: Record<string, React.ElementType> = {
@@ -144,10 +155,14 @@ export function SidebarLink({
    * modal. A skeleton stands in the badge slot until the answer is real.
    */
   gateReady: boolean;
-  onLockedClick?: (feature: string) => void;
+  onLockedClick?: (feature: string, opts?: LockedClickOptions) => void;
 }) {
   const { isDark } = useTheme();
   const { can, requiredTier } = useSubscription();
+  // Owner ق٢٦-١: a paid office row while the database says this account is on
+  // the free side (navigation.officeLock.ts). Its link stays real (the page is
+  // readable); the click opens the upgrade dialog instead.
+  const officeLock = item.officeLocked ?? null;
 
   // Tier gating — if item has a gateKey, check subscription.
   // `gatePending` is the third state this used to collapse into "locked": the
@@ -202,6 +217,11 @@ export function SidebarLink({
             e.preventDefault();
             return;
           }
+          if (!isLocked && officeLock && onLockedClick) {
+            e.preventDefault();
+            onLockedClick(isAr ? item.label : item.labelEn, { continueHref: item.href, officeAudience: officeLock });
+            return;
+          }
           if (isLocked) {
             e.preventDefault();
             // THE SAME CLAIM THE BADGE STOPPED MAKING, ON CLICK.
@@ -235,7 +255,7 @@ export function SidebarLink({
               ? "text-zinc-400 hover:bg-white/[0.04] hover:text-zinc-200"
               : "text-slate-500 hover:bg-slate-50 hover:text-slate-800"
           }
-          ${isLocked ? "opacity-60" : ""}
+          ${isLocked || officeLock ? "opacity-60" : ""}
         `}
       >
         {/* Active indicator */}
@@ -266,8 +286,16 @@ export function SidebarLink({
           <UpgradeBadge tier={lockTier} />
         )}
 
+        {/* Office plan lock (ق٢٦-١) — names the plan that opens the row */}
+        {!compact && !isLocked && officeLock && (
+          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-amber-400/10 text-amber-500 border border-amber-400/20 flex-shrink-0 flex items-center gap-1">
+            <span aria-hidden="true">🔒</span>
+            {OFFICE_LOCK_BADGE_AR[officeLock]}
+          </span>
+        )}
+
         {/* Regular badge */}
-        {!compact && !isLocked && item.badge && (
+        {!compact && !isLocked && !officeLock && item.badge && (
           <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-[#C8A762]/15 text-[#C8A762] border border-[#C8A762]/30 flex-shrink-0">
             {item.badge}
           </span>
@@ -288,7 +316,7 @@ export function SidebarSection({
   hasClientGroup: boolean;
   /** See SidebarLink — false until the subscription gate has real inputs. */
   gateReady: boolean;
-  onLockedClick?: (feature: string) => void;
+  onLockedClick?: (feature: string, opts?: LockedClickOptions) => void;
 }) {
   const { isDark } = useTheme();
   const { can } = useSubscription();

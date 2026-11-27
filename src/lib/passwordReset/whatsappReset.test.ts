@@ -45,6 +45,8 @@ const GOOD_PASSWORD = "NewPass123!";
 
 type Calls = {
   lookups: string[];
+  phoneLookups: string[];
+  allowKeys: string[];
   issued: Array<{ userId: string; targetHash: string; codeHash: string }>;
   sent: Array<{ e164: string; code: string }>;
   verified: Array<{ codeHash: string; phone: string }>;
@@ -59,6 +61,8 @@ type Calls = {
 /** A fake world: `accounts` maps an address to its target (null = must not receive a code). */
 function world(opts: {
   accounts?: Record<string, ResetTarget | null>;
+  /** Batch l18: a confirmed mobile (E.164) → its one account (null = none / shared / may not reset). */
+  phones?: Record<string, ResetTarget | null>;
   available?: boolean;
   pepper?: string | undefined;
   captcha?: "ok" | "failed" | "misconfigured";
@@ -69,17 +73,24 @@ function world(opts: {
   setPasswordFails?: boolean;
   notify?: "sent" | "failed" | "throws";
 }) {
-  const calls: Calls = { lookups: [], issued: [], sent: [], verified: [], passwords: [], revoked: [], audits: 0, notices: [], logs: [], sleeps: [] };
+  const calls: Calls = { lookups: [], phoneLookups: [], allowKeys: [], issued: [], sent: [], verified: [], passwords: [], revoked: [], audits: 0, notices: [], logs: [], sleeps: [] };
   const stored = opts.stored ?? [];
   let clock = 1_000_000;
   const deps: ResetDeps = {
     pepperRaw: "pepper" in opts ? opts.pepper : PEPPER,
     available: async () => opts.available ?? true,
-    allow: () => opts.allow ?? true,
+    allow: (key) => {
+      calls.allowKeys.push(key);
+      return opts.allow ?? true;
+    },
     captcha: async () => opts.captcha ?? "ok",
     lookup: async (email) => {
       calls.lookups.push(email);
       return opts.accounts?.[email] ?? null;
+    },
+    lookupByPhone: async (e164) => {
+      calls.phoneLookups.push(e164);
+      return opts.phones?.[e164] ?? null;
     },
     issue: async (args) => {
       calls.issued.push(args);
@@ -456,4 +467,93 @@ test("status: the choice is off when the security check of start is not configur
   const server = readFileSync(new URL("./whatsappResetServer.ts", import.meta.url), "utf8");
   const fn = server.slice(server.indexOf("export async function whatsappResetIsAvailable"));
   assert.match(fn, /if \(turnstilePolicy\(process\.env\.TURNSTILE_SECRET_KEY, process\.env\.NODE_ENV\) === "misconfigured"\) return false;/);
+});
+
+// ── 6. batch l18 (LIVE-06): the confirmed mobile in place of the e-mail ─────
+test("l18 start by mobile: the same 200 for every number; only the one account with it confirmed gets a code", async () => {
+  const cases: Array<{ label: string; phone: string; opts: Parameters<typeof world>[0]; sends: boolean }> = [
+    { label: "one account has it confirmed", phone: "0500001701", opts: { phones: { [PHONE]: target } }, sends: true },
+    { label: "unknown number", phone: "0500009999", opts: { phones: {} }, sends: false },
+    // pw_reset_target_by_phone answers null for a shared number, staff, banned, a recent change…
+    { label: "shared by two accounts", phone: "+966500001701", opts: { phones: { [PHONE]: null } }, sends: false },
+    { label: "over the per-number limit", phone: "966500001701", opts: { phones: { [PHONE]: target }, allow: false }, sends: false },
+  ];
+  const answers: string[] = [];
+  for (const c of cases) {
+    const { deps, calls } = world(c.opts);
+    const out = await startWhatsAppReset(deps, { phone: c.phone });
+    assert.equal(calls.phoneLookups.length + calls.lookups.length, 0, `${c.label}: nothing is read before the answer`);
+    answers.push(JSON.stringify({ status: out.status, body: out.body }));
+    if (out.background) await out.background();
+    assert.equal(calls.sent.length, c.sends ? 1 : 0, `${c.label}: WhatsApp messages sent`);
+    assert.equal(calls.lookups.length, 0, `${c.label}: a mobile never falls back to the e-mail lookup`);
+    if (c.sends) assert.equal(calls.sent[0].e164, PHONE);
+    for (const line of calls.logs) assert.ok(!line.includes("9665"), `${c.label}: a log line leaks the number`);
+  }
+  assert.equal(new Set(answers).size, 1);
+  assert.deepEqual(JSON.parse(answers[0]), { status: 200, body: { ok: true, message: WHATSAPP_START_SENT_AR } });
+});
+
+test("l18 start by mobile: every spelling is one E.164 key for the limit and the lookup; a non-Saudi number is a 400", async () => {
+  for (const spelling of ["0500001701", "500001701", "+966500001701", "00966500001701", "٠٥٠٠٠٠١٧٠١"]) {
+    const { deps, calls } = world({ phones: { [PHONE]: target } });
+    const out = await startWhatsAppReset(deps, { phone: spelling });
+    assert.equal(out.status, 200, spelling);
+    assert.deepEqual(calls.allowKeys, [`pwreset:start:phone:${PHONE}`], spelling);
+    await out.background?.();
+    assert.deepEqual(calls.phoneLookups, [PHONE], spelling);
+  }
+  for (const bad of ["+201001234567", "0112345678", "123", ""]) {
+    const { deps, calls } = world({});
+    const out = await startWhatsAppReset(deps, { phone: bad });
+    assert.equal(out.status, 400, bad);
+    assert.equal(out.body.code, "invalid_phone");
+    assert.equal(out.background, null);
+    assert.equal(calls.allowKeys.length, 0);
+  }
+  // The e-mail path keeps its l17 key.
+  const mail = world({ accounts: { "reset.ok@example.test": target } });
+  await startWhatsAppReset(mail.deps, { email: "reset.ok@example.test" });
+  assert.deepEqual(mail.calls.allowKeys, ["pwreset:start:reset.ok@example.test"]);
+});
+
+test("l18 verify by mobile: the code sent to the number resets the password; unknown / shared numbers get the one refusal", async () => {
+  const w = world({ phones: { [PHONE]: target } });
+  const started = await startWhatsAppReset(w.deps, { phone: "0500001701" });
+  await started.background?.();
+  const code = w.calls.sent[0].code;
+  const out = await verifyWhatsAppReset(w.deps, { phone: "0500001701", code, password: GOOD_PASSWORD, confirm: GOOD_PASSWORD });
+  assert.equal(out.status, 200);
+  assert.deepEqual(w.calls.passwords, [{ userId: USER, password: GOOD_PASSWORD }]);
+  assert.ok(w.calls.allowKeys.includes(`pwreset:verify:phone:${PHONE}`));
+
+  const refusals: string[] = [];
+  const phoneWorlds: Array<Record<string, ResetTarget | null>> = [{}, { [PHONE]: null }];
+  for (const phones of phoneWorlds) {
+    const x = world({ phones, stored: [hashOtpCode(PEPPER, USER, "password_reset", "123456")] });
+    const r = await verifyWhatsAppReset(x.deps, { phone: PHONE, code: "123456", password: GOOD_PASSWORD, confirm: GOOD_PASSWORD });
+    refusals.push(JSON.stringify(r));
+    assert.equal(x.calls.passwords.length, 0);
+    assert.ok(x.calls.sleeps.length > 0, "held to the minimum time");
+  }
+  const wrong = world({ phones: { [PHONE]: target } });
+  const rw = await verifyWhatsAppReset(wrong.deps, { phone: PHONE, code: "000000", password: GOOD_PASSWORD, confirm: GOOD_PASSWORD });
+  refusals.push(JSON.stringify(rw));
+  assert.equal(new Set(refusals).size, 1, "unknown, shared and a wrong code answer alike");
+  assert.equal(JSON.parse(refusals[0]).body.error, WHATSAPP_CODE_INVALID_AR);
+
+  const bad = await verifyWhatsAppReset(world({}).deps, { phone: "+201001234567", code: "123456", password: GOOD_PASSWORD, confirm: GOOD_PASSWORD });
+  assert.equal(bad.status, 400);
+  assert.equal(bad.body.code, "invalid_phone");
+});
+
+test("l18 routes and server: { phone } reaches the core; the server asks pw_reset_target_by_phone", () => {
+  const read = (p: string) => readFileSync(new URL(p, import.meta.url), "utf8");
+  assert.match(read("../../app/api/v1/auth/password-reset/whatsapp/start/route.ts"), /\{ email: body\.email, phone: body\.phone \}/);
+  assert.match(read("../../app/api/v1/auth/password-reset/whatsapp/verify/route.ts"), /email: body\.email,\s*phone: body\.phone,/);
+  const server = read("./whatsappResetServer.ts");
+  assert.match(server, /svc\.rpc\("pw_reset_target_by_phone", \{ p_phone: e164 \}\)/);
+  assert.match(server, /lookupByPhone: \(e164\) => lookupByPhone\(svc, e164\)/);
+  // Both lookups go through the same suspension / freeze check.
+  assert.equal((server.match(/return eligibleTarget\(svc, data\);/g) ?? []).length, 2);
 });

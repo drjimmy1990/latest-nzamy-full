@@ -63,6 +63,13 @@ export interface SidebarItem {
    * «قريباً» — a doubt never opens a tool (withLiveToolBadges).
    */
   liveToolId?: string;
+  /**
+   * Owner ق٢٦-١: set at run time (withOfficeLocks, navigation.officeLock.ts)
+   * on a paid office row while the database says the account is on the free
+   * side — the row shows 🔒 and the plan, and its click opens the upgrade
+   * dialog (/pricing) with a link to the page itself. Never written statically.
+   */
+  officeLocked?: "lawyer" | "firm";
 }
 
 // ─── Dashboard href helper ────────────────────────────────────────────────────

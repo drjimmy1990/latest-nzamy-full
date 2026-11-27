@@ -279,8 +279,8 @@ test("entry links (l12 integration): hub card and sidebars for individuals and b
 });
 
 
-test("«قيد التفعيل» rows (l12): asked about like «قريباً», badge dropped once live, never moved into the «قريباً» section", async () => {
-  const { comingSoonToolIds, withLiveToolBadges, withComingSoonLast, PENDING_ACTIVATION_BADGE } = await import("../../constants/navigation.comingSoon.ts");
+test("«قيد التفعيل» rows (l12): asked about like «قريباً», badge dropped once live, hidden until then (ق٢٦-١)", async () => {
+  const { comingSoonToolIds, withLiveToolBadges, withoutUnbuiltItems, PENDING_ACTIVATION_BADGE } = await import("../../constants/navigation.comingSoon.ts");
   const groups = [{ title: "x", items: [
     { label: "a", href: "/a", icon: "X" },
     { label: "b", href: "/ai/simple-contract", icon: "X", badge: PENDING_ACTIVATION_BADGE, liveToolId: "simple-contract" },
@@ -289,5 +289,6 @@ test("«قيد التفعيل» rows (l12): asked about like «قريباً», b
   const live = withLiveToolBadges(groups as never, new Set(["simple-contract"]));
   assert.equal(live[0].items[1].badge, undefined);
   assert.equal(withLiveToolBadges(groups as never, new Set(["other"]))[0].items[1].badge, PENDING_ACTIVATION_BADGE);
-  assert.equal(withComingSoonLast(groups as never).length, 1, "not grouped with «قريباً»");
+  assert.deepEqual(withoutUnbuiltItems(groups as never)[0].items.map((i: { href: string }) => i.href), ["/a"], "hidden while «قيد التفعيل»");
+  assert.deepEqual(withoutUnbuiltItems(live)[0].items.map((i: { href: string }) => i.href), ["/a", "/ai/simple-contract"], "shown once live");
 });

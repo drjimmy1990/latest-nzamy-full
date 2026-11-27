@@ -200,7 +200,8 @@ export default function AccountTypeConverterCard({
               </p>
               <p className={`text-[11px] leading-6 ${isDark ? "text-zinc-300" : "text-slate-600"}`}>
                 من «{fullAccountTypeLabelAr(state.user_type, state.kind)}» إلى «{target ? CONVERT_TARGET_LABEL_AR[target] : ""}». يتغيّر معه مسار لوحة التحكم وما يصل إليه صاحب الحساب.
-                {" "}يعود توثيق ملفه المهني إلى «قيد المراجعة» حتى تُراجع رخصته من جديد، ولو كان موثّقاً من قبل.
+                {/* Owner answer ٢٢٣ (27 Nov, 20261208_52): the conversion keeps the verification. */}
+                {" "}تبقى حالة توثيق ملفه المهني كما هي، ويمكن تعديلها يدوياً عند الحاجة (الحساب الذي لم يكن له ملف مهني من قبل يبدأ ملفه «قيد المراجعة»).
                 {" "}تُحفظ نسخة من بياناته السابقة ولا يُحذف شيء.
               </p>
               <div className="flex items-center gap-2">

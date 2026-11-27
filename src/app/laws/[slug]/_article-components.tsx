@@ -973,7 +973,9 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
       ? isDark ? "border-white/[0.04] bg-amber-950/20" : "border-amber-100 bg-amber-50/40"
       : isDark ? "border-white/[0.05] bg-zinc-800/50" : "border-slate-100 bg-slate-50/80";
 
-  const showExplainBtn = !isRepealed && (viewMode !== "regulation" || !!mergedReg);
+  // Owner ٢٣٦ (27 Nov, batch l18): a locked article shows no «اشرح لي» at all
+  // (it used to look enabled and open the paywall).
+  const showExplainBtn = !isRepealed && !isLocked && (viewMode !== "regulation" || !!mergedReg);
   const explainPrice = aiToolPriceText("library-assistant", isRTL ? "ar" : "en");
   // l16 review: a locked article opens the paywall, not a paid explanation of
   // text the reader may not read; the price only where the tool can run.
@@ -1121,7 +1123,9 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
                 everyone, repealed and locked articles too (a repealed article's in-force
                 counterpart is its most useful link); sending to the drafter stays in the
                 draft drawer («إرسال إلى الصائغ القانوني»). */}
-            {viewMode !== "regulation" && refBox && <ArticleRefsButton articleId={article.id} />}
+            {/* Owner ٢٣٦ (27 Nov, batch l18): not on a locked article — its links, their count and the
+                button are hidden for a non-subscriber (the server sends none either). */}
+            {viewMode !== "regulation" && refBox && !isLocked && <ArticleRefsButton articleId={article.id} />}
             {/* File 03 L12: touch targets of at least 44 px, with Arabic names. */}
             <button
               onClick={mainOnCopy}
@@ -1143,6 +1147,8 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
               isDark={isDark}
             />
             
+            {/* Owner ٢٣٦: no «أضف للمسودة» on a locked article (removal stays if it is somehow in the draft). */}
+            {(!isLocked || mainInCart) && (
             <button
               onClick={mainOnToggleCart}
               aria-label={mainInCart ? (isRTL ? "إزالة من المسودة" : "Remove from draft") : (isRTL ? "إضافة للمسودة" : "Add to draft")}
@@ -1152,6 +1158,7 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
             >
               <DraftToggleLabel inDraft={mainInCart} size={12} />
             </button>
+            )}
           </div>
         )}
       </div>
@@ -1267,7 +1274,7 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
                 mode, where the header buttons are hidden. Outside it the component
                 stays mounted without a chip: it is still the per-article fallback
                 request when the law's one links request fails (_ref-box.tsx). */}
-            {viewMode !== "regulation" && refBox && <ArticleRefsInline articleId={article.id} chip={isReadingMode} />}
+            {viewMode !== "regulation" && refBox && !isLocked && <ArticleRefsInline articleId={article.id} chip={isReadingMode} />}
 
             {/*
               Amendments toggle (collapsible <details> block, matches the layout/style of parsed details blocks).
@@ -1415,7 +1422,7 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
                       </p>
                     )}
                   </div>
-                  {!isReadingMode && mergedReg && (
+                  {!isReadingMode && mergedReg && (!isLocked || regInCart) && (
                     <div className="flex gap-1.5 ms-auto print:hidden">
                       <button
                         onClick={(e) => { e.stopPropagation(); handleCopyReg(); }}

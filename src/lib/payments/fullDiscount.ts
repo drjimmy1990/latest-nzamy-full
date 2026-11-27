@@ -36,6 +36,13 @@
  * still stops here: saving a card without a purchase (Moyasar tokenization)
  * is not built, and dropping the saved-card rule is the owner's call.
  *
+ * Batch l18 (owner ق٢٦-١١, 26 Nov — settles س٢٢٤ and reverses item 67ب):
+ * the saved-card rule is DROPPED. A code that covers the whole price is
+ * activated at once at 0 SAR, with no card and no Moyasar
+ * (freeActivationCore.activateFullDiscountWith, 20261208_30); checkout and
+ * the preview no longer call fullDiscountDecision / hasUsableSavedCard. They
+ * stay here (tested) for the record; isFullDiscount is still the threshold.
+ *
  * Pure: a type-only import, so `node --test` loads it.
  */
 

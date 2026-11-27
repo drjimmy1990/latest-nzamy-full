@@ -453,7 +453,13 @@ function UserRow({
             </span>
           )}
         </div>
-        <p className={`text-[11px] truncate ${isDark ? "text-zinc-500" : "text-slate-400"}`}>{user.email}</p>
+        {/* Owner answer ٢٣٥ §4 (27 Nov): name + e-mail + mobile for every member. */}
+        <p className={`text-[11px] truncate ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
+          <span>{user.email || "—"}</span>
+          <span className="mx-1.5">·</span>
+          <span>الجوال: </span>
+          <span dir="ltr" className="font-mono">{user.phone || "—"}</span>
+        </p>
         <div className={`flex items-center gap-3 mt-1 text-[10px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
           <span><Robot size={9} className="inline me-1" />{user.credit_balance == null ? "—" : toArabicDigits(user.credit_balance.toLocaleString())} طلب AI</span>
           <span>انضم: {formatArabicDate(user.created_at)}</span>
@@ -815,7 +821,7 @@ export default function AdminUsersPage() {
         <div className="flex flex-col sm:flex-row gap-3">
           <div className={`flex items-center gap-2 flex-1 px-3 py-2.5 rounded-xl border ${isDark ? "border-white/[0.06] bg-zinc-900/60" : "border-slate-200 bg-white"}`}>
             <MagnifyingGlass size={15} className={isDark ? "text-zinc-500" : "text-slate-400"} />
-            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="بحث بالاسم أو البريد..."
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="بحث بالاسم أو البريد أو الجوال..."
               className={`flex-1 bg-transparent text-sm outline-none ${isDark ? "text-zinc-200 placeholder:text-zinc-600" : "text-slate-700 placeholder:text-slate-400"}`} />
           </div>
           <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as UserStatus | "all")}

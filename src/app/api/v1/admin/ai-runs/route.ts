@@ -4,7 +4,7 @@ import { requireStaff } from "@/lib/access-control";
 import { AI_TOOLS } from "@/lib/ai/tools";
 import { registryPointsLabel } from "@/lib/ai/toolPointsDisplay";
 import { resolveToolRuntime } from "@/lib/ai/aiToolsConfig";
-import { AI_MODEL_CHOICES, AI_MODEL_NOTES_AR, AI_MODEL_SETTING, parseAiModel } from "@/lib/ai/aiModel";
+import { AI_MODEL_CHOICES, AI_MODEL_NOTES_AR, AI_MODEL_SETTING, parseAiModel, retiredAiModelNoteAr } from "@/lib/ai/aiModel";
 
 /**
  * GET /api/v1/admin/ai-runs — «تشغيلات الذكاء الاصطناعي» (AI wave 0, plan §5).
@@ -44,6 +44,8 @@ export async function GET(request: NextRequest) {
     const model = {
       current: parseAiModel(byKey.get(AI_MODEL_SETTING)),
       choices: AI_MODEL_CHOICES.map((name) => ({ name, note: AI_MODEL_NOTES_AR[name] ?? null })),
+      // Owner ٢٢٦: the stored value names a retired model (the tools run on the default).
+      retiredNote: retiredAiModelNoteAr(byKey.get(AI_MODEL_SETTING)),
     };
 
     const tools = Object.values(AI_TOOLS).map((spec) => {

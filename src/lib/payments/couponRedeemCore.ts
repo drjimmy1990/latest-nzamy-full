@@ -38,6 +38,14 @@
  *   6. 200 {kind: "points" | "plan", …, receiptNumber, redemptionId}: the
  *      free-activation receipt (/dashboard/billing/activation/<id>) shows the
  *      three lines — full price, 100 % discount, net 0.
+ * Batch l18 (owner ق٢٦-١١): a free-plan code may name a LIBRARY pass or the
+ * office + library BUNDLE too (couponGrantRules.grantablePlans); the grant is
+ * freeActivationCore.grantRedeemedItem (the library pass on the redemption
+ * itself, 20261208_30). The box applies checkout's newer gates as well: the
+ * library lock for the account type (deps.libraryAccountAllowed — a library
+ * pass or the bundle) and the licence (deps.licenceFacts, ٢٣٩ — a free code
+ * activates a professional plan only for a verified licence), so a code is
+ * never a way around them.
  * Missing objects (the migration not run) → 503 «تفعيل الأكواد غير متاح
  * حالياً», nothing written. Never a 500.
  *
@@ -54,8 +62,11 @@ import { otherPaidPlanRunning, readHeldPlans } from "./upgradeProration.ts";
 import { readConsultantStanding } from "../auth/consultantScopeServer.ts";
 import { CONSULTANT_REFUSED_PLAN_ID_LIST } from "../pricing/audienceForUserType.ts";
 import { isMissingPaymentsObject } from "./fulfillDecision.ts";
-import { grantPurchase } from "./grantPurchase.ts";
 import type { TierRankTable } from "../entitlementGrantRules.ts";
+import { auditRedemption, finishRedemption as finish, grantRedeemedItem, testAccountActivationRefusal } from "./freeActivationCore.ts";
+import { licenceFreeCodeDecision, licenceGatedPurchase } from "./licenceGate.ts";
+import type { LicenceFacts } from "./licenceGate.ts";
+import { LIBRARY_ACCOUNT_LOCKED_AR } from "../library/accountAccess.ts";
 
 export const REDEEM_UNAVAILABLE_AR = "تفعيل الأكواد غير متاح حالياً، حاول مرة أخرى بعد قليل";
 export const REDEEM_AUDIENCE_AR = "هذا الكود لباقة غير متاحة لنوع حسابك";
@@ -75,6 +86,16 @@ export interface RedeemDeps {
   attempts?: CouponAttemptBudget;
   now?: () => Date;
   catalog?: Readonly<Record<string, PayableItem>>;
+  /** l18: the library lock for the account type (checkout's step 2b) — asked for a library pass or the bundle; a throw is a refusal. Absent → not asked. */
+  libraryAccountAllowed?: (userId: string) => Promise<boolean>;
+  /** l18 (٢٣٩): the verification facts — a free code activates a professional plan only for a VERIFIED licence. Absent → not asked. */
+  licenceFacts?: (userId: string, userType: string) => Promise<LicenceFacts | null>;
+  /**
+   * l18 review: the gateway's mode (getMoyasarConfig; null when the gateway is
+   * off). A test account's free-plan / points code is activated only in test
+   * mode (testAccountActivationRefusal). Absent (undefined) → not asked.
+   */
+  gatewayMode?: "test" | "live" | null;
 }
 
 export type RedeemReply =
@@ -106,64 +127,6 @@ function insideDates(row: CouponRedeemRow, now: Date): boolean {
   if (row.valid_from && Date.parse(row.valid_from) > t) return false;
   if (row.valid_until && Date.parse(row.valid_until) < t) return false;
   return true;
-}
-
-async function finish(admin: SupabaseClient, id: string, ok: boolean, subscriptionId: string | null): Promise<string | null> {
-  const { data, error } = await admin.rpc("coupon_redeem_finish", { p_redemption: id, p_ok: ok, p_subscription: subscriptionId });
-  if (error) {
-    console.error("[coupons/redeem] closing the redemption failed:", id, error.code);
-    return null;
-  }
-  return typeof data === "string" ? data : null;
-}
-
-/**
- * l16 review: one admin audit row per redemption that granted something
- * (actor_type 'user', the checkMinTopup pattern) — best effort: the grant and
- * its receipt stand even if the row cannot be written.
- */
-async function auditRedemption(
-  admin: SupabaseClient,
-  input: { userId: string; couponId: string; code: string; redemptionId: string; receiptNumber: string; kind: "points" | "plan"; itemId: string | null; points: number | null },
-): Promise<void> {
-  try {
-    const { error } = await admin.from("admin_audit_events").insert({
-      actor_id: input.userId,
-      actor_type: "user",
-      action: "coupon_redeemed",
-      target_type: "coupon",
-      target_id: input.couponId,
-      before_state: null,
-      after_state: null,
-      metadata: {
-        code: input.code,
-        redemption_id: input.redemptionId,
-        receipt_number: input.receiptNumber,
-        kind: input.kind,
-        item_id: input.itemId,
-        points: input.points,
-      },
-    });
-    if (error) console.error("[coupons/redeem] the audit row failed:", error.code);
-  } catch {
-    console.error("[coupons/redeem] the audit row threw");
-  }
-}
-
-/** The plan row this redemption granted (metadata.order_id = the redemption id): its id, and the method set to «coupon». */
-async function markPlanRow(admin: SupabaseClient, userId: string, redemptionId: string): Promise<string | null> {
-  const { data, error } = await admin
-    .from("subscriptions")
-    .select("id, metadata")
-    .eq("user_id", userId)
-    .eq("metadata->>order_id", redemptionId)
-    .limit(1);
-  if (error || !Array.isArray(data) || data.length === 0) return null;
-  const row = data[0] as { id: string; metadata?: Record<string, unknown> | null };
-  const metadata = { ...(row.metadata ?? {}), method: "coupon", coupon_redemption_id: redemptionId };
-  const { error: upErr } = await admin.from("subscriptions").update({ metadata }).eq("id", row.id);
-  if (upErr) console.warn("[coupons/redeem] stamping the plan row's method failed:", row.id, upErr.code);
-  return row.id;
 }
 
 export async function redeemCouponWith(deps: RedeemDeps, input: { userId: string; code: unknown }): Promise<RedeemReply> {
@@ -221,9 +184,21 @@ export async function redeemCouponWith(deps: RedeemDeps, input: { userId: string
     const grantable = grantablePlan(row.plan_granted, billing, catalog);
     const item = grantable ? resolveItem(grantable.id, catalog) : undefined;
     const listNet = item && typeof billing === "string" && Object.hasOwn(item.prices, billing) ? item.prices[billing as Billing] : undefined;
-    if (!item || !item.tier || typeof listNet !== "number" || listNet <= 0) {
+    // l18: a plan (with its tier) or a library pass
+    const grantableKind = !!item && ((item.kind === "plan" && !!item.tier) || item.kind === "library");
+    if (!item || !grantableKind || typeof listNet !== "number" || listNet <= 0) {
       console.error("[coupons/redeem] a free-plan code names no plan on sale:", row.id);
       return fail(400, COUPON_INVALID_AR);
+    }
+    // l18: the library lock for the account type (a library pass, or the bundle's pass)
+    if ((item.kind === "library" || item.libraryByBilling) && deps.libraryAccountAllowed) {
+      let open = false;
+      try {
+        open = (await deps.libraryAccountAllowed(input.userId)) === true;
+      } catch {
+        open = false;
+      }
+      if (!open) return fail(403, LIBRARY_ACCOUNT_LOCKED_AR);
     }
     if (!buyerAllowed(item, userType)) return fail(403, REDEEM_AUDIENCE_AR);
     if (userType === "lawyer" && CONSULTANT_REFUSED_PLAN_ID_LIST.includes(item.id)) {
@@ -231,16 +206,36 @@ export async function redeemCouponWith(deps: RedeemDeps, input: { userId: string
       if (standing.readFailed) return fail(503, REDEEM_CHECK_FAILED_AR);
       if (standing.scopeKind === "consultant") return fail(403, REDEEM_CONSULTANT_AR);
     }
-    const read = await readHeldPlans(admin, { userId: input.userId, tier: item.tier, now, ranks: deps.ranks });
-    if (!read) return fail(503, REDEEM_UNAVAILABLE_AR);
-    const held = read.decision;
-    if (held.kind === "refused") return fail(409, held.error);
-    if (held.kind === "credit") return fail(409, REDEEM_PAID_PLAN_RUNNING_AR);
-    // l16 review: any other paid plan with days left, whatever granted it (a
-    // bank transfer, an admin grant, a test account — the proration credits
-    // only live paid orders, so those days would be lost without a word)
-    if (otherPaidPlanRunning(read.rows, item.id, now.getTime())) return fail(409, REDEEM_PAID_PLAN_RUNNING_AR);
+    // l18 (٢٣٩): a free code activates a professional plan only for a verified
+    // licence (nothing paid to hold until approval) — refused before the code is opened
+    if (deps.licenceFacts && licenceGatedPurchase(item, userType)) {
+      let facts: LicenceFacts | null;
+      try {
+        facts = await deps.licenceFacts(input.userId, userType as string);
+      } catch {
+        facts = null;
+      }
+      const decision = licenceFreeCodeDecision(userType as string, facts, now);
+      if (decision.ok === false) return fail(decision.status, decision.error);
+    }
+    if (item.kind === "plan" && item.tier) {
+      const read = await readHeldPlans(admin, { userId: input.userId, tier: item.tier, now, ranks: deps.ranks });
+      if (!read) return fail(503, REDEEM_UNAVAILABLE_AR);
+      const held = read.decision;
+      if (held.kind === "refused") return fail(409, held.error);
+      if (held.kind === "credit") return fail(409, REDEEM_PAID_PLAN_RUNNING_AR);
+      // l16 review: any other paid plan with days left, whatever granted it (a
+      // bank transfer, an admin grant, a test account — the proration credits
+      // only live paid orders, so those days would be lost without a word)
+      if (otherPaidPlanRunning(read.rows, item.id, now.getTime())) return fail(409, REDEEM_PAID_PLAN_RUNNING_AR);
+    }
     plan = { item, billing: billing as Billing, listNet };
+  }
+
+  // 4b. a test account: no real activation outside test mode (l18 review)
+  if (deps.gatewayMode !== undefined) {
+    const refused = await testAccountActivationRefusal(admin, input.userId, deps.gatewayMode);
+    if (refused) return fail(refused.status, refused.error);
   }
 
   // 5. the redemption, under the coupon's row lock
@@ -273,26 +268,17 @@ export async function redeemCouponWith(deps: RedeemDeps, input: { userId: string
     return { status: 200, body: { kind: "points", code: row.code, points, receiptNumber, redemptionId: id } };
   }
   if ((status === "opened" || status === "resume") && plan && id && receiptNumber) {
-    const granted = await grantPurchase(
-      {
-        admin,
-        ranks: deps.ranks,
-        catalog,
-        // a grantable plan has no library part (couponGrantRules), so this is never called
-        grantLibrary: async () => ({ ok: false as const, error: "no library part in a coupon plan" }),
-      },
-      { id, user_id: input.userId, kind: "plan", item_id: plan.item.id, billing: plan.billing, metadata: null },
-      { now },
-    );
+    // l18: a plan (keyed on the redemption id), the bundle's library part, or a library pass
+    const granted = await grantRedeemedItem({ admin, ranks: deps.ranks, catalog }, { id, userId: input.userId, item: plan.item, billing: plan.billing }, now);
     if (!granted.ok) {
+      if (granted.alreadyEntitled) {
+        await finish(admin, id, false, null);
+        return fail(409, REDEEM_HIGHER_PLAN_AR);
+      }
       console.error("[coupons/redeem] granting the plan failed (the redemption stays open for a retry):", id, granted.error);
       return fail(503, REDEEM_UNAVAILABLE_AR);
     }
-    if (granted.alreadyEntitled) {
-      await finish(admin, id, false, null);
-      return fail(409, REDEEM_HIGHER_PLAN_AR);
-    }
-    const subscriptionId = await markPlanRow(admin, input.userId, id);
+    const subscriptionId = granted.subscriptionId;
     const closed = await finish(admin, id, true, subscriptionId);
     if (closed !== "granted") console.error("[coupons/redeem] the plan is granted but the redemption did not close:", id, closed);
     await auditRedemption(admin, { userId: input.userId, couponId: row.id, code: row.code, redemptionId: id, receiptNumber, kind: "plan", itemId: plan.item.id, points: null });

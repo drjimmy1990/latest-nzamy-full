@@ -10,12 +10,13 @@ import { WHATSAPP_UNAVAILABLE_AR } from "@/lib/passwordReset/passwordResetRules"
  * POST /api/v1/auth/password-reset/whatsapp/start — «أرسل رمزًا إلى واتساب»
  * on /forgot-password (batch l17). Signed-out: no session is read or made.
  *
- * Body: { email, turnstileToken }
+ * Body: { email, turnstileToken } — or { phone, turnstileToken } with the
+ * confirmed Saudi mobile in place of the e-mail (batch l18, LIVE-06).
  *   200 { ok: true, message }  the SAME answer for every well-formed address
  *       once the security check passed — an account or not, a confirmed
  *       mobile or not, staff, suspended, over a limit. The code (if any) goes
  *       out after the answer (after()), to the account's confirmed mobile.
- *   400 { code: "invalid_email" } · 403 { code: "captcha" } · 503 { code:
+ *   400 { code: "invalid_email" | "invalid_phone" } · 403 { code: "captcha" } · 503 { code:
  *       "unavailable" } (WhatsApp sending or the switch off, or the security
  *       check not configured in production — the status route then answers
  *       { whatsapp: false } too). None of these depends on the account.
@@ -58,7 +59,7 @@ export async function POST(request: Request) {
     return passed ? "ok" : "failed";
   };
 
-  const answer = await startWhatsAppReset(serverResetDeps(svc, captcha), { email: body.email });
+  const answer = await startWhatsAppReset(serverResetDeps(svc, captcha), { email: body.email, phone: body.phone });
   if (answer.background) after(answer.background);
   return NextResponse.json(answer.body, { status: answer.status, headers: NO_STORE });
 }

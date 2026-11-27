@@ -8958,9 +8958,14 @@ select 'l16 review: the automatic suspension lift counts its failed tries (lift_
        coalesce((select count(*) = 2 from information_schema.columns
                   where table_schema = 'public' and table_name = 'account_suspension_freezes'
                     and column_name in ('lift_attempts', 'lift_last_error')), false) as ok;
-select 'l16 review: an account-type conversion puts the licence verification back to pending (run 20261206_80)' as check,
-       coalesce(position('set verification_status = ''pending'''
-                         in pg_catalog.pg_get_functiondef(to_regprocedure('public.admin_change_account_type(uuid,text,text,uuid)'))) > 0, false) as ok;
+-- l18 (owner ٢٢٣, 20261208_52) reversed the l16 reset to pending: this check now pins what both bodies
+-- share (the audit row records the verification before and after); the reset's absence is checked in
+-- the l18_answers block at the end of this file.
+select 'l16 review: an account-type conversion records the licence verification before and after in its audit row (run 20261206_80; owner ٢٢٣ keeps it — see l18_answers)' as check,
+       coalesce(position('''verification'', v_prev_verification'
+                         in pg_catalog.pg_get_functiondef(to_regprocedure('public.admin_change_account_type(uuid,text,text,uuid)'))) > 0
+                and position('verification_before'
+                             in pg_catalog.pg_get_functiondef(to_regprocedure('public.admin_change_account_type(uuid,text,text,uuid)'))) > 0, false) as ok;
 -- <<< verify:l16_review
 -- >>> verify:l17_pwreset — supabase/tests/rls/l17_pwreset.test.sql
 -- Batch l17: «نسيت كلمة المرور» by a WhatsApp code to the confirmed mobile. 20261207_10 runs BEFORE
@@ -8996,3 +9001,146 @@ select 'l17 pwreset: a mobile confirmed in place of another in the last 7 days o
        coalesce(position('recent_phone_change' in pg_catalog.pg_get_functiondef(to_regprocedure('public.pw_reset_target(text)'))) > 0
                 and position('phone_otp_challenges' in pg_catalog.pg_get_functiondef(to_regprocedure('public.pw_reset_target(text)'))) > 0, false) as ok;
 -- <<< verify:l17_pwreset
+-- >>> verify:l18_signup — supabase/tests/rls/l18_signup.test.sql
+-- Batch l18 (LIVE-01): a form sign-up is not sent through the onboarding wizard again. 20261208_10
+-- runs AFTER the deploy. Before it runs the checks below answer ok = false («run 20261208_10»).
+select 'l18 signup: a form sign-up''s profile starts onboarding_completed — BEFORE INSERT trigger on profiles, SECURITY DEFINER with an empty search_path, no session may call it (run 20261208_10)' as check,
+       coalesce((select p.prosecdef
+                        and p.proconfig @> array['search_path=""']
+                        and not has_function_privilege('anon', p.oid, 'EXECUTE')
+                        and not has_function_privilege('authenticated', p.oid, 'EXECUTE')
+                        and exists (select 1 from pg_catalog.pg_trigger t
+                                     where t.tgrelid = to_regclass('public.profiles')
+                                       and t.tgname = 'trg_profiles_form_signup_onboarded'
+                                       and t.tgfoid = p.oid
+                                       and t.tgenabled <> 'D'
+                                       and (t.tgtype & 7) = 7)
+                   from pg_catalog.pg_proc p
+                  where p.oid = to_regprocedure('public.profiles_form_signup_onboarded()')), false) as ok;
+select 'l18 signup: only an e-mail sign-up from the forms is marked (GoTrue''s provider = email and a user_type) — a Google sign-up keeps the wizard (run 20261208_10)' as check,
+       coalesce(position('''provider'' = ''email''' in pg_catalog.pg_get_functiondef(to_regprocedure('public.profiles_form_signup_onboarded()'))) > 0
+                and position('user_type' in pg_catalog.pg_get_functiondef(to_regprocedure('public.profiles_form_signup_onboarded()'))) > 0, false) as ok;
+-- <<< verify:l18_signup
+-- >>> verify:l18_phone_login — supabase/tests/rls/l18_phone_login.test.sql
+-- Batch l18: a Saudi mobile on /login and /forgot-password finds its account only when exactly one
+-- account has it confirmed. 20261208_20 runs BEFORE the deploy (after 20261207_10). Before it runs
+-- the checks below answer ok = false («run 20261208_20»).
+select 'l18 phone login: phone_sign_in_target / pw_reset_target_by_phone are SECURITY DEFINER with an empty search_path, service_role only (run 20261208_20)' as check,
+       coalesce((select count(*) = 2
+                        and bool_and(p.prosecdef
+                                     and p.proconfig @> array['search_path=""']
+                                     and not has_function_privilege('anon', p.oid, 'EXECUTE')
+                                     and not has_function_privilege('authenticated', p.oid, 'EXECUTE')
+                                     and has_function_privilege('service_role', p.oid, 'EXECUTE'))
+                   from pg_catalog.pg_proc p
+                  where p.oid in (to_regprocedure('public.phone_sign_in_target(text)'),
+                                  to_regprocedure('public.pw_reset_target_by_phone(text)'))), false) as ok;
+select 'l18 phone login: a number confirmed on two accounts finds nobody; the reset by number applies the reset-by-e-mail rules (run 20261208_20)' as check,
+       coalesce(position('''shared''' in pg_catalog.pg_get_functiondef(to_regprocedure('public.phone_sign_in_target(text)'))) > 0
+                and position('phone_verified_at is not null' in pg_catalog.pg_get_functiondef(to_regprocedure('public.phone_sign_in_target(text)'))) > 0
+                and position('public.pw_reset_target(' in pg_catalog.pg_get_functiondef(to_regprocedure('public.pw_reset_target_by_phone(text)'))) > 0, false) as ok;
+-- <<< verify:l18_phone_login
+-- >>> verify:l18_access — owner ق٢٦-٢ / ق٢٦-٣ (run 20261208_40)
+select 'l18 access: the library switch opens lawyer + consultant + firm by default, unless an admin saved another choice (run 20261208_40)' as check,
+       coalesce((select ps.updated_by is not null
+                        or ((ps.value -> 'lawyer') = 'true'::jsonb
+                            and (ps.value -> 'consultant') = 'true'::jsonb
+                            and (ps.value -> 'firm') = 'true'::jsonb)
+                   from public.platform_settings ps
+                  where ps.key = 'library_access_by_account_type'), false) as ok;
+select 'l18 access: the free questions setting names the law firm (10 by default; an admin value is kept) (run 20261208_40)' as check,
+       coalesce((select ps.value ? 'firm'
+                   from public.platform_settings ps
+                  where ps.key = 'free_questions_by_account_type'), false) as ok;
+-- <<< verify:l18_access
+-- >>> verify:l18_pay — supabase/tests/rls/l18_pay_free_activation.test.sql
+-- Batch l18-pay (owner ق٢٦-١١, س٢٢٤ settled): a discount code that covers the whole price is activated at
+-- 0 SAR with no card (coupon_redemptions), and a free-plan code may grant the library or the bundle.
+-- 20261208_30 runs BEFORE the deploy; 20261208_31 (billing_company identity) any time. Before a file runs,
+-- its checks answer ok = false («run …»).
+select 'l18 pay: coupon_redeem_full_open / coupon_redeem_grant_library are SECURITY DEFINER with an empty search_path, service_role only (run 20261208_30)' as check,
+       coalesce((select count(*) = 2
+                        and bool_and(p.prosecdef
+                                     and p.proconfig @> array['search_path=""']
+                                     and not has_function_privilege('anon', p.oid, 'EXECUTE')
+                                     and not has_function_privilege('authenticated', p.oid, 'EXECUTE')
+                                     and has_function_privilege('service_role', p.oid, 'EXECUTE'))
+                   from pg_catalog.pg_proc p
+                  where p.oid in (to_regprocedure('public.coupon_redeem_full_open(uuid,uuid,text,text,text,integer,timestamp with time zone)'),
+                                  to_regprocedure('public.coupon_redeem_grant_library(uuid,text,integer,integer,timestamp with time zone)'))), false) as ok;
+select 'l18 pay: a 0 SAR activation locks the coupon row, refuses a code that does not cover the price, and waits for an open order that may still be paid (run 20261208_30)' as check,
+       coalesce(position('for update' in lower(pg_catalog.pg_get_functiondef(to_regprocedure('public.coupon_redeem_full_open(uuid,uuid,text,text,text,integer,timestamp with time zone)')))) > 0
+                and position('not_full' in pg_catalog.pg_get_functiondef(to_regprocedure('public.coupon_redeem_full_open(uuid,uuid,text,text,text,integer,timestamp with time zone)'))) > 0
+                and position('''pending''' in pg_catalog.pg_get_functiondef(to_regprocedure('public.coupon_redeem_full_open(uuid,uuid,text,text,text,integer,timestamp with time zone)'))) > 0, false) as ok;
+select 'l18 pay: a redemption''s library pass is granted once (coupon_redemptions.library_grant_id, not readable by a session) (run 20261208_30)' as check,
+       coalesce(case when exists (select 1 from pg_catalog.pg_attribute
+                                   where attrelid = to_regclass('public.coupon_redemptions') and attname = 'library_grant_id' and not attisdropped)
+                     then not has_column_privilege('authenticated', 'public.coupon_redemptions', 'library_grant_id', 'SELECT')
+                     else false end, false) as ok;
+select 'l18 billing: billing_company holds CR 7049168854 (run 20261208_31 once; a later edit of the name in admin settings does not fail this check)' as check,
+       coalesce((select s.value ->> 'cr_number' = '7049168854'
+                   from public.platform_settings s where s.key = 'billing_company'), false) as ok;
+-- <<< verify:l18_pay
+-- >>> verify:l18_answers — supabase/tests/rls/l18_confirmed_phone_unique.test.sql, l18_convert_keeps_verification.test.sql, l18_contract_fees_firm_roles.test.sql
+-- Batch l18-answers (owner answers ٢٢٣ / ٢٢٩ / ٢٣٥, 27 Nov). 20261208_50 / _52 / _53 run BEFORE the deploy (_52 must).
+-- Before a file runs, its checks answer ok = false («run …»). 20261208_51 is a read-only report, not checked here.
+select 'l18 answers: a second confirmation of the same mobile is refused — confirmed_phone_taken / confirmed_phone_guard are SECURITY DEFINER, empty search_path, no session EXECUTE, and trg_phone_verified_unique is enabled on profiles (run 20261208_50)' as check,
+       coalesce((select count(*) = 2
+                        and bool_and(p.prosecdef
+                                     and p.proconfig @> array['search_path=""']
+                                     and not has_function_privilege('anon', p.oid, 'EXECUTE')
+                                     and not has_function_privilege('authenticated', p.oid, 'EXECUTE'))
+                   from pg_catalog.pg_proc p
+                  where p.oid in (to_regprocedure('public.confirmed_phone_taken(uuid,text)'),
+                                  to_regprocedure('public.confirmed_phone_guard()'))), false)
+       and exists (select 1 from pg_catalog.pg_trigger t
+                    where t.tgrelid = to_regclass('public.profiles') and t.tgname = 'trg_phone_verified_unique'
+                      and not t.tgisinternal and t.tgenabled <> 'D'
+                      and t.tgfoid = to_regprocedure('public.confirmed_phone_guard()')) as ok;
+select 'l18 answers: the unique index on confirmed mobiles exists (f until the shared numbers are cleaned up with 20261208_51 and 20261208_50 is re-run)' as check,
+       coalesce(to_regclass('public.profiles_confirmed_phone_unique') is not null, false) as ok;
+select 'l18 answers: the account-type converter keeps the licence verification (no reset to pending) and still refuses open commitments (run 20261208_52)' as check,
+       coalesce(position('set verification_status = ''pending'''
+                         in pg_catalog.pg_get_functiondef(to_regprocedure('public.admin_change_account_type(uuid,text,text,uuid)'))) = 0
+                and position('v_verification_kept'
+                             in pg_catalog.pg_get_functiondef(to_regprocedure('public.admin_change_account_type(uuid,text,text,uuid)'))) > 0
+                and position('open_commitments'
+                             in pg_catalog.pg_get_functiondef(to_regprocedure('public.admin_change_account_type(uuid,text,text,uuid)'))) > 0, false) as ok;
+select 'l18 answers: a firm contract''s fee schedule is for the firm owner, managing partner and finance manager only — restrictive policy on contract_payments (run 20261208_53)' as check,
+       coalesce((select p.prosecdef and p.proconfig @> array['search_path=""']
+                        and not has_function_privilege('anon', p.oid, 'EXECUTE')
+                        and position('finance_manager' in pg_catalog.pg_get_functiondef(p.oid)) > 0
+                   from pg_catalog.pg_proc p where p.oid = to_regprocedure('public.contract_fees_visible(text)')), false)
+       and exists (select 1 from pg_catalog.pg_policy p
+                    where p.polrelid = to_regclass('public.contract_payments')
+                      and p.polname = 'firm fee schedule: owner, managing partner, finance'
+                      and not p.polpermissive and p.polcmd = '*'
+                      and pg_catalog.pg_get_expr(p.polqual, p.polrelid) like '%contract_fees_visible(contract_id)%'
+                      and pg_catalog.pg_get_expr(p.polwithcheck, p.polrelid) like '%contract_fees_visible(contract_id)%') as ok;
+-- <<< verify:l18_answers
+-- >>> verify:l18_pay_held — supabase/tests/rls/l18_pay_held_plans.test.sql
+-- Batch l18-pay (owner ٢٣٩): a professional plan paid before the licence approval is held; the buyer
+-- sees it on /dashboard/billing through my_licence_held_orders(). 20261208_32 runs BEFORE the deploy.
+select 'l18 pay held: my_licence_held_orders() is SECURITY DEFINER with an empty search_path, keyed on auth.uid(), authenticated only, without the refund-review orders (run 20261208_32)' as check,
+       coalesce((select p.prosecdef
+                        and p.proconfig @> array['search_path=""']
+                        and position('auth.uid()' in pg_catalog.pg_get_functiondef(p.oid)) > 0
+                        and position('licence_review' in pg_catalog.pg_get_functiondef(p.oid)) > 0
+                        and not has_function_privilege('anon', p.oid, 'EXECUTE')
+                        and has_function_privilege('authenticated', p.oid, 'EXECUTE')
+                   from pg_catalog.pg_proc p where p.oid = to_regprocedure('public.my_licence_held_orders()')), false) as ok;
+-- <<< verify:l18_pay_held
+-- >>> verify:l18_review — supabase/tests/rls/l18_firm_open_requests.test.sql, l18_review_indexes.test.sql
+-- Batch l18 review fixes. 20261208_90 runs any time (before the deploy is best). Before a file runs,
+-- its check answers ok = false («run …»). The index check reads f until 20261208_20 has run.
+select 'l18 review: the owner of a verified firm reads the open requests, with every 20261206_40 filter kept (run 20261208_90)' as check,
+       coalesce(pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.marketplace_open_requests(integer, integer)')),
+                                  'fp.verification_status = ''verified''') > 0
+                and pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.marketplace_open_requests(integer, integer)')),
+                                      'marketplace_release_at') > 0
+                and pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.marketplace_open_requests(integer, integer)')),
+                                      'test_accounts') > 0
+                and not has_function_privilege('anon', 'public.marketplace_open_requests(integer, integer)', 'EXECUTE'), false) as ok;
+select 'l18 review: exactly one index on the confirmed mobiles — the plain one of 20261208_20 until 20261208_50''s unique index exists, then only the unique one (run 20261208_20, then 20261208_50)' as check,
+       (to_regclass('public.profiles_confirmed_phone_idx') is not null) <> (to_regclass('public.profiles_confirmed_phone_unique') is not null) as ok;
+-- <<< verify:l18_review

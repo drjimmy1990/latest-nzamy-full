@@ -14,6 +14,8 @@ import {
 } from "@/lib/email/reminderDelivery";
 import {
   CONTRACT_PAYMENT_COLUMNS,
+  FEE_SCHEDULE_MEMBER_ROLES,
+  feeReadersByFirm,
   OVERDUE_LOOKBACK_DAYS,
   PAYMENT_DUE_SOON_DAYS,
   PAYMENT_UNPAID_STATUSES,
@@ -102,8 +104,10 @@ export async function POST(request: NextRequest) {
     if (page.length < PAGE) break;
   }
 
-  // 2. which stage is due, for whom
-  const planned = planPaymentReminders(rows, today);
+  // 2. which stage is due, for whom — a firm contract's reminders go to the
+  // readers of its fee schedule (owner ٢٢٩, l18 review), never its creator
+  const feeReaders = await loadFeeReaders(admin, rows);
+  const planned = planPaymentReminders(rows, today, feeReaders);
   if (planned.length === 0) {
     return NextResponse.json({ ok: true, date: today, payments: rows.length, due: 0, inApp: { sent: 0, already: 0, failed: 0 }, email: emptyEmailReport() });
   }
@@ -118,6 +122,35 @@ export async function POST(request: NextRequest) {
   const email = await sendEmails(admin, planned);
 
   return NextResponse.json({ ok: true, date: today, payments: rows.length, due: planned.length, inApp, email });
+}
+
+/** firm id → its fee-schedule readers; an empty map on a failed read (firm contracts then remind nobody this run). */
+async function loadFeeReaders(admin: Admin, rows: readonly ContractPaymentRow[]): Promise<Map<string, string[]>> {
+  const firmIds = [
+    ...new Set(
+      rows
+        .map((r) => (Array.isArray(r.contracts) ? r.contracts[0] : r.contracts)?.firm_id ?? null)
+        .filter((id): id is string => typeof id === "string" && id !== ""),
+    ),
+  ];
+  if (firmIds.length === 0) return new Map();
+  const [firms, members] = await Promise.all([
+    admin.from("firm_profiles").select("id, owner_user_id").in("id", firmIds),
+    admin
+      .from("firm_members")
+      .select("firm_id, user_id, role, status")
+      .in("firm_id", firmIds)
+      .eq("status", "active")
+      .in("role", [...FEE_SCHEDULE_MEMBER_ROLES]),
+  ]);
+  if (firms.error || members.error) {
+    console.error("[cron/contract-payment-reminders] fee readers:", (firms.error ?? members.error)?.code);
+    return new Map();
+  }
+  return feeReadersByFirm(
+    (firms.data ?? []) as Array<{ id: string | null; owner_user_id: string | null }>,
+    (members.data ?? []) as Array<{ firm_id: string | null; user_id: string | null; role: string | null; status?: string | null }>,
+  );
 }
 
 async function sendInApp(admin: Admin, planned: PlannedPaymentReminder[]): Promise<InAppReport> {

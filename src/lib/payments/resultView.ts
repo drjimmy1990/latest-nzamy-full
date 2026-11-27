@@ -22,9 +22,10 @@
  */
 
 import { orderLabelWithPointsAr, sellableItem } from "./catalog.ts";
-import { FOUNDER_PENDING_REASON, fulfilmentNoticeAr } from "./fulfillDecision.ts";
+import { FOUNDER_PENDING_REASON, LICENCE_PENDING_REASON, fulfilmentNoticeAr } from "./fulfillDecision.ts";
 import { FOUNDER_PLAN_ID } from "../membership/founderPlan.ts";
 import { FOUNDER_BENEFITS } from "../pricing/founderCard.ts";
+import { gatewayErrorAr } from "./gatewayErrorAr.ts";
 
 export interface ResultOrder {
   id: string;
@@ -49,7 +50,7 @@ export interface ResultView {
   tone: ResultTone;
   title: string;
   body: string;
-  /** Moyasar's message for a declined payment, shown beside the Arabic copy. */
+  /** Why a declined payment was refused, in Arabic (l18 LIVE-15: gatewayErrorAr of Moyasar's message, never the raw text). */
   detail?: string;
   /** The printable receipt (Task 8), once the money was taken. */
   receiptHref?: string;
@@ -126,6 +127,11 @@ export function paymentResultView(result: ResultInput, order: ResultOrder): Resu
     });
     return { tone: "review", title: n.title, body: n.body, receiptHref: receiptHrefFor(order), refresh: false, contact: false };
   }
+  // l18 (٢٣٩): a professional plan paid before the licence approval — held, not active
+  if ((result.outcome === "granted" || result.outcome === "already_done") && result.reason === LICENCE_PENDING_REASON) {
+    const n = fulfilmentNoticeAr({ kind: noticeKind(order.kind), labelAr: labelOf(order), receiptNumber, alreadyEntitled: false, licencePending: true });
+    return { tone: "review", title: n.title, body: n.body, receiptHref: receiptHrefFor(order), refresh: false, contact: false };
+  }
 
   switch (result.outcome) {
     case "granted": {
@@ -164,7 +170,8 @@ export function paymentResultView(result: ResultInput, order: ResultOrder): Resu
         refresh: false,
         contact: false,
       };
-      if (message && message !== NO_GATEWAY_MESSAGE) view.detail = message.slice(0, 300);
+      // l18 (LIVE-15): the gateway's reason in Arabic — never its raw English text
+      if (message && message !== NO_GATEWAY_MESSAGE) view.detail = gatewayErrorAr(message);
       return view;
     }
     case "rejected":

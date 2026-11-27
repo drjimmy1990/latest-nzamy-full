@@ -33,7 +33,7 @@ test("the code defaults are what the migration seeds", () => {
   assert.match(sql, /'library_plan_points', '\{"lib-q1": 50, "lib-q2": 120, "lib-annual": 300\}'::jsonb/);
   assert.equal(DEFAULT_GIFT_VALID_DAYS, 90);
   assert.match(sql, /'gift_valid_days', '90'::jsonb/);
-  assert.deepEqual(DEFAULT_FREE_QUESTIONS, { lawyer: 10, individual: 5 });
+  assert.deepEqual(DEFAULT_FREE_QUESTIONS, { lawyer: 10, firm: 10, individual: 5 }); // ق٢٦-٣
   assert.match(sql, /'free_questions_by_account_type', '\{"lawyer": 10, "individual": 5\}'::jsonb/);
   // l12 (owner Q87): individual 100, every other type 500 — 20261202_10
   // rewrites every key still at the l9 value 50 and inserts the same full

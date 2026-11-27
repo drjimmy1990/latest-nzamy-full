@@ -425,6 +425,9 @@ export function refreshDecision(
  * intent_not_fulfillable; an API or network error). The shape cannot reliably
  * tell a used-up intent apart, so any on_failure call drops the held intent
  * (B1 final review); the server supersedes the earlier order.
+ * Batch l18 (LIVE-14): the report itself is no longer dropped — on_failure
+ * hands it to onNeedsNewCheckout, and /checkout shows its reason in Arabic
+ * (gatewayErrorAr.ts) above «متابعة الدفع».
  */
 export function needsNewCheckout(reported: unknown): boolean {
   void reported;
@@ -503,7 +506,8 @@ export function moyasarInitConfig(
     element: string;
     applePayFlag: string | undefined;
     initiate: () => Promise<CheckoutResponse | null>;
-    onNeedsNewCheckout: () => void;
+    /** l18 (LIVE-14): handed the form's report, so the screen can say why the payment was refused. */
+    onNeedsNewCheckout: (reported: unknown) => void;
   },
 ): MoyasarInitConfig {
   return {
@@ -524,7 +528,7 @@ export function moyasarInitConfig(
       return initiatingResult(current);
     },
     on_failure: async (reported: unknown) => {
-      if (needsNewCheckout(reported)) opts.onNeedsNewCheckout();
+      if (needsNewCheckout(reported)) opts.onNeedsNewCheckout(reported);
     },
     credit_card: { save_card: resp.saveCard },
     apple_pay: {
@@ -558,6 +562,12 @@ export interface CouponPreview {
    * shown above the form (never both).
    */
   replacesFounder?: true;
+  /**
+   * l18 (owner ق٢٦-١١): the code covers the whole price — «متابعة الدفع»
+   * becomes «تفعيل مجاني الآن (٠ ر.س)» and the checkout activates it with no
+   * card and no payment form (the figures: listNet → 100 % → 0).
+   */
+  freeActivation?: true;
 }
 
 /** l11 O8: the line under the figures when the founder discount beats the coupon. */
@@ -575,8 +585,55 @@ export function parseCouponPreview(body: unknown): CouponPreview | null {
   const preview: CouponPreview = { code: b.code, listNet: q.listNet, discount: q.discount, net: q.net, vat: q.vat, total: q.total };
   if (b.source === "founder") preview.founderWins = true;
   else if (b.replacesFounder === true) preview.replacesFounder = true;
+  // l18: a free activation is exactly listNet → 100 % → 0, nothing else
+  if (b.freeActivation === true) {
+    if (q.total !== 0 || q.net !== 0 || q.vat !== 0 || q.discount !== q.listNet || preview.founderWins) return null;
+    preview.freeActivation = true;
+  }
   return preview;
 }
+
+// ── the 0 SAR activation (l18, owner ق٢٦-١١) ────────────────────────────────
+
+/** What POST /api/v1/payments/checkout answers for a code that covers the whole price (freeActivationCore.ts). */
+export interface FreeActivationDone {
+  redemptionId: string;
+  receiptNumber: string;
+  itemId: string;
+  labelAr: string;
+  billing: Billing;
+  couponCode: string;
+  listNet: number;
+}
+
+/** The free-activation answer, checked; null for anything else (a Moyasar checkout is parsed by parseCheckoutResponse). */
+export function parseFreeActivation(body: unknown): FreeActivationDone | null {
+  if (typeof body !== "object" || body === null || Array.isArray(body)) return null;
+  const f = (body as Record<string, unknown>).freeActivation as Record<string, unknown> | null | undefined;
+  if (typeof f !== "object" || f === null) return null;
+  if (!isText(f.redemptionId) || !/^[0-9a-f-]{36}$/i.test(f.redemptionId)) return null;
+  if (!isText(f.receiptNumber) || !isText(f.itemId) || !isText(f.labelAr) || !isText(f.couponCode) || !isText(f.billing) || !isBilling(f.billing)) return null;
+  if (!isInt(f.listNet) || f.listNet <= 0) return null;
+  return {
+    redemptionId: f.redemptionId,
+    receiptNumber: f.receiptNumber,
+    itemId: f.itemId,
+    labelAr: f.labelAr,
+    billing: f.billing as Billing,
+    couponCode: f.couponCode,
+    listNet: f.listNet,
+  };
+}
+
+/** The free-activation receipt (the three lines: full price, 100 % discount, 0). */
+export function freeActivationReceiptHref(redemptionId: string): string {
+  return `/dashboard/billing/activation/${encodeURIComponent(redemptionId)}`;
+}
+
+/** «متابعة الدفع» for a code that covers the whole price. */
+export const FREE_ACTIVATION_BUTTON_AR = "تفعيل مجاني الآن (٠ ر.س)";
+/** Under the figures of such a code. */
+export const FREE_ACTIVATION_NOTE_AR = "هذا الكود يغطي المبلغ كاملًا: يُفعَّل فورًا دون بطاقة ودون دفع، ويصدر لك إيصال تفعيل مجاني.";
 
 /**
  * Whether /checkout shows the coupon field: once 20261026_20 has run

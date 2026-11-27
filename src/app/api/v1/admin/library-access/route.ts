@@ -187,7 +187,7 @@ export async function PUT(request: NextRequest) {
       {
         key: LIBRARY_ACCESS_SETTING_KEY,
         value: after,
-        description: "المكتبة القانونية مفتوحة لكل نوع حساب أو مغلقة (المحامي مفتوح والباقي مغلق افتراضياً) — owner item 9",
+        description: "المكتبة القانونية مفتوحة لكل نوع حساب أو مغلقة (المحامي والمستشار ومكتب المحاماة مفتوحة والباقي مغلق افتراضياً) — owner item 9 + ق٢٦-٢",
         updated_by: gate.userId,
         updated_at: new Date().toISOString(),
       },

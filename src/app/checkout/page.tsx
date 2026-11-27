@@ -18,6 +18,14 @@ import {
   NOT_FOR_SALE_AR,
   UNKNOWN_ITEM_AR,
 } from "@/lib/payments/checkoutCore";
+import {
+  LICENCE_HELD_NOTE_AR,
+  LICENCE_HELD_SUBMIT_FIRM_NOTE_AR,
+  LICENCE_HELD_SUBMIT_NOTE_AR,
+  licenceCheckoutDecision,
+  licenceGatedPurchase,
+  readLicenceFacts,
+} from "@/lib/payments/licenceGate";
 import { readConsultantStanding } from "@/lib/auth/consultantScopeServer";
 import { buyerAllowed, formatHalalas, quote, sellableItem, vatPercentFor } from "@/lib/payments/catalog";
 import { readVatRegistered } from "@/lib/payments/vatStatus";
@@ -95,12 +103,17 @@ function Shell({ children }: { children: React.ReactNode }) {
   );
 }
 
-function Notice({ title }: { title: string }) {
+function Notice({ title, verifyHref = null }: { title: string; verifyHref?: string | null }) {
   return (
     <Shell>
       <section className="rounded-2xl border border-zinc-300 bg-white p-6 text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 sm:p-8">
         <h1 className="text-xl font-bold sm:text-2xl">{title}</h1>
         <div className="mt-6 flex flex-wrap gap-3">
+          {verifyHref ? (
+            <Link href={verifyHref} className={PRIMARY}>
+              إكمال توثيق الرخصة
+            </Link>
+          ) : null}
           <Link href="/pricing" className={PRIMARY}>
             العودة إلى الباقات
           </Link>
@@ -162,6 +175,27 @@ export default async function CheckoutPage({ searchParams }: { searchParams: Sea
     if (standing.readFailed) return <Notice title={CONSULTANT_CHECK_FAILED_AR} />;
     if (standing.scopeKind === "consultant") return <Notice title={CONSULTANT_PLAN_REFUSED_AR} />;
   }
+  // l18 (owner ٢٣٩): the founder plan and the professional plans — a pending
+  // licence may pay and is told plainly that the plan activates after the
+  // approval; an unverified one is sent to verify first (the POST's rule,
+  // checkoutCore step 2d); a failed read refuses too, never a guess.
+  let licenceHeldNote: string | null = null;
+  if (userType && licenceGatedPurchase(item, userType)) {
+    let facts: Awaited<ReturnType<typeof readLicenceFacts>> = null;
+    try {
+      facts = await readLicenceFacts(await createServiceClient(), user.id, userType);
+    } catch {
+      facts = null;
+    }
+    const licence = licenceCheckoutDecision(userType, facts, { itemKind: item.kind });
+    if (licence.ok === false) return <Notice title={licence.error} verifyHref={licence.verifyHref ?? null} />;
+    // l18 review: a licence not submitted yet is held too, and asked for
+    if (licence.held) {
+      licenceHeldNote = licence.submitLicence
+        ? userType === "firm" ? LICENCE_HELD_SUBMIT_FIRM_NOTE_AR : LICENCE_HELD_SUBMIT_NOTE_AR
+        : LICENCE_HELD_NOTE_AR;
+    }
+  }
 
   // The price the POST will charge now: the launch price while its campaign
   // runs today in Riyadh (owner ٣٠٣), else the listed one. Per request, never cached.
@@ -195,11 +229,13 @@ export default async function CheckoutPage({ searchParams }: { searchParams: Sea
       console.warn("[checkout] reading the library grants threw");
     }
   }
-  const notes = checkoutItemNotes(item, {
+  const itemNotes = checkoutItemNotes(item, {
     libraryMinPoints,
     libraryQuestionPoints: aiToolPointRange("library-assistant")[1],
     billing: parsed.billing,
   });
+  // l18 (٢٣٩): a pending licence — the plan activates after the approval
+  const notes = licenceHeldNote ? [licenceHeldNote, ...itemNotes] : itemNotes;
 
   // l6-pay: before paying, what the POST will take off — the same server
   // functions checkout prices with (upgradeProration / founderDiscount). A

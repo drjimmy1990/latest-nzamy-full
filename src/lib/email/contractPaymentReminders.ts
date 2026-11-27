@@ -18,6 +18,12 @@
  *   Installments of a cancelled or terminated contract are not reminded; a
  *   draft or expired contract's still are (the badge shows them too).
  *
+ * l18 review (owner ٢٢٩): a FIRM contract's schedule (contracts.firm_id set)
+ * is for the firm owner, its managing partner(s) and finance manager(s) only
+ * (contract_fees_visible, 20261208_53), so its reminders go to them
+ * (feeReadersByFirm) — never to the member lawyer who created the contract.
+ * A solo contract still reminds its lawyer.
+ *
  * OWNER ٤٥: the e-mail is GENERIC — a payment in one of your contracts is due
  * / overdue, open it in the platform. No client, no contract title, no
  * installment label, no amount. The e-mail builder takes only the stage and
@@ -45,8 +51,8 @@ export interface ContractPaymentRow {
   status: string | null;
   /** The embedded contract (many-to-one; PostgREST may hand back an array). */
   contracts:
-    | { owner_user_id: string | null; status: string | null }
-    | Array<{ owner_user_id: string | null; status: string | null }>
+    | { owner_user_id: string | null; status: string | null; firm_id?: string | null }
+    | Array<{ owner_user_id: string | null; status: string | null; firm_id?: string | null }>
     | null;
 }
 
@@ -54,7 +60,33 @@ export interface ContractPaymentRow {
  * The route's select list (pinned by a test): no amount, no notes, no
  * contract title or counterparty.
  */
-export const CONTRACT_PAYMENT_COLUMNS = "id, contract_id, label, due_on, status, contracts!inner(owner_user_id, status)";
+export const CONTRACT_PAYMENT_COLUMNS = "id, contract_id, label, due_on, status, contracts!inner(owner_user_id, status, firm_id)";
+
+/** The firm roles that read a firm contract's fee schedule besides the owner (20261208_53; FIRM_FEE_STATEMENT_ROLES). */
+export const FEE_SCHEDULE_MEMBER_ROLES = ["managing_partner", "finance_manager"] as const;
+
+/**
+ * firm id → who reads its contracts' fee schedules: the owner, and every
+ * ACTIVE managing partner / finance manager. Each person once.
+ */
+export function feeReadersByFirm(
+  firms: ReadonlyArray<{ id: string | null; owner_user_id: string | null }>,
+  members: ReadonlyArray<{ firm_id: string | null; user_id: string | null; role: string | null; status?: string | null }>,
+): Map<string, string[]> {
+  const out = new Map<string, Set<string>>();
+  const add = (firmId: string | null, userId: string | null) => {
+    if (!firmId || !userId) return;
+    if (!out.has(firmId)) out.set(firmId, new Set());
+    out.get(firmId)!.add(userId);
+  };
+  for (const f of firms) add(f.id, f.owner_user_id);
+  for (const m of members) {
+    if (m.status !== undefined && m.status !== "active") continue;
+    if (!m.role || !(FEE_SCHEDULE_MEMBER_ROLES as readonly string[]).includes(m.role)) continue;
+    add(m.firm_id, m.user_id);
+  }
+  return new Map([...out].map(([k, v]) => [k, [...v]]));
+}
 
 export type PaymentStage = "due" | "overdue";
 
@@ -73,15 +105,24 @@ function embedded(c: ContractPaymentRow["contracts"]) {
   return c ?? null;
 }
 
-/** Which installments remind whom today. */
-export function planPaymentReminders(rows: readonly ContractPaymentRow[], today: string): PlannedPaymentReminder[] {
+/**
+ * Which installments remind whom today. A firm contract reminds the firm's
+ * fee-schedule readers (`feeReaders`, feeReadersByFirm); with no entry for its
+ * firm (nobody, or the read failed) it reminds nobody — never the creator.
+ */
+export function planPaymentReminders(
+  rows: readonly ContractPaymentRow[],
+  today: string,
+  feeReaders: ReadonlyMap<string, readonly string[]> = new Map(),
+): PlannedPaymentReminder[] {
   const out: PlannedPaymentReminder[] = [];
   for (const p of rows) {
     if (!p?.id || !p.contract_id || !p.due_on) continue;
     if (!p.status || !(PAYMENT_UNPAID_STATUSES as readonly string[]).includes(p.status)) continue;
     const contract = embedded(p.contracts);
-    const ownerId = contract?.owner_user_id;
-    if (!ownerId) continue;
+    const firmId = contract?.firm_id ?? null;
+    const recipients = firmId ? [...(feeReaders.get(firmId) ?? [])] : contract?.owner_user_id ? [contract.owner_user_id] : [];
+    if (recipients.length === 0) continue;
     if (contract?.status && (CONTRACT_CLOSED_STATUSES as readonly string[]).includes(contract.status)) continue;
     const d = daysBetween(today, p.due_on);
     if (d === null) continue;
@@ -89,7 +130,9 @@ export function planPaymentReminders(rows: readonly ContractPaymentRow[], today:
     if (d >= 0 && d <= PAYMENT_DUE_SOON_DAYS) stage = "due";
     else if (d < 0 && d >= -OVERDUE_LOOKBACK_DAYS) stage = "overdue";
     else continue;
-    out.push({ payment: p, contractId: p.contract_id, ownerId, stage, daysLeft: d, dueOn: p.due_on });
+    for (const ownerId of recipients) {
+      out.push({ payment: p, contractId: p.contract_id, ownerId, stage, daysLeft: d, dueOn: p.due_on });
+    }
   }
   return out;
 }

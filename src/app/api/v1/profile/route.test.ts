@@ -144,8 +144,11 @@ test("the membership read goes through the RLS client — service_role only for 
   assert.match(routeSource, /async function resolveBusinessScope\(\s*\r?\n\s*supabase: Awaited<ReturnType<typeof createClient>>/);
   // The service-role clients in this file are readOwnLawyerRow's and
   // readOwnFounderBadge's (owner ٢١٨ / ٢٢٥); both read lawyer_profiles by the
-  // verified user id only (plan item N2).
-  assert.equal(routeSource.match(/await createServiceClient\(\)/g)?.length, 2);
+  // verified user id only (plan item N2). The third is owner ٢٣٥'s (batch
+  // l18): the caller's own stored number, and whether ANOTHER account has the
+  // new number confirmed (a yes/no — no other column of any account is read).
+  assert.equal(routeSource.match(/await createServiceClient\(\)/g)?.length, 3);
+  assert.match(routeSource, /const svc = await createServiceClient\(\);\s*const \{ data: own \} = await svc\.from\("profiles"\)\.select\("phone"\)\.eq\("id", user\.id\)\.maybeSingle\(\);/);
   assert.match(
     routeSource,
     /const service = await createServiceClient\(\);\s*\r?\n\s*return await founderBadgeFrom\(\s*\r?\n\s*service\.from\("lawyer_profiles"\)\.select\("founder_badge"\)\.eq\("user_id", userId\)\.maybeSingle\(\),/,

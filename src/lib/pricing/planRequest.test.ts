@@ -125,7 +125,11 @@ test("the paywall and every library CTA send the id /laws/subscribe knows", () =
   const paywallIds = [...paywall.matchAll(/id: "(lib-[\w-]+)"/g)].map((m) => m[1]);
   assert.ok(paywallIds.length > 0);
   for (const id of paywallIds) assert.ok(subscribeIds.has(id), `paywall plan ${id}`);
-  assert.match(paywall, /href=\{`\/laws\/subscribe\?plan=\$\{plan\.id\}`\}/);
+  // l18 (LIVE-10): straight to /checkout when payment is on for a signed-in
+  // viewer (buyButtonAction); /laws/subscribe?plan=<id> stays the fallback
+  assert.match(paywall, /buyButtonAction\(id, "once", payments, signedIn\)/);
+  assert.match(paywall, /`\/laws\/subscribe\?plan=\$\{id\}`/);
+  assert.match(paywall, /href=\{planHref\(plan\.id\)\}/);
 
   for (const rel of ["./plans.ts", "../../constants/pricing/pricing.library.ts"]) {
     for (const m of read(rel).matchAll(/\/laws\/subscribe\?plan=([\w-]+)/g)) {

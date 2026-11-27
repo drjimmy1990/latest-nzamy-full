@@ -221,7 +221,8 @@ test("checkout: client signup keeps ?plan= and no longer offers the retired shie
   assert.doesNotMatch(steps, /عرض التأسيس|Founder 296|٧٥٠ ر\.س/);
   // The request card is shared with the onboarding wizard (P1 item 4).
   assert.match(steps, /import PlanRequestCard from "@\/components\/pricing\/PlanRequestCard";/);
-  assert.match(steps, /<PlanRequestCard plan=\{requestedPlan\} canRequestNow=\{canRequestNow\} \/>/);
+  // l18 LIVE-04: with the cycle chosen on /pricing.
+  assert.match(steps, /<PlanRequestCard plan=\{requestedPlan\} canRequestNow=\{canRequestNow\} billing=\{billing\} \/>/);
   const card = code("components/pricing/PlanRequestCard.tsx");
   assert.match(card, /requestEntitlement\(planEntitlementRequest\(plan\)\)/);
 });

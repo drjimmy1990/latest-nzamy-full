@@ -7,10 +7,10 @@
  *   1. GET  /api/v1/auth/password-reset/whatsapp/status → { whatsapp } — the
  *      choice is offered only while WhatsApp sending is configured AND the
  *      sign-up WhatsApp switch is on. Otherwise the page is the e-mail page.
- *   2. POST …/start  { email, turnstileToken } → always the same 200 answer
+ *   2. POST …/start  { email | phone, turnstileToken } → always the same 200 answer
  *      (WHATSAPP_START_SENT_AR) once the address is well formed and the
  *      security check passed; the code goes out, if at all, after the answer.
- *   3. POST …/verify { email, code, password, confirm } → 200 { ok } or the
+ *   3. POST …/verify { email | phone, code, password, confirm } → 200 { ok } or the
  *      one uniform refusal (WHATSAPP_CODE_INVALID_AR). The password is set on
  *      the server; no session is created — the person signs in on /login.
  */
@@ -30,6 +30,8 @@ export const WHATSAPP_CODE_INVALID_CODE = "invalid_code";
 
 export const WHATSAPP_UNAVAILABLE_AR = "الخدمة غير متاحة مؤقتًا، حاول بعد قليل.";
 export const WHATSAPP_INVALID_EMAIL_AR = "أدخل بريداً إلكترونياً صحيحاً.";
+/** Batch l18: the mobile typed in place of the e-mail is not a Saudi mobile. */
+export const WHATSAPP_INVALID_PHONE_AR = "أدخل رقم جوال سعودياً صحيحاً يبدأ بـ 05، مثل 0512345678.";
 export const WHATSAPP_CAPTCHA_AR = "أكمل التحقق الأمني ثم أعد المحاولة.";
 export const WHATSAPP_TOO_MANY_AR = "محاولات كثيرة — حاول بعد قليل.";
 export const WHATSAPP_PASSWORD_NOT_SET_AR =
@@ -52,6 +54,8 @@ export const LOGIN_RESET_DONE_EN = "Your password has been changed. Sign in with
 /**
  * sessionStorage key for the address to prefill on /login — kept out of the
  * URL so the e-mail never lands in a history entry, a log or a Referer.
+ * Batch l18: it holds whatever was typed on /forgot-password (the e-mail or
+ * the mobile); /login's one field takes either.
  */
 export const LOGIN_PREFILL_EMAIL_KEY = "nzamy:login-prefill-email";
 export const LOGIN_AFTER_RESET_PATH = `/login?reason=${LOGIN_RESET_REASON}`;

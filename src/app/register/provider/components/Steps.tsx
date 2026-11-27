@@ -22,7 +22,18 @@ import {
   CheckCircle,
 } from "@phosphor-icons/react";
 import { ProviderType, Step } from "../types";
-import { providerTypes, specializations, plans } from "../data";
+import { providerTypes, specializations, freeCardFor } from "../data";
+import { getPlanList } from "@/constants/pricingData";
+import { cardLaunch, cardPrice, type LaunchPriceMap } from "@/lib/pricing/cardPrice";
+import { BILLING_LABEL_AR, BILLING_LABEL_EN, type Cycle } from "@/lib/pricing/priceBook";
+import {
+  FREE_SIGNUP_PLAN,
+  planCycleFor,
+  providerPaidPlanIds,
+  providerPlanAudience,
+  providerPlanCycles,
+} from "@/lib/pricing/signupPlan";
+import { useLaunchPrices } from "@/hooks/useLaunchPrices";
 import { signupCountry } from "../signupMetadata";
 import { BACKEND_MODE } from "@/lib/runtimeMode";
 import { LawyerRegistryLookup } from "./LawyerRegistryLookup";
@@ -529,60 +540,165 @@ export function Step3({ isAr, data, onChange, providerType = null }: { isAr: boo
 }
 
 // ─── Step 4: Plan selection ───────────────────────────────────────────────────
-export function Step4({ isAr, selectedPlan, onSelect }: { isAr: boolean; selectedPlan: string; onSelect: (id: string) => void }) {
-  const planList = isAr ? plans.ar : plans.en;
+// LIVE-03 (batch l18): the role's own plans — the free card plus the price
+// book's plans this role may buy (signupPlan.ts), named and described as
+// /pricing describes them, priced by the book in the cycle picked, with the
+// launch price while the SERVER says it runs (useLaunchPrices → cardLaunch;
+// the browser's clock decides nothing). The free card is the default.
+
+/** One card on step 4: the free card, or a price-book plan of the role. */
+type SignupCard = {
+  id: string;
+  name: string;
+  desc: string;
+  features: string[];
+  price: string;
+  period: string;
+  original: string | null;
+};
+
+function signupCards(providerType: ProviderType, isAr: boolean, cycle: Cycle, launch: LaunchPriceMap | null): SignupCard[] {
+  const lang = isAr ? "ar" : "en";
+  const free = freeCardFor(providerType, isAr);
+  const cards: SignupCard[] = [
+    { id: FREE_SIGNUP_PLAN, name: free.name, desc: free.desc, features: free.features, price: free.price, period: "", original: null },
+  ];
+  if (!providerType) return cards;
+  const listed = getPlanList(providerPlanAudience(providerType), isAr);
+  for (const id of providerPaidPlanIds(providerType)) {
+    const plan = listed.find((p) => p.id === id);
+    const planCycle = planCycleFor(id, cycle);
+    const shown = plan && planCycle ? cardPrice(plan, planCycle, lang) : null;
+    if (!plan || !planCycle || !shown) continue;
+    const launchView = cardLaunch(plan, planCycle, launch, lang);
+    cards.push({
+      id,
+      name: plan.name,
+      desc: plan.desc,
+      features: [...plan.features.ai, ...plan.features.platform, ...plan.features.support].filter(
+        (f): f is string => typeof f === "string" && f.trim() !== "",
+      ),
+      price: launchView?.price ?? shown.price,
+      period: shown.period,
+      original: launchView?.original ?? null,
+    });
+  }
+  return cards;
+}
+
+/** The name step 5 shows for the chosen card (the plan's name on /pricing). */
+export function signupPlanName(providerType: ProviderType, planId: string, isAr: boolean): string {
+  if (planId === FREE_SIGNUP_PLAN || !providerType) return freeCardFor(providerType, isAr).name;
+  return getPlanList(providerPlanAudience(providerType), isAr).find((p) => p.id === planId)?.name ?? planId;
+}
+
+export function Step4({
+  isAr,
+  providerType,
+  selectedPlan,
+  onSelect,
+  cycle,
+  onCycle,
+}: {
+  isAr: boolean;
+  providerType: ProviderType;
+  selectedPlan: string;
+  onSelect: (id: string) => void;
+  cycle: Cycle;
+  onCycle: (c: Cycle) => void;
+}) {
+  const launch = useLaunchPrices();
+  const cycles = providerType ? providerPlanCycles(providerType) : [];
+  const shownCycle: Cycle = cycles.includes(cycle) ? cycle : cycles.includes("yearly") ? "yearly" : cycles[0] ?? "yearly";
+  const cards = signupCards(providerType, isAr, shownCycle, launch);
   return (
     <motion.div initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -30 }} transition={{ type: "spring", stiffness: 300, damping: 28 }}>
       <h2 className="font-brand text-2xl font-bold text-ink">
         {isAr ? "اختر باقتك" : "Choose Your Plan"}
       </h2>
       <p className="mt-2 text-sm text-ink-muted dark:text-gray-400">
-        {isAr ? "يمكنك الترقية أو التخفيض في أي وقت" : "You can upgrade or downgrade at any time"}
+        {isAr
+          ? "يبدأ حسابك مجانيًا، ويبدأ اشتراك الباقة المدفوعة بعد إتمام الدفع"
+          : "Your account starts free; a paid plan starts once it is paid"}
       </p>
-      <div className="mt-6 space-y-3">
-        {planList.map(plan => {
+      {cycles.length > 1 && (
+        <div role="radiogroup" aria-label={isAr ? "مدة الاشتراك" : "Billing cycle"} className="mt-5 flex flex-wrap gap-2">
+          {cycles.map((c) => {
+            const active = c === shownCycle;
+            return (
+              <button
+                key={c}
+                type="button"
+                role="radio"
+                aria-checked={active}
+                onClick={() => onCycle(c)}
+                className={`rounded-full border px-4 py-1.5 text-xs font-semibold transition-colors ${
+                  active
+                    ? "border-royal bg-royal text-white"
+                    : "border-slate-200 bg-white text-ink-muted hover:border-slate-300 dark:border-white/10 dark:bg-dark-card dark:text-gray-400"
+                }`}
+              >
+                {isAr ? BILLING_LABEL_AR[c] : BILLING_LABEL_EN[c]}
+              </button>
+            );
+          })}
+        </div>
+      )}
+      <div role="radiogroup" aria-label={isAr ? "الباقات" : "Plans"} className="mt-6 space-y-3">
+        {cards.map((plan) => {
           const isActive = selectedPlan === plan.id;
           return (
             <motion.button
               key={plan.id}
+              type="button"
+              role="radio"
+              aria-checked={isActive}
               whileHover={{ scale: 1.01 }}
               whileTap={{ scale: 0.99 }}
               onClick={() => onSelect(plan.id)}
               className={`relative w-full overflow-hidden rounded-2xl border p-5 text-start transition-all ${
                 isActive
-                  ? plan.highlighted ? "border-royal/30 bg-royal shadow-[0_8px_24px_-8px_rgba(11,61,46,0.3)]" : "border-royal/30 bg-royal/5"
+                  ? "border-royal/40 bg-royal/5 ring-1 ring-royal/30 dark:bg-royal/20"
                   : "border-slate-200/70 bg-white hover:border-slate-300 dark:border-white/10 dark:bg-dark-card"
               }`}
             >
-              {/* No «الأكثر طلباً» badge on the highlighted plan (owner, Q164,
-                  2026-10-03): no subscription data supports a popularity
-                  claim. `highlighted` still drives the active-state styling. */}
-              {isActive && !plan.highlighted && (
-                <span className="absolute top-3 end-3 flex h-5 w-5 items-center justify-center rounded-full bg-royal">
-                  <Check size={11} weight="bold" className="text-white" />
-                </span>
-              )}
+              {/* No «الأكثر طلباً» badge (owner, Q164, 2026-10-03): no
+                  subscription data supports a popularity claim. The ✓ sits
+                  beside the name, never over the price (LIVE-03). */}
               <div className="flex items-start justify-between gap-4">
-                <div className="flex-1">
-                  <div className={`text-sm font-bold ${isActive && plan.highlighted ? "text-white" : "text-ink"}`}>{plan.name}</div>
-                  <div className={`mt-0.5 text-xs ${isActive && plan.highlighted ? "text-white/70" : "text-ink-muted dark:text-gray-400"}`}>{plan.desc}</div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span
+                      aria-hidden="true"
+                      className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ${
+                        isActive ? "border-royal bg-royal" : "border-slate-300 dark:border-white/20"
+                      }`}
+                    >
+                      {isActive && <Check size={11} weight="bold" className="text-white" />}
+                    </span>
+                    <div className="text-sm font-bold text-ink">{plan.name}</div>
+                  </div>
+                  <div className="mt-0.5 text-xs text-ink-muted dark:text-gray-400">{plan.desc}</div>
                   <div className="mt-3 flex flex-wrap gap-2">
-                    {plan.features.slice(0, 3).map(f => (
-                      <span key={f} className={`flex items-center gap-1 text-xs ${isActive && plan.highlighted ? "text-white/80" : "text-ink-muted dark:text-gray-400"}`}>
-                        <Check size={10} weight="bold" className={isActive && plan.highlighted ? "text-gold" : "text-royal dark:text-gold"} />
+                    {plan.features.slice(0, 4).map((f) => (
+                      <span key={f} className="flex items-center gap-1 text-xs text-ink-muted dark:text-gray-400">
+                        <Check size={10} weight="bold" className="text-royal dark:text-gold" />
                         {f}
                       </span>
                     ))}
-                    {plan.features.length > 3 && (
-                      <span className={`text-xs ${isActive && plan.highlighted ? "text-white/60" : "text-ink-faint dark:text-gray-500"}`}>
-                        +{plan.features.length - 3} {isAr ? "مزايا" : "more"}
+                    {plan.features.length > 4 && (
+                      <span className="text-xs text-ink-faint dark:text-gray-500">
+                        +{plan.features.length - 4} {isAr ? "مزايا" : "more"}
                       </span>
                     )}
                   </div>
                 </div>
-                <div className="shrink-0 text-end">
-                  <div className={`font-brand text-xl font-extrabold ${isActive && plan.highlighted ? "text-white" : "text-royal dark:text-gold"}`}>{plan.price}</div>
-                  {plan.period && <div className={`text-[10px] ${isActive && plan.highlighted ? "text-white/60" : "text-ink-faint dark:text-gray-500"}`}>{plan.period}</div>}
+                <div className="shrink-0 ps-2 text-end">
+                  {plan.original && (
+                    <div className="text-xs text-ink-faint line-through dark:text-gray-500">{plan.original}</div>
+                  )}
+                  <div className="font-brand text-xl font-extrabold text-royal dark:text-gold">{plan.price}</div>
+                  {plan.period && <div className="text-[10px] text-ink-faint dark:text-gray-500">{plan.period}</div>}
                 </div>
               </div>
             </motion.button>
@@ -590,7 +706,7 @@ export function Step4({ isAr, selectedPlan, onSelect }: { isAr: boolean; selecte
         })}
       </div>
       <p className="mt-3 text-center text-xs text-ink-faint dark:text-gray-500">
-        {isAr ? "لا يلزم بطاقة ائتمانية للباقة المجانية" : "No credit card required for the free plan"}
+        {isAr ? "لا يلزم بطاقة ائتمانية للحساب المجاني" : "No credit card required for the free account"}
       </p>
     </motion.div>
   );
@@ -608,11 +724,13 @@ export function Step5({ isAr, providerType, selectedPlan, verificationOwnsStatus
     null: "",
   }[providerType ?? "null"];
 
-  const planLabel = {
-    lite: isAr ? "نظامي لايت" : "Nezamy Lite",
-    ai: isAr ? "ذكاء نظامي" : "Nezamy AI",
-    pro: isAr ? "نظامي برو" : "Nezamy Pro",
-  }[selectedPlan] ?? selectedPlan;
+  // LIVE-03: the plan's name as /pricing writes it (the old «نظامي لايت /
+  // ذكاء نظامي / نظامي برو» names were of no plan the book sells).
+  const planLabel = signupPlanName(providerType, selectedPlan, isAr);
+  const paidChosen = selectedPlan !== FREE_SIGNUP_PLAN;
+  // A paid plan is chosen, not bought: it starts once it is paid.
+  const planSentenceAr = paidChosen ? `، واخترت «${planLabel}» ويبدأ اشتراكها بعد إتمام الدفع` : " بالحساب المجاني";
+  const planSentenceEn = paidChosen ? `; you chose «${planLabel}», which starts once it is paid` : " on the free account";
 
   // Smart redirect: go to the correct dashboard based on provider type
   const dashboardHref: Record<string, string> = {
@@ -645,11 +763,11 @@ export function Step5({ isAr, providerType, selectedPlan, verificationOwnsStatus
       <p className="mt-3 text-sm text-ink-muted dark:text-gray-400">
         {verificationOwnsStatus
           ? (isAr
-              ? `سجّلنا حسابك كـ${typeLabel} بباقة ${planLabel}. أكمل توثيق ترخيصك أدناه.`
-              : `Your ${typeLabel} account with the ${planLabel} plan is created. Finish verifying your licence below.`)
+              ? `سجّلنا حسابك كـ${typeLabel}${planSentenceAr}. أكمل توثيق ترخيصك أدناه.`
+              : `Your ${typeLabel} account is created${planSentenceEn}. Finish verifying your licence below.`)
           : (isAr
-              ? `تم استلام طلبك كـ${typeLabel} بباقة ${planLabel}. سيتم مراجعة وثائقك خلال ٢٤ ساعة وإشعارك على بريدك.`
-              : `Your application as ${typeLabel} with the ${planLabel} plan has been received. Your documents will be reviewed within 24 hours.`)}
+              ? `تم استلام طلبك كـ${typeLabel}${planSentenceAr}. سيتم مراجعة وثائقك خلال ٢٤ ساعة وإشعارك على بريدك.`
+              : `Your application as ${typeLabel} has been received${planSentenceEn}. Your documents will be reviewed within 24 hours.`)}
       </p>
 
       {/* Review steps — the verification panel below owns the status for a

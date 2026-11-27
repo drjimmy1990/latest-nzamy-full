@@ -29,10 +29,10 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ id
   try {
     const auth = await assertCaseWorker();
     if (!auth.ok) return auth.response;
-    const { supabase } = auth;
+    const { user, supabase } = auth;
     const { id } = await context.params;
 
-    const detail = await loadContractDetail(supabase, id);
+    const detail = await loadContractDetail(supabase, id, user.id);
     if (!detail) return NextResponse.json({ error: "العقد غير موجود" }, { status: 404 });
 
     return NextResponse.json({ data: detail });

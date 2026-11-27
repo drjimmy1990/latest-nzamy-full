@@ -5,6 +5,7 @@ import { MOYASAR_DISABLED_MESSAGE_AR } from "@/lib/payments/moyasarConfig";
 import { createMoyasarClient, type MoyasarClient } from "@/lib/payments/moyasarClient";
 import { parseCheckoutBody, resolveCallbackOrigin } from "@/lib/payments/checkoutRules";
 import { startCheckoutWith } from "@/lib/payments/checkoutCore";
+import { readLicenceFacts } from "@/lib/payments/licenceGate";
 import { checkoutVatRegistered } from "@/lib/payments/vatStatus";
 import { vatPercentFor } from "@/lib/payments/catalog";
 import { parseFounderConsent } from "@/lib/payments/founderConsent";
@@ -148,6 +149,8 @@ export async function POST(request: NextRequest) {
         ranks: TIER_RANK,
         // l8 (owner item 9): a library plan is refused while the library is locked for the account
         libraryAccountAllowed: async (userId) => (await readLibraryAccountAccess(userId)).allowed,
+        // l18 (owner ٢٣٩): a pending licence may pay (held until approval); an unverified one is refused
+        licenceFacts: (userId, userType) => readLicenceFacts(admin, userId, userType),
         reserveFounderSeat: async (userId, orderId) => {
           const { data, error } = await admin.rpc("founder_reserve_seat", { p_user: userId, p_order: orderId });
           if (error) throw new Error(`founder_reserve_seat ${error.code ?? "error"}`);

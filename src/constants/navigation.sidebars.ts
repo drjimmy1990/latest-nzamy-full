@@ -6,7 +6,8 @@ import { isConsultantBlockedPath, type PracticeKind } from "../lib/auth/practice
 import { isConsultantAllowedPath } from "../lib/auth/consultantScope.ts";
 import { CONSULTANT_SIDEBAR } from "./navigation.sidebars.consultant.ts";
 import type { StaffRole } from "../lib/auth/staffRoles.ts";
-import { withComingSoonLast, withLiveToolBadges } from "./navigation.comingSoon.ts";
+import { withLiveToolBadges, withoutItems, withoutUnbuiltItems } from "./navigation.comingSoon.ts";
+import { isRouteAllowedFor } from "../lib/auth/routeAccess.ts";
 import {
   adminSidebarForRole,
   CORPORATE_SIDEBAR,
@@ -39,6 +40,15 @@ try {
   BETA_MONOPOLY_MODE = cfg.BETA_MONOPOLY_MODE ?? false;
 } catch {
   // betaConfig deleted
+}
+
+/**
+ * l18 review: `node --test` cannot resolve the "@/" alias above, so the switch
+ * always read false there and the beta-on menus were never tested. Tests set
+ * it here; nothing else calls this.
+ */
+export function setBetaMonopolyModeForTests(on: boolean): void {
+  BETA_MONOPOLY_MODE = on;
 }
 
 // ── Government Reviewer / Bailiff Sidebar (مراجع حكومي / معقّب) ──────────────
@@ -433,15 +443,22 @@ export function getSidebarByUserType(
    * rule the proxy applies (consultantScopeServer.ts).
    */
   firmMember: boolean = false,
+  /**
+   * Owner ق٢٦-١ hides «قريباً» / «قيد التفعيل» rows. True keeps them — ONLY so
+   * the sidebar can list the registry tools to ask tool-status about
+   * (comingSoonToolIds): a row hidden before that question could never come
+   * back. Never draw a menu built with true.
+   */
+  keepUnbuilt: boolean = false,
 ): SidebarGroup[] {
   const isConsultant = userType === "lawyer" && practiceKind === "consultant";
   const isIndependentConsultant = isConsultant && !firmMember;
 
   // Arbitrator: provider with subRole = "arbitrator" gets a fully dedicated sidebar
-  if (userType === "provider" && subRole === "arbitrator") return ARBITRATOR_SIDEBAR;
+  if (userType === "provider" && subRole === "arbitrator") return finishMenu(ARBITRATOR_SIDEBAR, userType, liveTools, keepUnbuilt);
 
   // Bailiff/Gov Reviewer: provider with subRole = "bailiff" gets a dedicated sidebar
-  if (userType === "provider" && subRole === "bailiff") return GOV_REVIEWER_SIDEBAR;
+  if (userType === "provider" && subRole === "bailiff") return finishMenu(GOV_REVIEWER_SIDEBAR, userType, liveTools, keepUnbuilt);
 
   let base: SidebarGroup[];
   switch (userType) {
@@ -530,7 +547,19 @@ export function getSidebarByUserType(
   }
 
   // ── Beta Monopoly Mode Filtering ──────────────────────────────────────────
-  // Hides public/unpromoted pages from the sidebars unless bypassed
+  // Hides public/unpromoted pages from the sidebars unless bypassed.
+  //
+  // Owner answer ٢٣٨ (27 Nov 2026, batch l18): «يُفتح السوق ويظهر في القوائم
+  // لجميع الأدوار (ولا يُخفى بوضع الإطلاق التجريبي)», keeping Nezamy's priority
+  // window (service_requests.marketplace_release_at, 20261206_40 — in the
+  // database, untouched here). So the switch no longer strips the dashboards'
+  // market pages (/dashboard/lawyer/marketplace, /dashboard/firm/marketplace,
+  // /dashboard/business/marketplace, /dashboard/provider/requests): each row
+  // now shows or hides on its own state like any other (a «قريباً» row is
+  // still dropped by finishMenu). What stays filtered are the links that the
+  // same switch redirects away — the public multi-vendor board /marketplace*
+  // (marketplace/layout.tsx → /services) and the lawyer directory
+  // /services/lawyers (Q151) — a menu row there would be a dead end.
   if (BETA_MONOPOLY_MODE && !isDemoBypass) {
     const hiddenHrefs = [
       "/marketplace",
@@ -539,10 +568,6 @@ export function getSidebarByUserType(
       "/marketplace/my-requests",
       "/marketplace?tab=my-requests",
       "/marketplace/profile",
-      "/dashboard/lawyer/marketplace",
-      "/dashboard/firm/marketplace",
-      "/dashboard/business/marketplace",
-      "/dashboard/provider/requests",
       "/services/lawyers",
       // "/community/lawyers" was listed here. Owner item ١٤٦ repointed both
       // legal sidebars at /community, so this string now matches no item and
@@ -560,15 +585,47 @@ export function getSidebarByUserType(
     })).filter(group => group.items.length > 0);
   }
 
-  // ── Owner UX08 (2026-10-30): «قريباً» rows in their own last section ─────
-  // The lawyer menu only. Same rows, same badges — only where they sit.
-  base = withLiveToolBadges(base, liveTools);
-  if (userType === "lawyer") base = withComingSoonLast(base);
-
   // ── Art. 18: the consultant's sidebar has no pleading or hearings tools ───
-  // Last, so it also covers anything the multi-role merge above added.
+  // After everything above, so it also covers what the multi-role merge added.
   if (isConsultant) base = withoutConsultantBlockedItems(base);
   if (isIndependentConsultant) base = onlyConsultantAllowedItems(base);
 
-  return base;
+  return finishMenu(base, userType, liveTools, keepUnbuilt);
+}
+
+/**
+ * Owner ق٢٦-١ (package 2026-11-26), the last steps of every account's menu:
+ *   1. a registry tool tool-status confirmed open loses «قريباً» (BUG-12);
+ *   2. every other «قريباً» / «قيد التفعيل» row is hidden (it supersedes owner
+ *      UX08's last «قريباً» section of 30 Oct);
+ *   3. a row of another sector is hidden — a page the edge table refuses to
+ *      this menu's account type (routeAccess.ts), e.g. the arbitrator's
+ *      /ai/gov/* rows (government only) or a lawyer's arbitration add-on rows
+ *      under /dashboard/provider.
+ * The admin's own control menu is left as it is (staff, not a user's menu).
+ * Checked against the MENU's type, never the session's: a firm member (a
+ * lawyer session) drawn the firm menu keeps its /dashboard/firm rows.
+ */
+function finishMenu(
+  groups: SidebarGroup[],
+  userType: UserType,
+  liveTools: ReadonlySet<string> | null | undefined,
+  keepUnbuilt: boolean,
+): SidebarGroup[] {
+  let base = withLiveToolBadges(groups, liveTools);
+  if (userType === "admin") return base;
+  if (!keepUnbuilt) base = withoutUnbuiltItems(base);
+  return withoutOtherSectorItems(base, userType);
+}
+
+/** The path part of a menu href (no query, no hash). */
+function hrefPath(href: string): string {
+  const cut = href.search(/[?#]/);
+  return cut === -1 ? href : href.slice(0, cut);
+}
+
+/** Owner ق٢٦-١: drops rows whose page the edge refuses to `userType` (routeAccess.ts). */
+export function withoutOtherSectorItems(groups: SidebarGroup[], userType: UserType): SidebarGroup[] {
+  if (!userType || userType === "admin") return groups;
+  return withoutItems(groups, (item) => !item.external && item.href.startsWith("/") && !isRouteAllowedFor(hrefPath(item.href), userType));
 }

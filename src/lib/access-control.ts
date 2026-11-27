@@ -97,7 +97,6 @@ const SERVER_FEATURE_GATES: Record<string, ServerTier> = {
 
   // AI features
   "ai-consult":         "free",
-  "ai-contracts":       "shield",
   "ai-wargaming":       "pro",
 
   // Case management
@@ -107,9 +106,9 @@ const SERVER_FEATURE_GATES: Record<string, ServerTier> = {
   // Core features
   governance:           "corp",
   "health-check":       "pro",
-  marketplace:          "shield",
   finance:              "pro",
-  reports:              "shield",
+  // Owner ق٢٦-٦: the dead shield gates (marketplace, reports, ai-contracts)
+  // are removed here and in the browser's FEATURE_GATES — no caller read them.
 };
 
 // ─── Helper: Get user's active tier ───────────────────────────────────────────

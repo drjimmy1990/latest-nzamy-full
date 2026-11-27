@@ -8,6 +8,7 @@ import {
 } from "./zernioWhatsApp.ts";
 import {
   isPhoneGatedApiPath,
+  isSignupFlowPath,
   maskSaudiMobile,
   mayBeHeld,
   safePhoneNext,
@@ -73,6 +74,19 @@ test("zernio: missing key or account → unavailable, nothing sent", async () =>
     assert.equal(calls.length, 0);
   }
   assert.equal(readZernioConfig({}).ready, false);
+});
+
+test("zernio (l18, owner ٢٣١): the reset code uses ZERNIO_RESET_OTP_TEMPLATE when set, else the sign-up template; sign-up never reads it", async () => {
+  const sent = async (env: Record<string, string>, purpose?: "signup" | "reset") => {
+    const calls: Call[] = [];
+    await sendWhatsAppCode({ e164: PHONE, code: "123456", env, fetchImpl: fakeFetch(201, {}, calls), ...(purpose ? { purpose } : {}) });
+    return (JSON.parse(calls[0].init.body) as { templateName: string }).templateName;
+  };
+  assert.equal(await sent(ENV, "reset"), readZernioConfig(ENV).template, "unset → the sign-up template");
+  assert.equal(await sent({ ...ENV, ZERNIO_RESET_OTP_TEMPLATE: "nezamy_password_reset" }, "reset"), "nezamy_password_reset");
+  assert.equal(await sent({ ...ENV, ZERNIO_RESET_OTP_TEMPLATE: "nezamy_password_reset" }), readZernioConfig(ENV).template, "sign-up ignores it");
+  assert.equal(await sent({ ...ENV, ZERNIO_RESET_OTP_TEMPLATE: "  " }, "reset"), readZernioConfig(ENV).template, "blank = unset");
+  assert.equal(readZernioConfig({ ...ENV, ZERNIO_OTP_TEMPLATE: "custom_otp" }, "reset").template, "custom_otp");
 });
 
 test("zernio: non-2xx, success:false, a thrown fetch → failed (HTTP status kept)", async () => {
@@ -160,7 +174,7 @@ test("rules: the post-verify destination is any path of this site, never another
   assert.equal(safePhoneNext("/register/provider/verify"), "/register/provider/verify");
   assert.equal(safePhoneNext("/dashboard/lawyer?x=1#top"), "/dashboard/lawyer?x=1");
   assert.equal(safePhoneNext("/invite/abc123"), "/invite/abc123");
-  assert.equal(safePhoneNext("/login?from=/dashboard/client"), "/login?from=/dashboard/client");
+  assert.equal(safePhoneNext("/dashboard/client/requests?tab=1"), "/dashboard/client/requests?tab=1");
   for (const bad of [
     "//evil.example",
     "//evil.com",
@@ -177,11 +191,34 @@ test("rules: the post-verify destination is any path of this site, never another
     "/x\u0000y",
     "/verify-phone",
     "/verify-phone?next=/x",
+    "/register",
+    "/register/",
+    "/register/client",
+    "/register/provider",
+    "/REGISTER/Client",
+    "/register/provider?type=firm",
+    "/login",
+    "/login?from=/dashboard/client",
+    "/forgot-password",
+    "/reset-password",
+    "/onboarding",
+    "/onboarding/step",
+    "/auth/callback",
+    "/auth/mfa?next=/x",
     "dashboard",
     null,
     5,
   ]) {
     assert.equal(safePhoneNext(bad), null, String(bad));
+  }
+});
+
+test("rules (LIVE-01): the sign-up flow pages are exact paths; the licence page is not one", () => {
+  for (const p of ["/register", "/register/", "/register/client", "/register/provider", "/register/provider/", "/login", "/forgot-password", "/reset-password", "/Login"]) {
+    assert.equal(isSignupFlowPath(p), true, p);
+  }
+  for (const p of ["/register/provider/verify", "/registered", "/register/clientx", "/login/x", "/verify-phone", "/", "/dashboard/lawyer", "/onboarding"]) {
+    assert.equal(isSignupFlowPath(p), false, p);
   }
 });
 
@@ -195,6 +232,10 @@ test("rules: the client handler only looks at same-origin /api/v1 calls", () => 
   assert.equal(sameOriginApiV1Path(42, o), null);
   assert.equal(verifyPhoneUrlFrom("/laws/x", "?a=1"), "/verify-phone?next=%2Flaws%2Fx%3Fa%3D1");
   assert.equal(verifyPhoneUrlFrom("/verify-phone", ""), null);
+  // LIVE-01 (l18): never back to a sign-up page — a bare /verify-phone (home after).
+  assert.equal(verifyPhoneUrlFrom("/register/client", ""), "/verify-phone");
+  assert.equal(verifyPhoneUrlFrom("/register/provider", "?type=lawyer"), "/verify-phone");
+  assert.equal(verifyPhoneUrlFrom("/register/provider/verify", ""), "/verify-phone?next=%2Fregister%2Fprovider%2Fverify");
 });
 
 test("rules: the masked number shows the last four digits only", () => {

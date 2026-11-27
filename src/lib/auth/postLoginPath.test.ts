@@ -57,3 +57,12 @@ test("a ?from= path goes through the same postLoginPath rules", () => {
   assert.equal(postLoginPath("/dashboard/lawyer/cases?tab=open", DASHBOARD), "/dashboard/lawyer/cases?tab=open");
   assert.equal(postLoginPath("//evil.example", DASHBOARD), DASHBOARD);
 });
+
+// l18 review B1: the proxy's signed-in redirect from /login uses this value
+// in a Location header.
+test("?next= values that normalise to //host fall back", () => {
+  for (const v of ["/.//evil.example/login", "/..//evil.example", "/%2e//evil.example", "/.///evil.example", "/\\evil.example"]) {
+    assert.equal(postLoginPath(v, DASHBOARD), DASHBOARD, v);
+  }
+  assert.equal(postLoginPath(decodeURIComponent("/%5cevil.example"), DASHBOARD), DASHBOARD);
+});

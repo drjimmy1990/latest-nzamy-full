@@ -84,9 +84,10 @@ test("the plan audience follows profiles.user_type, not the signup picker id", (
 // The wiring. Source checks, like planRequest.test.ts: the pages are .tsx.
 test("/register/client stashes the plan BEFORE the Google call and keeps redirectTo bare", () => {
   const page = readFileSync(new URL("../../app/register/client/page.tsx", import.meta.url), "utf8");
-  const save = page.indexOf("savePendingPlan(sessionStorageOrNull(), planParam)");
+  // l18 LIVE-04: saved with the cycle /pricing showed (?billing=).
+  const save = page.indexOf("savePendingPlanChoice(sessionStorageOrNull(), planParam, billingParam)");
   const oauth = page.indexOf("signInWithOAuth(");
-  assert.ok(save > 0 && oauth > save, "savePendingPlan runs before signInWithOAuth");
+  assert.ok(save > 0 && oauth > save, "savePendingPlanChoice runs before signInWithOAuth");
   // No query string on redirectTo: GoTrue's allow-list must keep accepting it.
   assert.match(page, /redirectTo: `\$\{window\.location\.origin\}\/auth\/callback` \}/);
   assert.doesNotMatch(page, /auth\/callback\?/);

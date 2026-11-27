@@ -5,6 +5,7 @@ import { recordNotification } from "@/lib/notify";
 import { requireStaff } from "@/lib/access-control";
 import { logAdminAction } from "@/lib/auth/adminAudit";
 import { settleFounderSeatAfterDecision } from "@/lib/membership/founderVerificationServer";
+import { settleHeldPlansAfterDecision } from "@/lib/payments/heldPlanActivationServer";
 import { isFakeTestLicence, isFakeLicenceDbError, FAKE_LICENCE_REFUSAL_AR } from "@/lib/lawyerSignup/fakeLicence";
 import {
   isVerifiedPhoneDbError,
@@ -213,6 +214,13 @@ export async function PATCH(
     updatedType === "lawyer"
       ? await settleFounderSeatAfterDecision(adminClient, gate.userId, userId, action === "approve" ? "approve" : "reject")
       : null;
+  // ── l18 (owner ٢٣٩): professional plans paid while the licence was pending ─
+  // approve → activated from today; reject → the full refund. Lawyer AND firm.
+  // Never fails the decision.
+  const heldPlans =
+    updatedType === "lawyer" || updatedType === "firm"
+      ? await settleHeldPlansAfterDecision(adminClient, gate.userId, userId, action === "approve" ? "approve" : "reject")
+      : null;
 
   // ── Response ───────────────────────────────────────────────────────────────
   const actionLabel = action === "approve" ? "اعتماد" : "رفض";
@@ -228,5 +236,6 @@ export async function PATCH(
       status: newStatus,
     },
     ...(founder && founder.outcome !== "none" ? { founderSeat: founder.outcome } : {}),
+    ...(heldPlans && heldPlans.activated.length + heldPlans.refunded.length + heldPlans.review.length > 0 ? { heldPlans } : {}),
   });
 }

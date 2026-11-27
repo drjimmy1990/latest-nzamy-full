@@ -280,7 +280,8 @@ test("Q121: a library question opened only by the free questions sees the source
   assert.ok(r.map.S1, "the source map is unchanged");
   const runs = readFileSync("src/app/api/v1/ai/runs/route.ts", "utf8").replace(/\r\n/g, "\n");
   assert.match(runs, /if \(opens && isLibraryAiTool\(toolId\)\) previewOnly = true;/);
-  assert.match(runs, /\)\.then\(\(r\) => \(previewOnly \? previewOnlySources\(r\) : r\)\),/);
+  // l18 review: the retrieval is awaited first (a locked pinned article is dropped), then the preview applies
+  assert.match(runs, /\n\s+return previewOnly \? previewOnlySources\(r\) : r;\n\s+\},/);
 });
 
 // ── Q181 (ب, batch l13, 20261203_50): the floating window «مساعد نظامي» ─────

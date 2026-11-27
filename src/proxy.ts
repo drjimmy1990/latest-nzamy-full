@@ -118,10 +118,13 @@ import { isLibraryApiPath, LIBRARY_API_ROBOTS_HEADER, LIBRARY_API_ROBOTS_VALUE }
 // is confirmed. Pure rules + a fetch-only server half (no client, no node:).
 import {
   isPhoneGatedApiPath,
+  isSignedInHomePath,
   PHONE_UNVERIFIED_AR,
   PHONE_UNVERIFIED_CODE,
   VERIFY_PHONE_PATH,
 } from "@/lib/phoneOtp/phoneOtpRules";
+// LIVE-01 (batch l18): a signed-in visitor of /login goes to a safe ?next=.
+import { postLoginPath } from "@/lib/auth/postLoginPath";
 import {
   hasTokenPass,
   loadSignupPhoneOtpSetting,
@@ -691,6 +694,80 @@ async function applyPhoneGateApi(
   }
 }
 
+// ─── LIVE-01 (batch l18): a signed-in visitor of a sign-up page goes home ────
+//
+// /register, /register/client, /register/provider and /login are public pages
+// (not PROTECTED). A visitor who already has an account session and opens one
+// of them in a fresh load — the back button after sign-up, a bookmark, a
+// stale link — used to see step 1 of the form again. Now:
+//   - no session cookie at all: nothing happens (a guest pays no getUser());
+//   - a session the WhatsApp code still holds: /verify-phone (no ?next=, so
+//     the account's home follows the code — never the form again);
+//   - any other signed-in account: its dashboard (Gate 1, the firm landing,
+//     the frozen and suspended pages act on that next request), or a safe
+//     ?next= / ?from= on /login (postLoginPath refuses sign-in pages).
+// Only a full page load reaches here: the sign-up pages run their own phone
+// step without navigating (the lawyer's code and licence stay inline on
+// step 5), so a sign-up in progress is never cut. /register/provider/verify
+// (the licence page of a signed-in lawyer), /forgot-password and
+// /reset-password are not on the list (isSignedInHomePath).
+// FAILS OPEN: an unanswered getUser(), an unreadable profile or any error
+// renders the page as before (the login page still has its own guard).
+async function signedInSignupPageRedirect(req: NextRequest, pathname: string): Promise<NextResponse | null> {
+  if (!isSupabaseMode || !isSignedInHomePath(pathname)) return null;
+  if (!hasSupabaseAuthCookie(req.cookies.getAll().map((c) => c.name))) return null;
+  try {
+    let refreshed = false;
+    let response = NextResponse.next({ request: req });
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          getAll() {
+            return req.cookies.getAll();
+          },
+          setAll(cookiesToSet) {
+            refreshed = true;
+            cookiesToSet.forEach(({ name, value }) => req.cookies.set(name, value));
+            response = NextResponse.next({ request: req });
+            cookiesToSet.forEach(({ name, value, options }) => response.cookies.set(name, value, options));
+          },
+        },
+      },
+    );
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    // Signed out, or the check never completed: the page, as before.
+    const passThrough = refreshed ? response : null;
+    if (!user) return passThrough;
+
+    let dest: string;
+    if ((await phoneGateVerdict(user)) === "held") {
+      dest = VERIFY_PHONE_PATH;
+    } else {
+      const { data: profile, error: profileError } = await supabase
+        .from("profiles")
+        .select("user_type")
+        .eq("id", user.id)
+        .maybeSingle();
+      if (profileError) return passThrough;
+      const home = dashboardPathFor((profile as { user_type?: string | null } | null)?.user_type ?? "");
+      const params = req.nextUrl.searchParams;
+      dest = pathname.toLowerCase().startsWith("/login") ? postLoginPath(params.get("next") ?? params.get("from"), home) : home;
+    }
+    const redirect = NextResponse.redirect(new URL(dest, req.url));
+    // l18 review: this answer depends on the session cookie, so no shared
+    // cache in front of Next (nginx, Cloudflare) may keep it for a guest.
+    redirect.headers.set("Cache-Control", "private, no-store");
+    response.cookies.getAll().forEach((cookie) => redirect.cookies.set(cookie));
+    return redirect;
+  } catch {
+    return null;
+  }
+}
+
 // ─── Library read quota + security lock (owner note ١٣ C07 / C09) ────────────
 //
 // The buckets above are per visitor and in memory: they reset with the
@@ -1155,6 +1232,12 @@ async function proxyRoutes(req: NextRequest) {
     url.pathname = "/dashboard/client/requests";
     return NextResponse.redirect(url, 302);
   }
+
+  // 1d. LIVE-01 (batch l18): a signed-in visitor of a sign-up / sign-in page
+  //     goes home (or to /verify-phone while the WhatsApp code holds it).
+  //     null for every other request and for every guest.
+  const signedInPage = await signedInSignupPageRedirect(req, pathname);
+  if (signedInPage) return signedInPage;
 
   // 2. Check if route requires authentication
   const isProtected = PROTECTED.some((p) => pathname.startsWith(p));

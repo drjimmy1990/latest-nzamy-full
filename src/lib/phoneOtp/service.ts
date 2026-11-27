@@ -30,7 +30,8 @@ import { needsOnboarding } from "@/lib/auth/onboardingGate";
 import { dashboardPathFor } from "@/lib/auth/userTypes";
 import { rateLimit } from "@/lib/rateLimit";
 import { readZernioConfig, sendWhatsAppCode } from "./zernioWhatsApp";
-import { maskSaudiMobile, PHONE_SEND_FAILED_AR } from "./phoneOtpRules";
+import { isFormSignup, maskSaudiMobile, PHONE_SEND_FAILED_AR } from "./phoneOtpRules";
+import { confirmedPhoneTakenElsewhere, isConfirmedPhoneDbError, PHONE_UNUSABLE_AR } from "./confirmedPhone";
 
 type Svc = Awaited<ReturnType<typeof createServiceClient>>;
 
@@ -165,10 +166,19 @@ export async function startPhoneOtp(svc: Svc, user: User, opts: { newPhone?: str
     const parsed = normalizeSaudiMobile(opts.newPhone);
     if (!parsed.ok) return { ok: false, reason: "bad_phone", error: saudiMobileMessage(parsed) };
     if (parsed.e164 !== profile?.phone) {
+      // Owner ٢٣٥ (batch l18): a number confirmed on another account is
+      // refused BEFORE the profile is moved onto it. Same neutral words as
+      // every other refusal of a taken number (the route's per-user limit,
+      // 8 per 10 minutes, bounds how many numbers one account can try).
+      if ((await confirmedPhoneTakenElsewhere(svc, user.id, parsed.e164)) === true) {
+        return { ok: false, reason: "phone_taken", error: PHONE_UNUSABLE_AR };
+      }
       const { error } = await svc.from("profiles").update({ phone: parsed.e164 }).eq("id", user.id);
       if (error) {
+        // R6 (20261201_10, a verified lawyer's number) or any other unique
+        // refusal: the same neutral answer (owner ٢٣٥).
         if (error.code === "23505") {
-          return { ok: false, reason: "phone_taken", error: "هذا الرقم مستخدم في حساب موثّق آخر. أدخل رقم جوالك أنت." };
+          return { ok: false, reason: "phone_taken", error: PHONE_UNUSABLE_AR };
         }
         if (error.code === "23514") return { ok: false, reason: "bad_phone", error: "رقم الجوال غير صالح." };
         throw new Error(`profiles phone update failed: ${error.code}`);
@@ -183,6 +193,11 @@ export async function startPhoneOtp(svc: Svc, user: User, opts: { newPhone?: str
     return { ok: false, reason: "already", error: "رقم جوالك مؤكَّد." };
   }
   if (!ready || !pepper) return { ok: false, reason: "unavailable", error: PHONE_SEND_FAILED_AR };
+  // Owner ٢٣٥: no code for a number another account has already confirmed
+  // (the sign-up form's number included) — the code could never confirm it.
+  if ((await confirmedPhoneTakenElsewhere(svc, user.id, phone.e164)) === true) {
+    return { ok: false, reason: "phone_taken", error: PHONE_UNUSABLE_AR };
+  }
 
   const targetHash = hashOtpTarget(pepper, phone.e164);
   const perTarget = rateLimit(`phone-otp:target:${targetHash}`, PER_TARGET);
@@ -227,7 +242,30 @@ export async function startPhoneOtp(svc: Svc, user: User, opts: { newPhone?: str
 
 export type VerifyOutcome =
   | { ok: true; home: string }
-  | { ok: false; reason: "wrong" | "expired" | "locked" | "phone_changed" | "no_phone" | "unavailable"; error: string; attemptsLeft?: number };
+  | { ok: false; reason: "wrong" | "expired" | "locked" | "phone_changed" | "no_phone" | "phone_taken" | "unavailable"; error: string; attemptsLeft?: number };
+
+/**
+ * LIVE-01 (batch l18): an account that signed up through a form (isFormSignup:
+ * e-mail, no Google, the form's user_type in the sign-up metadata) answered
+ * everything the onboarding wizard asks on the form itself, so confirming its
+ * mobile also marks onboarding complete and it goes straight to its dashboard
+ * instead of a second, shorter form. A Google sign-up keeps the wizard (it
+ * has not chosen its role). Best-effort: a failed write leaves the wizard,
+ * which is today's behaviour, and never fails the confirmation.
+ */
+async function markFormSignupOnboarded(svc: Svc, user: User, profile: ProfileRow): Promise<ProfileRow> {
+  if (profile.onboarding_completed === true || !isFormSignup(user)) return profile;
+  const { error } = await svc
+    .from("profiles")
+    .update({ onboarding_completed: true })
+    .eq("id", user.id)
+    .eq("onboarding_completed", false);
+  if (error) {
+    console.error("[phone-otp] onboarding mark failed:", error.code);
+    return profile;
+  }
+  return { ...profile, onboarding_completed: true };
+}
 
 export async function verifyPhoneOtp(svc: Svc, user: User, code: string): Promise<VerifyOutcome> {
   const pepper = otpPepper(process.env.LAWYER_OTP_PEPPER);
@@ -236,6 +274,11 @@ export async function verifyPhoneOtp(svc: Svc, user: User, code: string): Promis
   const phone = normalizeSaudiMobile(profile?.phone ?? "");
   if (!phone.ok || !profile?.phone) return { ok: false, reason: "no_phone", error: "أدخل رقم جوالك السعودي أولًا." };
   if (profile.phone_verified_at) return { ok: true, home: homeAfterVerify(profile) };
+  // Owner ٢٣٥: confirmed on another account meanwhile → refused, the code is
+  // not spent (the database guard, 20261208_50, refuses it too — below).
+  if ((await confirmedPhoneTakenElsewhere(svc, user.id, phone.e164)) === true) {
+    return { ok: false, reason: "phone_taken", error: PHONE_UNUSABLE_AR };
+  }
 
   const { data, error } = await svc.rpc("phone_otp_verify", {
     p_user: user.id,
@@ -245,11 +288,12 @@ export async function verifyPhoneOtp(svc: Svc, user: User, code: string): Promis
   });
   if (error) {
     if (MISSING.has(error.code ?? "")) throw new PhoneOtpUnavailable("schema");
+    if (isConfirmedPhoneDbError(error)) return { ok: false, reason: "phone_taken", error: PHONE_UNUSABLE_AR };
     console.error("[phone-otp] verify failed:", error.code);
     return { ok: false, reason: "unavailable", error: "تعذّر التحقق الآن، حاول بعد قليل." };
   }
   const j = (data ?? {}) as { ok?: boolean; reason?: string; attempts_left?: number };
-  if (j.ok) return { ok: true, home: homeAfterVerify(profile) };
+  if (j.ok) return { ok: true, home: homeAfterVerify(await markFormSignupOnboarded(svc, user, profile)) };
   if (j.reason === "wrong") {
     const left = typeof j.attempts_left === "number" ? j.attempts_left : undefined;
     return {
