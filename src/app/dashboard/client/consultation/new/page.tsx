@@ -50,11 +50,11 @@ import { StepBar } from "@/components/consultation/ClientConsultationComponents"
 import { COMING_SOON_BADGE_AR, isTerminalToolHref } from "@/constants/betaGatedRoutes";
 
 /**
- * l18 (owner ٢٣٤, interim): a consultation request stays free to SEND, and
- * its fee is not collected through the platform yet — said plainly on the
- * last step and on the confirmation (no 0 SAR receipt, no payment wording).
+ * l19 (owner ٢٣٤, his exact text): a consultation request stays free to SEND;
+ * the fee is collected by Nezamy first and then paid to the lawyer, never
+ * directly outside the platform — said on the last step and the confirmation.
  */
-const CONSULTATION_PAYMENT_INTERIM_AR = "الدفع يتم بالتنسيق المباشر مع المحامي مؤقتًا، ولا يُحصَّل أي مبلغ عبر المنصة.";
+const CONSULTATION_PAYMENT_INTERIM_AR = "يتواصل معك فريق نظامي لتأكيد الموعد وإرسال رابط السداد عبر منصة نظامي (تُحصَّل الأتعاب للمنصة أولاً ثم تُحوَّل للمحامي)، ولا يُدفع أي مبلغ مباشرة خارج منصة نظامي.";
 
 // ─── Attachment failure reporting ─────────────────────────────────────────────
 
@@ -1051,7 +1051,7 @@ export default function NewConsultationPage() {
                   <p className={`text-[11px] font-normal ${isDark ? "text-emerald-300/80" : "text-emerald-700"}`}>
                     {path === "ai"
                       ? (aiPathSoon ? "استشارة ذكاء نظامي: قريباً. لا يُخصم أي مبلغ." : "استشارة ذكاء نظامي مشمولة مجاناً للاستفسار اليومي الأول.")
-                      : `السعر التقديري لـ (${MODE_COPY[mode].label}): ${servicePriceLabel(service)} — لا يُخصم أي مبلغ في المنصة، ويتواصل معك فريق نظامي لتأكيد الموعد والتفاصيل. ${CONSULTATION_PAYMENT_INTERIM_AR}`}
+                      : `السعر التقديري لـ (${MODE_COPY[mode].label}): ${servicePriceLabel(service)} — لا يُخصم أي مبلغ عند إرسال الطلب. ${CONSULTATION_PAYMENT_INTERIM_AR}`}
                   </p>
                 </div>
               </div>
