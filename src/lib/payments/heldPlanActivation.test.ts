@@ -15,7 +15,7 @@ import type { MoyasarPayment } from "./moyasarClient.ts";
 import type { GrantLibraryFn } from "./grantPurchase.ts";
 import { fakeDb, RANKS, type FakeHandler, type FakeQuery } from "./fakeDb.test-helper.ts";
 import { LICENCE_PENDING_REASON, LICENCE_PENDING_SENTENCE_AR } from "./fulfillDecision.ts";
-import { licenceHoldFor, settleHeldPlansOnVerification, type HeldPlanDeps } from "./heldPlanActivation.ts";
+import { licenceHoldFor, settleHeldPlansOfFirmMembers, settleHeldPlansOnVerification, type HeldPlanDeps } from "./heldPlanActivation.ts";
 import { paymentResultView } from "./resultView.ts";
 import { PAYABLE_ITEMS } from "./catalog.ts";
 
@@ -260,6 +260,106 @@ test("٢٣٩ reject: the full refund (marks merged first); a refund that cannot 
   assert.equal(no.admins.length, 1);
 });
 
+// ── l19, owner ٢٤٢: approving a firm releases its member lawyers' held plans ──
+
+const FIRM = "00000000-0000-0000-0000-00000000f242";
+const OWNER = "00000000-0000-0000-0000-0000000a0242";
+const M_PENDING = "00000000-0000-0000-0000-0000000a1242";
+const M_REJECTED = "00000000-0000-0000-0000-0000000a2242";
+const M_NOTHING = "00000000-0000-0000-0000-0000000a3242";
+const M_NOROW = "00000000-0000-0000-0000-0000000a4242";
+
+function membersDb(over?: FakeHandler) {
+  return fakeDb((q) => {
+    const r = over?.(q);
+    if (r) return r;
+    if (q.table === "firm_members") {
+      return { data: [OWNER, M_PENDING, M_REJECTED, M_NOTHING, M_NOROW, M_PENDING].map((user_id) => ({ user_id })) };
+    }
+    if (q.table === "payment_orders") return { data: [OWNER, M_PENDING, M_REJECTED, M_NOROW].map((user_id) => ({ user_id })) };
+    if (q.table === "lawyer_profiles") {
+      return { data: [{ user_id: M_PENDING, verification_status: "pending" }, { user_id: M_REJECTED, verification_status: "rejected" }] };
+    }
+    return { data: null };
+  });
+}
+
+test("٢٤٢ firm approval: every ACTIVE member holding a plan is settled once (own licence pending or never submitted); the owner is not settled twice; a member whose own licence was rejected stays as is", async () => {
+  const { client, log } = membersDb();
+  const settled: string[] = [];
+  const admins: string[] = [];
+  const r = await settleHeldPlansOfFirmMembers({ admin: client, notifyAdmins: async (n) => { admins.push(n.title); } }, FIRM, OWNER, async (m) => {
+    settled.push(m);
+    return { activated: [`order-of-${m}`], refunded: [], review: [] };
+  });
+  assert.deepEqual(settled, [M_PENDING, M_NOROW], "one call per member, the owner left to the firm's own call");
+  assert.deepEqual(r.skipped, [M_REJECTED]);
+  assert.equal(r.readFailed, false);
+  assert.deepEqual(r.members.map((m) => m.userId), [M_PENDING, M_NOROW]);
+  assert.equal(admins.length, 0);
+  // only this firm's ACTIVE members are read, and only paid plan orders held for the licence
+  const fm = log.find((q) => q.table === "firm_members")!;
+  assert.ok(fm.filters.some(([op, c, v]) => op === "eq" && c === "firm_id" && v === FIRM));
+  assert.ok(fm.filters.some(([op, c, v]) => op === "eq" && c === "status" && v === "active"));
+  const po = log.find((q) => q.table === "payment_orders")!;
+  for (const [c, v] of [["status", "paid"], ["kind", "plan"], ["metadata->>licence_pending", "true"]]) {
+    assert.ok(po.filters.some(([op, cc, vv]) => op === "eq" && cc === c && vv === v), c);
+  }
+  assert.ok(!(po.filters.find(([op, c]) => op === "in" && c === "user_id")?.[2] as string[]).includes(OWNER), "the owner's orders are not read here");
+});
+
+test("٢٤٢ firm approval: a failed read settles no member and alerts the admins; no member with a held plan → nothing to do", async () => {
+  for (const table of ["firm_members", "payment_orders", "lawyer_profiles"]) {
+    const { client } = membersDb((q) => (q.table === table ? { error: { code: "08006" } } : undefined));
+    const settled: string[] = [];
+    const admins: string[] = [];
+    const r = await settleHeldPlansOfFirmMembers({ admin: client, notifyAdmins: async (n) => { admins.push(n.title); } }, FIRM, OWNER, async (m) => {
+      settled.push(m);
+      return { activated: [], refunded: [], review: [] };
+    });
+    assert.deepEqual([r.readFailed, settled, admins.length], [true, [], 1], table);
+  }
+  const none = membersDb((q) => (q.table === "payment_orders" ? { data: [] } : undefined));
+  const calls: string[] = [];
+  const r = await settleHeldPlansOfFirmMembers({ admin: none.client }, FIRM, OWNER, async (m) => { calls.push(m); return { activated: [], refunded: [], review: [] }; });
+  assert.deepEqual([r.members, r.skipped, calls], [[], [], []]);
+  assert.equal(none.log.some((q) => q.table === "lawyer_profiles"), false);
+});
+
+test("٢٤٢ a member released by his firm's approval: the same settlement (granted keyed on his order, period from today), told «اعتُمد توثيق مكتبك»", async () => {
+  const { client, log } = settleDb();
+  const bodies: string[] = [];
+  const { d } = settleDeps(client);
+  d.notify = async (n) => { bodies.push(n.body); };
+  assert.deepEqual(await settleHeldPlansOnVerification(d, USER, "approve", { via: "firm" }), { activated: [ORDER], refunded: [], review: [] });
+  assert.equal((rpcs(log, "grant_plan_subscription")[0].payload as { p_period_start: string }).p_period_start, APPROVED_AT.toISOString());
+  assert.ok(bodies[0].startsWith("اعتُمد توثيق مكتبك"), bodies[0]);
+  // his own approval keeps the old wording
+  const own = settleDb();
+  const o = settleDeps(own.client);
+  const ownBodies: string[] = [];
+  o.d.notify = async (n) => { ownBodies.push(n.body); };
+  await settleHeldPlansOnVerification(o.d, USER, "approve");
+  assert.ok(ownBodies[0].startsWith("اعتُمد توثيقك"), ownBodies[0]);
+});
+
+test("٢٤٢ fulfilment: a member lawyer who never submitted his licence pays and is held while his firm is pending; once the firm is verified he goes", async () => {
+  const pro = PAYABLE_ITEMS["lawyer-pro"];
+  const member = (firmStatus: string) =>
+    fakeDb((q) => {
+      if (q.table === "profiles") return { data: { user_type: "lawyer" } };
+      if (q.table === "lawyer_profiles") return { data: null }; // no lawyer row: never submitted
+      if (q.table === "firm_members") return { data: [{ firm_id: FIRM }] };
+      if (q.table === "firm_profiles") {
+        const byId = q.filters.some(([op, c]) => op === "in" && c === "id");
+        return { data: byId ? [{ verification_status: firmStatus }] : [] };
+      }
+      return { data: [] };
+    }).client;
+  assert.equal(await licenceHoldFor(member("pending"), USER, pro), "hold");
+  assert.equal(await licenceHoldFor(member("verified"), USER, pro), "go");
+});
+
 test("source contract: fulfilment wires the hold; the admin decision (lawyer AND firm) and the instant approval settle held plans", () => {
   const wrapper = readFileSync(join(ROOT, "src", "lib", "payments", "fulfillOrder.ts"), "utf8");
   assert.match(wrapper, /licenceHold: \(userId, item\) => licenceHoldFor\(admin, userId, item\),/);
@@ -273,4 +373,7 @@ test("source contract: fulfilment wires the hold; the admin decision (lawyer AND
   assert.match(server, /if \(!autoRefund\) \{\s+return Promise\.resolve\(\{ status: 409,/);
   const billing = readFileSync(join(ROOT, "src", "app", "dashboard", "billing", "page.tsx"), "utf8");
   assert.match(billing, /supabase\.rpc\("my_licence_held_orders"\)/);
+  // l19 (٢٤٢): a firm APPROVAL also settles its members (never a rejection), keyed on the firm row just updated
+  assert.match(route, /updatedType === "firm" && action === "approve" && updatedFirmId\s*\? await settleFirmMembersHeldPlansAfterApproval\(adminClient, gate\.userId, updatedFirmId, userId\)/);
+  assert.match(server, /settleHeldPlansAfterDecision\(admin, actorId, memberId, "approve", true, "firm"\)/);
 });

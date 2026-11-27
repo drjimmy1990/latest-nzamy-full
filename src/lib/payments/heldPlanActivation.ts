@@ -12,9 +12,8 @@
  *     already list verified providers only) for a pending licence or one not
  *     submitted yet (l18 review ruling: its approval releases the hold),
  *     "review" (rejected / suspended: no approval will follow), null (a read
- *     failed → the sweep retries). A verified licence whose recorded expiry
- *     passed between checkout (which refuses it) and the payment still goes:
- *     a verified customer is not refunded over a date that turned overnight.
+ *     failed → the sweep retries). l19 (owner ٢٤١): a verified licence goes
+ *     whatever its recorded expiry date.
  *   settleHeldPlansOnVerification — the admin's decision on that licence
  *     (PATCH /api/v1/admin/verifications/[id], lawyer AND firm branches, and
  *     the instant approval of lawyerSignup/approve.ts):
@@ -42,6 +41,15 @@
  *         subscription row is looked up for an already_entitled order).
  *   Nothing here ever fails the verification decision: every outcome is
  *   returned and logged.
+ *   settleHeldPlansOfFirmMembers — owner ٢٤٢ (27 Nov, batch l19; reverses
+ *     l18's «approving a firm does not release its members' plans»): when the
+ *     admin APPROVES a firm's verification, the held professional plans of its
+ *     ACTIVE member lawyers are released too, each through the same
+ *     settlement as above, keyed on that member (his own orders, his own
+ *     notice «اعتُمد توثيق مكتبك…»). A member whose OWN licence was rejected or
+ *     suspended stays as is; the firm's owner is settled by the firm's own
+ *     call. A firm REJECTION touches no member: their held orders stay held,
+ *     and each may still be released by the approval of his own licence.
  *
  * Relative imports only (type-only for Supabase), so `node --test` loads it.
  */
@@ -65,7 +73,7 @@ export async function licenceHoldFor(admin: SupabaseClient, userId: string, item
     if (typeof userType !== "string" || !licenceGatedPurchase(item, userType)) return "go";
     const detail = licenceDetail(await readLicenceFacts(admin, userId, userType));
     if (detail === null) return null;
-    if (detail === "verified" || detail === "expired") return "go";
+    if (detail === "verified") return "go";
     return detail === "pending" || detail === "none" ? "hold" : "review";
   } catch (err) {
     console.error("[payments/licence-hold] threw:", err instanceof Error ? err.message : "unknown");
@@ -112,7 +120,7 @@ async function merge(admin: SupabaseClient, orderId: string, patch: Record<strin
   }
 }
 
-async function alert(deps: HeldPlanDeps, title: string, body: string): Promise<void> {
+async function alert(deps: Pick<HeldPlanDeps, "notifyAdmins">, title: string, body: string): Promise<void> {
   console.error("[payments/held-plan]", title, body);
   if (!deps.notifyAdmins) return;
   try {
@@ -155,7 +163,10 @@ export function heldOrdersByRank(rows: readonly HeldRow[], deps: Pick<HeldPlanDe
   );
 }
 
-async function activate(deps: HeldPlanDeps, row: HeldRow, now: Date, result: HeldPlanResult): Promise<boolean> {
+/** Whose verification released the plan: the buyer's own (default), or (l19, ٢٤٢) the firm he works in. */
+export type HeldPlanRelease = "own" | "firm";
+
+async function activate(deps: HeldPlanDeps, row: HeldRow, now: Date, result: HeldPlanResult, via: HeldPlanRelease = "own"): Promise<boolean> {
   const item = resolveItem(row.item_id, deps.catalog);
   const granted = await grantPurchase(
     deps,
@@ -190,7 +201,10 @@ async function activate(deps: HeldPlanDeps, row: HeldRow, now: Date, result: Hel
     await deps.notify({
       userId: row.user_id,
       title: "تم تفعيل باقتك بعد اعتماد التوثيق",
-      body: `اعتُمد توثيقك وفُعّلت باقة «${item?.labelAr ?? "الباقة"}» من اليوم.${receipt}`,
+      body:
+        via === "firm"
+          ? `اعتُمد توثيق مكتبك وفُعّلت باقة «${item?.labelAr ?? "الباقة"}» من اليوم.${receipt}`
+          : `اعتُمد توثيقك وفُعّلت باقة «${item?.labelAr ?? "الباقة"}» من اليوم.${receipt}`,
       href: "/dashboard/billing",
     });
   } catch {
@@ -237,11 +251,16 @@ async function refundHeld(deps: HeldPlanDeps, row: HeldRow, result: HeldPlanResu
   await alert(deps, "رُفض توثيق حساب دفع باقة مهنية — يلزم استرداد", `لم يكتمل الاسترداد الكامل تلقائيًا: ${why}. الطلب ${row.id}.`);
 }
 
-/** After the admin's decision on a lawyer's or a firm's licence. Never throws. */
+/**
+ * After the admin's decision on a lawyer's or a firm's licence. Never throws.
+ * `opts.via` "firm" (l19, ٢٤٢): the member of a firm whose verification was
+ * approved — only the activation notice's wording changes.
+ */
 export async function settleHeldPlansOnVerification(
   deps: HeldPlanDeps,
   userId: string,
   decision: "approve" | "reject",
+  opts: { via?: HeldPlanRelease } = {},
 ): Promise<HeldPlanResult> {
   const result: HeldPlanResult = { activated: [], refunded: [], review: [] };
   try {
@@ -254,7 +273,7 @@ export async function settleHeldPlansOnVerification(
     if (decision === "approve") {
       // l18 review: only the highest plan is activated; the others are refunded once it is active
       const [first, ...rest] = heldOrdersByRank(rows, deps);
-      if (first && (await activate(deps, first, now, result))) {
+      if (first && (await activate(deps, first, now, result, opts.via ?? "own"))) {
         for (const row of rest) await refundSuperseded(deps, row, first.id, result);
       } else if (rest.length > 0) {
         await alert(deps, "باقات محجوزة لم تُفعَّل بعد اعتماد التوثيق", `لم تُفعَّل الباقة الأعلى (الطلب ${first?.id ?? "—"})، فبقيت الطلبات الأخرى محجوزة: ${rest.map((r) => r.id).join("، ")}.`);
@@ -266,4 +285,100 @@ export async function settleHeldPlansOnVerification(
     console.error("[payments/held-plan] unexpected:", err instanceof Error ? err.message : err);
   }
   return result;
+}
+
+// ── l19, owner ٢٤٢: approving a firm releases its member lawyers' held plans ──
+
+/** At most this many active members are looked at per approval (a firm's seats are far fewer). */
+export const FIRM_MEMBER_RELEASE_LIMIT = 500;
+const MEMBER_CHUNK = 150;
+
+export interface FirmMembersRelease {
+  /** Per member whose held plans were settled. */
+  members: Array<{ userId: string; result: HeldPlanResult }>;
+  /** Active members with held plans left as they are: their own licence was rejected or suspended. */
+  skipped: string[];
+  /** A read failed: nothing was settled for the members, the admins were alerted. */
+  readFailed: boolean;
+}
+
+/**
+ * After the admin APPROVED the firm `firmId` (owned by `ownerUserId`): the
+ * active members (firm_members.status 'active', the owner excluded — the
+ * firm's own call settles him) who hold a paid plan order waiting for the
+ * licence (metadata.licence_pending) are settled one by one through `settle`
+ * (settleHeldPlansAfterDecision(…, member, "approve", …, { via: "firm" })),
+ * except a member whose OWN lawyer_profiles.verification_status is
+ * 'rejected' or 'suspended'. Any failed read settles no member and alerts the
+ * admins. Never throws.
+ */
+export async function settleHeldPlansOfFirmMembers(
+  deps: Pick<HeldPlanDeps, "admin" | "notifyAdmins">,
+  firmId: string,
+  ownerUserId: string,
+  settle: (memberId: string) => Promise<HeldPlanResult>,
+): Promise<FirmMembersRelease> {
+  const out: FirmMembersRelease = { members: [], skipped: [], readFailed: false };
+  const failed = async (what: string, code: unknown) => {
+    console.error("[payments/held-plan] firm members:", what, code ?? "no-code");
+    out.readFailed = true;
+    await alert(
+      deps,
+      "تعذّرت مراجعة باقات أعضاء المكتب بعد اعتماده",
+      `اعتُمد توثيق المكتب ${firmId}، ولم تُفعَّل الباقات المحجوزة لأعضائه (${what}) — راجع صفحة المدفوعات.`,
+    );
+    return out;
+  };
+  try {
+    const { data: rows, error } = await deps.admin
+      .from("firm_members")
+      .select("user_id")
+      .eq("firm_id", firmId)
+      .eq("status", "active")
+      .limit(FIRM_MEMBER_RELEASE_LIMIT);
+    if (error) return await failed("firm_members", error.code);
+    const memberIds = Array.from(
+      new Set(
+        ((rows ?? []) as Array<{ user_id?: unknown }>)
+          .map((r) => r.user_id)
+          .filter((id): id is string => typeof id === "string" && id !== "" && id !== ownerUserId),
+      ),
+    );
+    // only the members who hold a plan order waiting for the licence
+    const holders = new Set<string>();
+    const ownStatus = new Map<string, unknown>();
+    for (let i = 0; i < memberIds.length; i += MEMBER_CHUNK) {
+      const part = memberIds.slice(i, i + MEMBER_CHUNK);
+      const held = await deps.admin
+        .from("payment_orders")
+        .select("user_id")
+        .in("user_id", part)
+        .eq("status", "paid")
+        .eq("kind", "plan")
+        .eq("metadata->>licence_pending", "true")
+        .limit(1000);
+      if (held.error) return await failed("payment_orders", held.error.code);
+      for (const h of (held.data ?? []) as Array<{ user_id?: unknown }>) if (typeof h.user_id === "string") holders.add(h.user_id);
+    }
+    const toSettle = memberIds.filter((id) => holders.has(id));
+    for (let i = 0; i < toSettle.length; i += MEMBER_CHUNK) {
+      const part = toSettle.slice(i, i + MEMBER_CHUNK);
+      const own = await deps.admin.from("lawyer_profiles").select("user_id, verification_status").in("user_id", part);
+      if (own.error) return await failed("lawyer_profiles", own.error.code);
+      for (const p of (own.data ?? []) as Array<{ user_id?: unknown; verification_status?: unknown }>) {
+        if (typeof p.user_id === "string") ownStatus.set(p.user_id, p.verification_status);
+      }
+    }
+    for (const memberId of toSettle) {
+      const status = ownStatus.get(memberId);
+      if (status === "rejected" || status === "suspended") {
+        out.skipped.push(memberId);
+        continue;
+      }
+      out.members.push({ userId: memberId, result: await settle(memberId) });
+    }
+  } catch (err) {
+    return await failed("unexpected", err instanceof Error ? err.message : "error");
+  }
+  return out;
 }

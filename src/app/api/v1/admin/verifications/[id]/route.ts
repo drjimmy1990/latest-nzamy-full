@@ -5,7 +5,7 @@ import { recordNotification } from "@/lib/notify";
 import { requireStaff } from "@/lib/access-control";
 import { logAdminAction } from "@/lib/auth/adminAudit";
 import { settleFounderSeatAfterDecision } from "@/lib/membership/founderVerificationServer";
-import { settleHeldPlansAfterDecision } from "@/lib/payments/heldPlanActivationServer";
+import { settleFirmMembersHeldPlansAfterApproval, settleHeldPlansAfterDecision } from "@/lib/payments/heldPlanActivationServer";
 import { isFakeTestLicence, isFakeLicenceDbError, FAKE_LICENCE_REFUSAL_AR } from "@/lib/lawyerSignup/fakeLicence";
 import {
   isVerifiedPhoneDbError,
@@ -82,6 +82,8 @@ export async function PATCH(
   let updated = false;
   let updatedName = "";
   let updatedType = "";
+  // l19 (owner ٢٤٢): the firm whose verification was decided (its members' held plans)
+  let updatedFirmId: string | null = null;
 
   // 1. Try lawyer_profiles
   const { data: lawyerUpdate, error: lawyerErr } = await adminClient
@@ -168,6 +170,7 @@ export async function PATCH(
       updated = true;
       updatedType = "firm";
       updatedName = (firmUpdate.name_ar as string) ?? userId;
+      updatedFirmId = typeof firmUpdate.id === "string" ? firmUpdate.id : null;
     }
   }
 
@@ -221,6 +224,15 @@ export async function PATCH(
     updatedType === "lawyer" || updatedType === "firm"
       ? await settleHeldPlansAfterDecision(adminClient, gate.userId, userId, action === "approve" ? "approve" : "reject")
       : null;
+  // ── l19 (owner ٢٤٢): approving a FIRM also releases the held professional ──
+  // plans of its active member lawyers (each keyed on that member); a member
+  // whose own licence was rejected or suspended stays as is. A firm rejection
+  // leaves the members' held orders held (each may still be approved on his
+  // own licence). Never fails the decision.
+  const memberHeldPlans =
+    updatedType === "firm" && action === "approve" && updatedFirmId
+      ? await settleFirmMembersHeldPlansAfterApproval(adminClient, gate.userId, updatedFirmId, userId)
+      : null;
 
   // ── Response ───────────────────────────────────────────────────────────────
   const actionLabel = action === "approve" ? "اعتماد" : "رفض";
@@ -237,5 +249,8 @@ export async function PATCH(
     },
     ...(founder && founder.outcome !== "none" ? { founderSeat: founder.outcome } : {}),
     ...(heldPlans && heldPlans.activated.length + heldPlans.refunded.length + heldPlans.review.length > 0 ? { heldPlans } : {}),
+    ...(memberHeldPlans && (memberHeldPlans.members.length > 0 || memberHeldPlans.skipped.length > 0 || memberHeldPlans.readFailed)
+      ? { memberHeldPlans }
+      : {}),
   });
 }

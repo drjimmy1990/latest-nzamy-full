@@ -13,9 +13,20 @@ import { grantLibraryAccess } from "@/lib/libraryAccessServer";
 import { createMoyasarClient } from "@/lib/payments/moyasarClient";
 import { REFUND_NOTICE_AR, refundOrderWith } from "@/lib/payments/refundCore";
 import { recordNotification } from "@/lib/notify";
-import { settleHeldPlansOnVerification, type HeldPlanResult } from "./heldPlanActivation.ts";
+import {
+  settleHeldPlansOfFirmMembers,
+  settleHeldPlansOnVerification,
+  type FirmMembersRelease,
+  type HeldPlanRelease,
+  type HeldPlanResult,
+} from "./heldPlanActivation.ts";
 
 type Svc = Awaited<ReturnType<typeof createServiceClient>>;
+
+const notifyAdminsWith = (admin: Svc) => async (n: { title: string; body: string; href: string }) => {
+  const { error } = await admin.rpc("library_monitor_notify_admins", { p_title: n.title, p_body: n.body, p_href: n.href });
+  if (error) throw new Error(`library_monitor_notify_admins ${error.code ?? "error"}`);
+};
 
 /**
  * After the admin approved or rejected a LAWYER's or a FIRM's verification:
@@ -25,6 +36,7 @@ type Svc = Awaited<ReturnType<typeof createServiceClient>>;
  * `autoRefund` false (l18 review — fulfilment's late release, where no admin
  * acted): no refund runs under the buyer's id; a lower held plan is left in
  * the admin's refund review with an alert instead.
+ * `via` "firm" (l19, ٢٤٢): a member released by his firm's approval.
  */
 export async function settleHeldPlansAfterDecision(
   admin: Svc,
@@ -32,6 +44,7 @@ export async function settleHeldPlansAfterDecision(
   userId: string,
   decision: "approve" | "reject",
   autoRefund = true,
+  via: HeldPlanRelease = "own",
 ): Promise<HeldPlanResult> {
   return settleHeldPlansOnVerification(
     {
@@ -39,10 +52,7 @@ export async function settleHeldPlansAfterDecision(
       grantLibrary: grantLibraryAccess,
       ranks: TIER_RANK,
       notify: (n) => recordNotification(n),
-      notifyAdmins: async (n) => {
-        const { error } = await admin.rpc("library_monitor_notify_admins", { p_title: n.title, p_body: n.body, p_href: n.href });
-        if (error) throw new Error(`library_monitor_notify_admins ${error.code ?? "error"}`);
-      },
+      notifyAdmins: notifyAdminsWith(admin),
       refund: (orderId) => {
         if (!autoRefund) {
           return Promise.resolve({ status: 409, body: { error: "اعتُمد التوثيق أثناء معالجة الدفع، فيُجرى الاسترداد من صفحة المدفوعات" } });
@@ -68,5 +78,24 @@ export async function settleHeldPlansAfterDecision(
     },
     userId,
     decision,
+    { via },
+  );
+}
+
+/**
+ * l19 (owner ٢٤٢): after the admin APPROVED a firm's verification, the held
+ * professional plans of its active member lawyers are released the same way
+ * (each keyed on that member, refunds of a lower held plan acting as the
+ * admin). A member whose own licence was rejected or suspended stays as is.
+ * Never throws.
+ */
+export async function settleFirmMembersHeldPlansAfterApproval(
+  admin: Svc,
+  actorId: string,
+  firmId: string,
+  ownerUserId: string,
+): Promise<FirmMembersRelease> {
+  return settleHeldPlansOfFirmMembers({ admin, notifyAdmins: notifyAdminsWith(admin) }, firmId, ownerUserId, (memberId) =>
+    settleHeldPlansAfterDecision(admin, actorId, memberId, "approve", true, "firm"),
   );
 }
