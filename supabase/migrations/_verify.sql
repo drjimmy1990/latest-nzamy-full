@@ -9265,3 +9265,17 @@ select 'l19 plans: ai_plan_allowance_uses has RLS on, run_id as its key and no s
                      and not has_table_privilege('anon', 'public.ai_plan_allowance_uses', 'SELECT') end
        and coalesce(exists (select 1 from public.platform_settings where key = 'ind_ai_fair_use'), false) as ok;
 -- <<< verify:l19_ind_ai_fair_use
+
+-- >>> verify:l19_grant_topup_follow — supabase/tests/rls/l19_grant_topup_follow.test.sql
+-- l19 review (access S4): a library grant's top-up lot follows the grant's end (revoke / adjust).
+-- 20261209_90 runs after 20261209_50 (before or after the deploy); before it runs the check answers ok = false.
+select 'l19 grant top-up follows: trigger library_grant_topup_lot_follow on library_access_grants, its function SECURITY DEFINER with an empty search_path and no session grant (run 20261209_90)' as check,
+       coalesce((select p.prosecdef
+                        and p.proconfig @> array['search_path=""']
+                        and position('library_grant_points_topups' in pg_catalog.pg_get_functiondef(p.oid)) > 0
+                        and not has_function_privilege('authenticated', p.oid, 'EXECUTE')
+                   from pg_catalog.pg_proc p where p.oid = to_regprocedure('public.library_grant_topup_lot_follow()')), false)
+       and coalesce(exists (select 1 from pg_catalog.pg_trigger tg
+                             where tg.tgrelid = to_regclass('public.library_access_grants')
+                               and tg.tgname = 'library_grant_topup_lot_follow' and tg.tgenabled <> 'D'), false) as ok;
+-- <<< verify:l19_grant_topup_follow
