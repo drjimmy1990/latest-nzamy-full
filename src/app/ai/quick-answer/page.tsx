@@ -132,7 +132,7 @@ function QuickAnswerTool() {
   const cites = asCitations(run.citations);
   const ungrounded = isUngroundedAnswer(run.output);
   // Owner ٤١٧: open to every account (general guidance), but the library's AI tier still gates it.
-  const libraryRefusal = run.phase === "error" ? libraryToolRefusal(run.code, "سؤال قانوني سريع", user.userType) : null;
+  const libraryRefusal = run.phase === "error" ? libraryToolRefusal(run.code, "سؤال قانوني سريع", user.userType, true) : null;
   // Art. 18: /ai/wargaming refuses a consultant, so it is not offered to him.
   // Owner ٤١٧ (8 Nov): «عصارة المرفقات» (/ai/analyze's lawyer half) and the simulator are
   // lawyer and firm tools, so another account is offered only the legal opinion.

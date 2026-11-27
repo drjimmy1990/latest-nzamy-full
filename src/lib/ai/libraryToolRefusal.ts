@@ -23,6 +23,8 @@
 import { isOnSale, PRICE_BOOK, type BookEntry } from "../pricing/priceBook.ts";
 
 export const LIBRARY_TOOL_PLANS_HREF = "/pricing";
+/** ق٢٦-٦ (l19): the individuals' tab of /pricing, where the smart plan is sold. */
+export const SMART_PLAN_HREF = "/pricing?audience=individuals";
 
 /** The tiers at or above `pro` in TIER_RANK (access-control.ts): the library AI's rule. */
 export const LIBRARY_AI_TIERS: ReadonlySet<string> = new Set(["pro", "max", "corp", "enterprise"]);
@@ -53,9 +55,21 @@ export function libraryToolRefusal(
   code: string | null | undefined,
   toolNameAr: string,
   userType: string | null | undefined,
+  /**
+   * Owner ق٢٦-٦ (batch l19): the individual's smart plan (ind-ai) opens this
+   * tool (the quick answer only — runs/route.ts). An individual is then
+   * pointed to that plan, not told the tool is closed to his account type.
+   */
+  opensWithSmartPlan = false,
 ): LibraryToolRefusal | null {
   if (code === "library_tier") {
     if (userType === "admin") return null; // an admin passes the gate; never told to subscribe
+    if (opensWithSmartPlan && userType === "individual") {
+      return {
+        text: `«${toolNameAr}» متاح لمشتركي «الباقة الذكية» للأفراد ضمن الاستخدام العادل (أسئلة شهرية محددة، ثم بالنقاط). لم تُخصم نقاطك.`,
+        action: { label: "عرض الباقة الذكية", href: SMART_PLAN_HREF },
+      };
+    }
     if (!proPlanOnSaleFor(userType)) {
       return {
         text: `«${toolNameAr}»: هذه الأداة تتطلب اشتراك المكتبة القانونية الكامل، وهو غير متاح لنوع حسابك حالياً — لم تُخصم نقاطك.`,

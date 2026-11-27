@@ -276,6 +276,18 @@ test("run: never asked for an admin, a business, without the dep, or when the re
 
 // ── wiring ───────────────────────────────────────────────────────────────────
 
+test("a free individual refused on the quick answer is pointed to the smart plan, not told it is closed", async () => {
+  const { libraryToolRefusal, SMART_PLAN_HREF } = await import("./libraryToolRefusal.ts");
+  const r = libraryToolRefusal("library_tier", "سؤال قانوني سريع", "individual", true)!;
+  assert.match(r.text, /«الباقة الذكية»/);
+  assert.deepEqual(r.action, { label: "عرض الباقة الذكية", href: SMART_PLAN_HREF });
+  assert.equal(SMART_PLAN_HREF, "/pricing?audience=individuals");
+  // every other page / type: unchanged
+  assert.match(libraryToolRefusal("library_tier", "x", "individual")!.text, /غير متاح لنوع حسابك/);
+  assert.doesNotMatch(libraryToolRefusal("library_tier", "x", "lawyer", true)!.text, /الباقة الذكية/);
+  assert.match(read("../../app/ai/quick-answer/page.tsx"), /libraryToolRefusal\(run\.code, "سؤال قانوني سريع", user\.userType, true\)/);
+});
+
 test("the runs route passes the counter and opens the quick answer for an ind-ai subscriber", () => {
   const route = read("../../app/api/v1/ai/runs/route.ts");
   assert.match(route, /planAllowance: \(userId, kind\) => planAllowanceStateWith\(admin, userId, kind\),/);
@@ -291,7 +303,8 @@ test("the runs route passes the counter and opens the quick answer for an ind-ai
 test("the screen line: «بقي لك X من Y» while some is left, the used note before the points after", () => {
   const left = parseToolPointsAnswer({ charged: true, available: 0, planAllowance: { kind: "question", left: 28, limit: 30 } });
   assert.deepEqual(left, { charged: true, available: 0, planAllowance: { kind: "question", left: 28, limit: 30 } });
-  assert.deepEqual(toolPointsView(left, 10), { text: "ضمن باقتك الذكية: بقي لك ٢٨ من ٣٠ سؤالاً هذا الشهر، ولا تُخصم نقاط", tone: "free", short: false });
+  assert.deepEqual(toolPointsView(left, 10), { text: "أسئلة باقتك الذكية المتبقية هذا الشهر: ٢٨ من ٣٠ — لا تُخصم نقاط", tone: "free", short: false });
+  assert.equal(PLAN_ALLOWANCE_COPY.left("work", 1, 2), "العقود المبسّطة المتبقية في باقتك الذكية هذا الشهر: ١ من ٢ — لا تُخصم نقاط");
   const used = parseToolPointsAnswer({ charged: true, available: 4, planAllowance: { kind: "work", left: 0, limit: 2 } });
   const v = toolPointsView(used, 100)!;
   assert.equal(v.short, true);

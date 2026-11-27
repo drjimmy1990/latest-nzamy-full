@@ -138,11 +138,14 @@ const ar = (n: number) => String(n).replace(/[0-9]/g, (d) => AR_DIGITS[Number(d)
 export const PLAN_ALLOWANCE_TOPUP_HREF = "/dashboard/client/wallet#topup";
 
 export const PLAN_ALLOWANCE_COPY = {
-  /** «ضمن باقتك الذكية: بقي لك ٢٨ من ٣٠ سؤالاً هذا الشهر» beside the price. */
+  /**
+   * Beside the price. A label:value form, so the count never heads an
+   * agreeing noun phrase (١ / ٢ / ٣–١٠ / ١١+ take different Arabic forms).
+   */
   left: (kind: PlanAllowanceKind, left: number, limit: number) =>
     kind === "question"
-      ? `ضمن باقتك الذكية: بقي لك ${ar(left)} من ${ar(limit)} سؤالاً هذا الشهر، ولا تُخصم نقاط`
-      : `ضمن باقتك الذكية: بقي لك ${ar(left)} من ${ar(limit)} عقود مبسّطة هذا الشهر، ولا تُخصم نقاط`,
+      ? `أسئلة باقتك الذكية المتبقية هذا الشهر: ${ar(left)} من ${ar(limit)} — لا تُخصم نقاط`
+      : `العقود المبسّطة المتبقية في باقتك الذكية هذا الشهر: ${ar(left)} من ${ar(limit)} — لا تُخصم نقاط`,
   /** The month's allowance is used: the run is charged points (the screen says so before). */
   usedNote: (kind: PlanAllowanceKind) =>
     kind === "question"
@@ -151,7 +154,7 @@ export const PLAN_ALLOWANCE_COPY = {
   /** 402 plan_allowance_used: used, and not enough points either. */
   refused: (kind: PlanAllowanceKind, limit: number) =>
     kind === "question"
-      ? `استنفدت أسئلة باقتك الذكية لهذا الشهر (${ar(limit)} سؤالاً، ولا تُرحَّل)، ورصيد نقاطك لا يكفي لهذا السؤال. يتجدد الرصيد أول الشهر القادم بتوقيت الرياض، ويمكنك الآن شحن رصيدك بباقة ١٠٠ أو ٢٥٠ نقطة.`
-      : `استنفدت العقود المبسّطة في باقتك الذكية لهذا الشهر (${ar(limit)}، ولا تُرحَّل)، ورصيد نقاطك لا يكفي لهذه العملية. يتجدد الرصيد أول الشهر القادم بتوقيت الرياض، ويمكنك الآن شحن رصيدك بباقة ١٠٠ أو ٢٥٠ نقطة.`,
+      ? `استنفدت أسئلة باقتك الذكية لهذا الشهر (الحد الشهري: ${ar(limit)}، ولا يُرحَّل)، ورصيد نقاطك لا يكفي لهذا السؤال. يتجدد الرصيد أول الشهر القادم بتوقيت الرياض، ويمكنك الآن شحن رصيدك بباقة ١٠٠ أو ٢٥٠ نقطة.`
+      : `استنفدت العقود المبسّطة في باقتك الذكية لهذا الشهر (الحد الشهري: ${ar(limit)}، ولا يُرحَّل)، ورصيد نقاطك لا يكفي لهذه العملية. يتجدد الرصيد أول الشهر القادم بتوقيت الرياض، ويمكنك الآن شحن رصيدك بباقة ١٠٠ أو ٢٥٠ نقطة.`,
   topupLink: "اشحن رصيدك",
 } as const;
