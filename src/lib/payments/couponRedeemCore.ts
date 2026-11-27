@@ -215,7 +215,7 @@ export async function redeemCouponWith(deps: RedeemDeps, input: { userId: string
       } catch {
         facts = null;
       }
-      const decision = licenceFreeCodeDecision(userType as string, facts, now);
+      const decision = licenceFreeCodeDecision(userType as string, facts);
       if (decision.ok === false) return fail(decision.status, decision.error);
     }
     if (item.kind === "plan" && item.tier) {

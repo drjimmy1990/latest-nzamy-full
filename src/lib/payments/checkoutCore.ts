@@ -582,7 +582,7 @@ export async function startCheckoutWith(deps: CheckoutDeps, input: CheckoutInput
     } catch {
       licenceFacts = null;
     }
-    const decision = licenceCheckoutDecision(userType as string, licenceFacts ?? null, { itemKind: known.kind, now: deps.now?.() ?? new Date() });
+    const decision = licenceCheckoutDecision(userType as string, licenceFacts ?? null, { itemKind: known.kind });
     if (decision.ok === false) {
       return {
         status: decision.status,
@@ -725,7 +725,7 @@ export async function startCheckoutWith(deps: CheckoutDeps, input: CheckoutInput
     // l18 (٢٣٩): a free activation of a professional plan needs a VERIFIED
     // licence (nothing paid to hold) — refused before the code is opened
     if (licenceGated) {
-      const free = licenceFreeCodeDecision(userType as string, licenceFacts ?? null, now);
+      const free = licenceFreeCodeDecision(userType as string, licenceFacts ?? null);
       if (free.ok === false) return { status: free.status, body: { error: free.error, ...(free.code ? { code: free.code } : {}) } };
     }
     // l18 review: an open order for this item (any billing) — e.g. a payment
