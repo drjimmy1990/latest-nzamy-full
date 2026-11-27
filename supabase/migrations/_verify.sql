@@ -9165,3 +9165,14 @@ select 'l19 corr: email_reminder_log accepts licence_expiry_30d_app, licence_exp
                         unnest(array['licence_expiry_30d_app', 'licence_expiry_7d_app', 'licence_expiry_0d_app',
                                      'task_due_1d_app', 'contract_pay_due_app', 'firm_invite']) as k), false) as ok;
 -- <<< verify:l19_corr
+
+-- >>> verify:l19_lawyer_otp_failed_delivery — supabase/tests/rls/l19_lawyer_otp_failed_delivery.test.sql
+-- Batch l19-email (LIVE-18). 20261209_30 runs any time; before it runs this reads f («run 20261209_30»).
+select 'l19 email: a lawyer code whose e-mail send failed burns no 60 s cooldown and no hourly code; the 24 h per-target limit and service_role-only stay (run 20261209_30)' as check,
+       coalesce(pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.lawyer_otp_issue(uuid, text, text, text, text, text, text)')),
+                                  'delivery <> ''failed''') > 0
+                and pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.lawyer_otp_issue(uuid, text, text, text, text, text, text)')),
+                                      'target_limit') > 0
+                and not has_function_privilege('authenticated', to_regprocedure('public.lawyer_otp_issue(uuid, text, text, text, text, text, text)'), 'EXECUTE')
+                and has_function_privilege('service_role', to_regprocedure('public.lawyer_otp_issue(uuid, text, text, text, text, text, text)'), 'EXECUTE'), false) as ok;
+-- <<< verify:l19_lawyer_otp_failed_delivery

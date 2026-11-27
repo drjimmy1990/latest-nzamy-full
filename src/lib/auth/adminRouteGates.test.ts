@@ -253,6 +253,8 @@ const WRITE_MARKERS = [
   "sendIssueBatch(",
   // l15: the admin's test WhatsApp code (an outside send, audited)
   "sendAdminTestCode(",
+  // l19: the admin's test e-mail (an outside send, audited)
+  "sendEmailDetailed(",
 ];
 
 function firstWriteAt(body: string): number {
@@ -286,6 +288,8 @@ const GATES: Array<{ file: string; method: string; action: StaffAction | "per-fi
   { file: "settings/route.ts", method: "PATCH", action: "settings.write", logs: 1 },
   // Batch l15: «أرسل رمزًا تجريبيًا إلى جوالي» — super admin, audited.
   { file: "phone-otp/test-send/route.ts", method: "POST", action: "settings.write", logs: 1 },
+  // Batch l19 (LIVE-18): «أرسل بريدًا تجريبيًا إلى بريدي» — super admin, audited.
+  { file: "email/test-send/route.ts", method: "POST", action: "settings.write", logs: 1 },
   { file: "library/route.ts", method: "DELETE", action: "library.delete", logs: 1 },
   { file: "library/route.ts", method: "PATCH", action: "settings.write", logs: 1 },
   { file: "articles/[id]/route.ts", method: "DELETE", action: "content.delete", logs: 1 },
