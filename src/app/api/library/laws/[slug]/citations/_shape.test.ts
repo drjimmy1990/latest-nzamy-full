@@ -270,13 +270,14 @@ test("params: ids, numbers, name candidates, preview keys", () => {
 
 test("route contract: libraryGate first, service role for graph and articles, no text column, no map (register 14 item 14)", () => {
   const route = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
-  assert.match(route, /const gate = await libraryGate\(\);\s*if \(gate\) return gate;/);
+  // l19 (POST-L18-01): within its budget; a timeout refuses (linksBusy), an answer is returned as before
+  assert.match(route, /const gateRun = await withinBudget\(libraryGate\(\), GATE_BUDGET_MS\);[\s\S]{0,400}?if \(gateRun\.timedOut\) \{[\s\S]{0,300}?return linksBusy\([\s\S]{0,200}?if \(gateRun\.value\) return gateRun\.value;/);
   assert.match(route, /const ARTICLE_COLUMNS = 'id, number, title, status, instrument';/);
   assert.doesNotMatch(route, /select\([^)]*text/);
   assert.doesNotMatch(route, /spendLibraryDocument/);
   assert.match(route, /shapeArticleRefs\(answers\[i\]\.data, id, slug, q\.types\)/);
   assert.match(route, /const queries = READER_SECTION_QUERIES\s*\.map\(/, "one graph call per group");
-  assert.match(route, /queries\.map\(\(q\) =>\s*serverOnly\.rpc\('graph_rag_explore_neighborhood'/);
+  assert.match(route, /queries\.map\(\(q\) =>\s*serverOnly\s*\.rpc\('graph_rag_explore_neighborhood'/);
   assert.match(route, /p_edge_types: q\.types,/);
   assert.match(route, /select\('slug, status, title'\)/, "the law's name for a missing anchor");
   assert.doesNotMatch(route, /searchParams\.get\('map'\)|library_reader_law_links/, "the law map route branch is gone");
@@ -453,14 +454,16 @@ test("CITES_ARTICLE from the graph carries «رابط آلي» only when automat
 test("route contract (l12): ?bulk=1 reads the similar switch and calls the law function once", () => {
   const route = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
   assert.match(route, /url\.searchParams\.get\('bulk'\) === '1'/);
-  assert.match(route, /serverOnly\.rpc\('graph_rag_law_article_links', \{\s*p_law_slug: slug,\s*p_per_type: BULK_PER_TYPE,\s*p_types: types,/);
+  assert.match(route, /serverOnly\s*\.rpc\('graph_rag_law_article_links', \{\s*p_law_slug: slug,\s*p_per_type: BULK_PER_TYPE,\s*p_types: types,/);
   assert.match(route, /const types = readerLinkTypes\(flags\?\.library_similar_links \?\? false\);/);
   // owner Q171 (l13): no «رابط آلي» label — the mark is always cleared, no switch read
   assert.match(route, /const autoTagOn = false;/);
   assert.doesNotMatch(route, /library_auto_link_tag/);
   assert.match(route, /shapeLawLinks\(data, slug, types, safeArticleStatus, lawStatusForDetail, autoTagOn\)/);
   assert.match(route, /withHrefs\(withAutoTags\(orderRefs\(cleanArticleRefs\(live, id, slug, lawTitle\), slug\), autoTagOn\)\)/);
-  assert.match(route, /if \(graphFunctionMissing\(error\.code\)\) return json\(\{ available: false \}\);/, "before 20261202_30: the reader falls back to one article at a time");
+  // l19 (POST-L18-01): the graph read moved into loadLawLinks (bounded, single flight); same answer
+  assert.match(route, /if \(graphFunctionMissing\(error\.code\)\) return \{ kind: 'missing' \};/);
+  assert.match(route, /if \(load\.kind === 'missing'\) return json\(\{ available: false \}\);/, "before 20261202_30: the reader falls back to one article at a time");
 });
 
 test("Q132: the law's own node ('@law') answers like an article — links on the whole law", () => {

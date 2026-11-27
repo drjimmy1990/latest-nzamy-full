@@ -9196,3 +9196,21 @@ select 'l19 devices: library_monitor_settings.account_device_limit_enabled and u
                 and exists (select 1 from pg_catalog.pg_constraint
                              where conrelid = to_regclass('public.user_devices') and conname = 'user_devices_kind_check'), false) as ok;
 -- <<< verify:l19_devices
+-- >>> verify:l19_grant_topup — supabase/tests/rls/l19_library_grant_topup.test.sql
+-- Batch l19 (LIVE-10): an admin / request library grant tops the grantee up to 50 points, once per grant.
+-- 20261209_50 runs before or after the deploy; before it runs both checks answer ok = false.
+select 'l19 grant top-up: library_grant_points_topup(uuid) is SECURITY DEFINER with an empty search_path, locks the grant, credits through credit_wallet_points once per grant, service role only (run 20261209_50)' as check,
+       coalesce((select p.prosecdef
+                        and p.proconfig @> array['search_path=""']
+                        and position('for update' in lower(pg_catalog.pg_get_functiondef(p.oid))) > 0
+                        and position('credit_wallet_points' in pg_catalog.pg_get_functiondef(p.oid)) > 0
+                        and position('library_grant_points_topups' in pg_catalog.pg_get_functiondef(p.oid)) > 0
+                        and not has_function_privilege('anon', p.oid, 'EXECUTE')
+                        and not has_function_privilege('authenticated', p.oid, 'EXECUTE')
+                   from pg_catalog.pg_proc p where p.oid = to_regprocedure('public.library_grant_points_topup(uuid)')), false) as ok;
+select 'l19 grant top-up: library_grant_points_topups has RLS on and no anon / authenticated read (run 20261209_50)' as check,
+       coalesce((select c.relrowsecurity
+                        and not has_table_privilege('anon', c.oid, 'SELECT')
+                        and not has_table_privilege('authenticated', c.oid, 'SELECT')
+                   from pg_catalog.pg_class c where c.oid = to_regclass('public.library_grant_points_topups')), false) as ok;
+-- <<< verify:l19_grant_topup

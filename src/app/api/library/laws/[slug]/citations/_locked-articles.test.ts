@@ -67,7 +67,8 @@ test("?article=: a locked box answers nothing — no item, no total", () => {
 
 test("the route strips per viewer AFTER the cache, by the law route's own rule", () => {
   const route = read("./route.ts");
-  assert.match(route, /const viewer = await viewerLinksAccess\(serverOnly, slug\);\n\s+const body = \{ available: true, \.\.\.maskDecreeTitlesForViewer\(withoutLockedArticles\(shapedLaw, viewer\.openIds\), viewer\.isSubscriber\) \};/);
+  // l19 (POST-L18-01): the viewer read is started beside the graph read and bounded (boundedViewer)
+  assert.match(route, /const \{ viewer, timedOut: viewerLate, ms: viewerMs \} = await viewerRead;\n\s+const body = \{ available: true, \.\.\.maskDecreeTitlesForViewer\(withoutLockedArticles\(shapedLaw, viewer\.openIds\), viewer\.isSubscriber\) \};/);
   const article = route.slice(route.indexOf("if (url.searchParams.has('article'))"));
   const lockAt = article.indexOf("articleBoxLockedByOwnLaw(id, slug, {");
   assert.ok(lockAt >= 0 && lockAt < article.indexOf("articleCache.get(key)"), "a locked box never reaches the cache read");

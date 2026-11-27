@@ -11,6 +11,7 @@ import {
   ADMIN_GRANTABLE_PLANS, LIBRARY_PLAN_LABEL_AR,
 } from "@/lib/libraryAccessAdmin";
 import { GRANT_MAX_DAYS } from "@/lib/libraryAccess";
+import { grantPointsTopupAdminAr } from "@/lib/library/grantPointsTopup";
 
 /**
  * Admin → Entitlements editor.
@@ -122,18 +123,21 @@ export default function AdminEntitlementsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      const json = (await res.json()) as { error?: string; data?: { grant?: { endsAt?: string } } };
+      const json = (await res.json()) as { error?: string; data?: { grant?: { endsAt?: string }; pointsTopup?: unknown } };
       if (!res.ok) {
         setToast({ ok: false, msg: json.error ?? "فشل تنفيذ المنحة" });
         return;
       }
       if (action === "library") {
         const ends = json.data?.grant?.endsAt;
+        // LIVE-10 (batch l19): what the grant did to the member's points.
+        const pointsLine = grantPointsTopupAdminAr(json.data?.pointsTopup);
+        const grantedLine = ends
+          ? `تم منح المكتبة حتى ${new Date(ends).toLocaleDateString("ar-SA", { calendar: "gregory", timeZone: "Asia/Riyadh", day: "numeric", month: "long", year: "numeric" })}`
+          : "تم منح المكتبة";
         setToast({
           ok: true,
-          msg: ends
-            ? `تم منح المكتبة حتى ${new Date(ends).toLocaleDateString("ar-SA", { calendar: "gregory", timeZone: "Asia/Riyadh", day: "numeric", month: "long", year: "numeric" })}`
-            : "تم منح المكتبة",
+          msg: pointsLine ? `${grantedLine}، ${pointsLine}.` : grantedLine,
         });
         setLibraryReason("");
         setLibraryNotes("");
