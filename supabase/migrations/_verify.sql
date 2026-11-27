@@ -9186,6 +9186,7 @@ select 'l19 devices: account_device_gate(uuid,text,text,text) is SECURITY DEFINE
                         and position('platform_staff' in pg_catalog.pg_get_functiondef(p.oid)) > 0
                         and position('''exempt''' in pg_catalog.pg_get_functiondef(p.oid)) > 0
                         and position('d.kind = v_kind' in pg_catalog.pg_get_functiondef(p.oid)) > 0
+                        and position('v_recent >= 5' in pg_catalog.pg_get_functiondef(p.oid)) > 0
                         and not has_function_privilege('anon', p.oid, 'EXECUTE')
                         and not has_function_privilege('authenticated', p.oid, 'EXECUTE')
                    from pg_catalog.pg_proc p where p.oid = to_regprocedure('public.account_device_gate(uuid,text,text,text)')), false) as ok;

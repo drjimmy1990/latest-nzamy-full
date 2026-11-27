@@ -29,6 +29,8 @@
 --       classes) → «A9 the lawyer's first phone FAIL: got refused, want pending»;
 --   (c) 20261209_40 without the 2-minute wait («and v_row.first_seen <= now() -
 --       interval '2 minutes'» deleted) → «A4 … FAIL: got registered, want pending».
+--   (d) l19 review S4: 20261209_40 with «if v_recent >= 5 then» changed to
+--       «if v_recent >= 500 then» (no bound) → «Z2 … FAIL: got pending/<id>, want pending/null».
 \set ON_ERROR_STOP on
 
 create or replace function pg_temp.expect(label text, got text, want text) returns void language plpgsql as $$
@@ -172,6 +174,37 @@ select pg_temp.expect('R3 … confirmed', pg_temp.gate('9c000000-0000-0000-0000-
 select pg_temp.expect('R4 the old computer is now the extra one', pg_temp.gate('9c000000-0000-0000-0000-0000000000c1', 1, 'desktop'), 'refused');
 select pg_temp.expect('R5 the old phone comes back into the free phone slot', pg_temp.gate('9c000000-0000-0000-0000-0000000000c1', 2, 'desktop'), 'pending');
 select pg_temp.expect('R6 … in its stored class', pg_temp.kind_of('9c000000-0000-0000-0000-0000000000c1', 2), 'mobile');
+
+-- Z l19 review S4: cookie-less requests cannot grow user_devices without end.
+insert into auth.users (id) values ('9c000000-0000-0000-0000-0000000000c9') on conflict do nothing;
+insert into public.profiles (id, user_type, display_name) values ('9c000000-0000-0000-0000-0000000000c9', 'lawyer', 'Z') on conflict do nothing;
+create or replace function pg_temp.rows_of(p_user uuid) returns text language sql as $$
+  select pg_catalog.count(*)::text from public.user_devices d where d.user_id = p_user;
+$$;
+select pg_temp.expect('Z1 five parallel first ids of one computer: each a candidate', string_agg(pg_temp.gate('9c000000-0000-0000-0000-0000000000c9', n, 'desktop'), ','), 'pending,pending,pending,pending,pending')
+  from generate_series(201, 205) n;
+select pg_temp.expect('Z1 … five rows', pg_temp.rows_of('9c000000-0000-0000-0000-0000000000c9'), '5');
+select pg_temp.expect('Z2 a sixth id within 10 minutes: allowed, no row, no id',
+  (select g.status || '/' || coalesce(g.device_id::text, 'null') from public.account_device_gate('9c000000-0000-0000-0000-0000000000c9', pg_temp.h(206), 'كمبيوتر — Chrome / Windows', 'desktop') g), 'pending/null');
+select pg_temp.expect('Z2 … still five rows', pg_temp.rows_of('9c000000-0000-0000-0000-0000000000c9'), '5');
+select pg_temp.expect('Z3 the other class is counted on its own', pg_temp.gate('9c000000-0000-0000-0000-0000000000c9', 207, 'mobile'), 'pending');
+select pg_temp.expect('Z3 … its row written', pg_temp.rows_of('9c000000-0000-0000-0000-0000000000c9'), '6');
+select pg_temp.age('9c000000-0000-0000-0000-0000000000c9', 203);
+select pg_temp.expect('Z4 the id the browser kept comes back after the wait: registered', pg_temp.gate('9c000000-0000-0000-0000-0000000000c9', 203, 'desktop'), 'registered');
+select pg_temp.expect('Z5 the id that got no row is now the extra computer', pg_temp.gate('9c000000-0000-0000-0000-0000000000c9', 206, 'desktop'), 'refused');
+-- stale rows: a candidate 2 days old (deleted), a revoked one 2 days old and the confirmed computer (kept)
+insert into public.user_devices (user_id, device_hash, label, kind, first_seen, last_seen)
+values ('9c000000-0000-0000-0000-0000000000c9', pg_temp.h(208), 'جوال — Safari / iPhone', 'mobile', now() - interval '2 days', now() - interval '2 days');
+insert into public.user_devices (user_id, device_hash, label, kind, first_seen, last_seen, revoked_at, revoke_reason)
+values ('9c000000-0000-0000-0000-0000000000c9', pg_temp.h(209), 'جوال — Safari / iPhone', 'mobile', now() - interval '2 days', now() - interval '2 days', now() - interval '1 day', 'admin_reset');
+update public.user_devices d set first_seen = now() - interval '2 days'
+ where d.user_id = '9c000000-0000-0000-0000-0000000000c9' and d.device_hash = pg_temp.h(203);
+select pg_temp.expect('Z6 a new phone id: still a candidate', pg_temp.gate('9c000000-0000-0000-0000-0000000000c9', 210, 'mobile'), 'pending');
+select pg_temp.expect('Z6 … the 2-day-old candidate is pruned',
+  (select pg_catalog.count(*)::text from public.user_devices d where d.user_id = '9c000000-0000-0000-0000-0000000000c9' and d.device_hash = pg_temp.h(208)), '0');
+select pg_temp.expect('Z6 … the revoked row and the confirmed computer are kept',
+  (select pg_catalog.count(*)::text from public.user_devices d where d.user_id = '9c000000-0000-0000-0000-0000000000c9' and d.device_hash in (pg_temp.h(209), pg_temp.h(203))), '2');
+select pg_temp.expect('Z6 … the confirmed computer still answers ok', pg_temp.gate('9c000000-0000-0000-0000-0000000000c9', 203, 'desktop'), 'ok');
 
 -- O switch off again: nobody is refused.
 update public.library_monitor_settings set account_device_limit_enabled = false where id;

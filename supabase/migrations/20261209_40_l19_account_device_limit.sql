@@ -39,6 +39,13 @@
 --      last). A row still waiting for an old e-mail code (verified_at NULL)
 --      is a candidate like any other. The old library_device_gate /
 --      library_device_check stay, unused by the app.
+--      l19 review S4 — the candidate rows are BOUNDED: before a brand-new
+--      device's row is written, the user's candidates older than a day (never
+--      confirmed, not revoked) are deleted, and when the user already has 5
+--      candidates of that class first seen in the last 10 minutes no row is
+--      written ('pending', allowed, device_id NULL — the same id is asked
+--      about again on its next request). Parallel first loads (a handful) are
+--      unaffected; a cookie-less loop cannot grow user_devices without end.
 --
 -- WHO MAY CALL: SECURITY DEFINER, search_path = '', EXECUTE for service_role
 --   only (the app calls it from the server with the user id getUser()
@@ -134,6 +141,7 @@ declare
   v_row     public.user_devices;
   v_found   boolean;
   v_taken   int;
+  v_recent  int;
   v_id      uuid;
 begin
   if p_user is null or p_device_hash is null or p_device_hash !~ '^[0-9a-f]{64}$'
@@ -224,6 +232,29 @@ begin
   end if;
 
   -- 5. A new device, or one revoked (an admin reset): a candidate from now.
+  --    l19 review S4: bounded. A brand-new id first prunes this user's stale
+  --    candidates (never confirmed, not revoked, first seen over a day ago),
+  --    then writes nothing when 5 candidates of its class were first seen in
+  --    the last 10 minutes — still allowed (its class is free), asked about
+  --    again on its next request.
+  if not v_found then
+    delete from public.user_devices d
+     where d.user_id = p_user
+       and d.verified_at is null
+       and d.revoked_at is null
+       and d.first_seen < now() - interval '1 day';
+    select pg_catalog.count(*)::int into v_recent
+      from public.user_devices d
+     where d.user_id = p_user
+       and d.verified_at is null
+       and d.revoked_at is null
+       and d.kind = v_kind
+       and d.first_seen > now() - interval '10 minutes';
+    if v_recent >= 5 then
+      return query select 'pending'::text, null::uuid, v_kind;
+      return;
+    end if;
+  end if;
   insert into public.user_devices as d (user_id, device_hash, label, kind)
   values (p_user, p_device_hash, v_label, v_kind)
   on conflict on constraint user_devices_user_hash_key do update
@@ -284,6 +315,9 @@ begin
   if pg_catalog.strpos(def, 'account_device_limit_enabled') = 0 then
     missing := missing || ' it does not read the account switch;';
   end if;
+  if pg_catalog.strpos(def, 'v_recent >= 5') = 0 or pg_catalog.strpos(def, 'first_seen < now() - interval') = 0 then
+    missing := missing || ' the candidate rows are not bounded (l19 review S4);';
+  end if;
   if not exists (select 1 from pg_catalog.pg_attribute
                   where attrelid = 'public.library_monitor_settings'::regclass
                     and attname = 'account_device_limit_enabled' and not attisdropped) then
@@ -296,7 +330,7 @@ begin
   if missing <> '' then
     raise exception '20261209_40 verify:%', missing;
   end if;
-  raise notice '20261209_40 verify: OK — account_device_gate (1 mobile + 1 desktop, admins/staff exempt, service_role only), the account switch (% now) and user_devices.kind',
+  raise notice '20261209_40 verify: OK — account_device_gate (1 mobile + 1 desktop, admins/staff exempt, service_role only, candidate rows bounded), the account switch (% now) and user_devices.kind',
     (select case when s.account_device_limit_enabled then 'ON' else 'OFF' end from public.library_monitor_settings s where s.id);
 end
 $verify$;
