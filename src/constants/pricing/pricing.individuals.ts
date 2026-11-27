@@ -88,7 +88,7 @@ export const plansIndividuals: { ar: Plan[]; en: Plan[] } = {
       badge: "ما يعادل ٢٠٫٧٥ ر.س شهرياً تُدفع سنوياً",
       periodMonthly: "ر.س / شهر",
       periodYearly: "ر.س / سنة",
-      desc: "مستشارك القانوني الذكي — ٣٠ سؤالاً وعقدان مبسّطان شهرياً وفق سياسة الاستخدام العادل",
+      desc: "مستشارك القانوني الذكي — ٣٠ سؤالاً شهرياً وعقدان مبسّطان (قيد التفعيل) وفق سياسة الاستخدام العادل",
       target: "الأفراد والمستقلون والموظفون",
       cta: "اشترك في الباقة الذكية",
       ctaHref: "/register/client?type=individual&plan=ind-ai",
@@ -181,7 +181,7 @@ export const plansIndividuals: { ar: Plan[]; en: Plan[] } = {
       badge: "≈ SAR 20.75/month, billed yearly",
       periodMonthly: "SAR / month",
       periodYearly: "SAR / year",
-      desc: "Your AI legal assistant — 30 questions and 2 simplified contracts a month under the fair-use policy",
+      desc: "Your AI legal assistant — 30 questions a month and 2 simplified contracts (coming soon) under the fair-use policy",
       target: "Individuals, Employees & Freelancers",
       cta: "Subscribe to Smart AI",
       ctaHref: "/register/client?type=individual&plan=ind-ai",
@@ -238,10 +238,11 @@ export const comparisonIndividuals: { ar: ComparisonCategory[]; en: ComparisonCa
       category: "الذكاء الاصطناعي والوقاية",
       icon: Brain,
       rows: [
-        { feature: "الذكاء الاصطناعي القانوني",   "pay-per-piece": "محدود",          "ind-ai": "٣٠ سؤالاً + عقدان مبسّطان شهرياً" },
+        { feature: "الذكاء الاصطناعي القانوني",   "pay-per-piece": "محدود",          "ind-ai": "٣٠ سؤالاً شهرياً + عقدان مبسّطان (قيد التفعيل)" },
         { feature: "الاستشهاد بالمواد النظامية",  "pay-per-piece": true,            "ind-ai": true },
-        { feature: "فحص وتدقيق العقود",          "pay-per-piece": "حسب قائمة الخدمات", "ind-ai": "خصم ١٠٪" },
-        { feature: "صياغة الخطابات والإنذارات",   "pay-per-piece": "حسب الخدمة",     "ind-ai": true },
+        // l19 review (pay S3): the 10 % is not built yet; the letters row is gone
+        // (the letters page is a template every individual has — no plan difference).
+        { feature: "فحص وتدقيق العقود",          "pay-per-piece": "حسب قائمة الخدمات", "ind-ai": "خصم ١٠٪ (قيد التفعيل)" },
       ],
     },
     {
@@ -276,10 +277,9 @@ export const comparisonIndividuals: { ar: ComparisonCategory[]; en: ComparisonCa
       category: "AI & Preventive Law",
       icon: Brain,
       rows: [
-        { feature: "Legal AI Queries",            "pay-per-piece": "Limited",       "ind-ai": "30 questions + 2 simplified contracts a month" },
+        { feature: "Legal AI Queries",            "pay-per-piece": "Limited",       "ind-ai": "30 questions a month + 2 simplified contracts (coming soon)" },
         { feature: "Statutory Article Citations", "pay-per-piece": true,            "ind-ai": true },
-        { feature: "Contract Audit & Review",     "pay-per-piece": "Per the service list","ind-ai": "10% off" },
-        { feature: "Notice & Letter Drafting",    "pay-per-piece": "Per service",   "ind-ai": true },
+        { feature: "Contract Audit & Review",     "pay-per-piece": "Per the service list","ind-ai": "10% off (coming soon)" },
       ],
     },
     {

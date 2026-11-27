@@ -176,8 +176,8 @@ export const INDIVIDUALS_PYRAMID_PLANS: Record<string, PricingPlan> = {
     periodYearlyEn: "SAR / year",
     badgeAr: "ما يعادل ٢٠٫٧٥ ر.س شهرياً تُدفع سنوياً",
     badgeEn: "≈ SAR 20.75/month, billed yearly",
-    descAr: "مستشارك القانوني الذكي — ٣٠ سؤالاً وعقدان مبسّطان شهرياً وفق سياسة الاستخدام العادل",
-    descEn: "Your AI legal assistant — 30 questions and 2 simplified contracts a month under the fair-use policy",
+    descAr: "مستشارك القانوني الذكي — ٣٠ سؤالاً شهرياً وعقدان مبسّطان (قيد التفعيل) وفق سياسة الاستخدام العادل",
+    descEn: "Your AI legal assistant — 30 questions a month and 2 simplified contracts (coming soon) under the fair-use policy",
     featuresAr: [
       // LIVE-F11 (owner package 30 Oct 2026): no «غير محدود» claim.
       // Owner ق٢٦-٦ (batch l19): the fair use counted on the server

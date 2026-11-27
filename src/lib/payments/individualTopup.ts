@@ -32,6 +32,35 @@ export function individualTopupFor(userType: unknown): boolean {
   return typeof userType === "string" && INDIVIDUAL_BUYERS.includes(userType);
 }
 
+/**
+ * l19 review (pay S2): the wallet's top-up card is shown to an ind-ai
+ * («الباقة الذكية») subscriber only — the one individual whose points have
+ * something to buy today (the quick answer beyond the month's 30 questions).
+ * A free individual's tools are the free floating assistant, the quick answer
+ * (refused without the smart plan or a library plan) and the simplified
+ * contract drafter (off by default), so a card would sell points he cannot
+ * spend. The same rule as public.ind_ai_plan_active (20261209_70): an active
+ * row of plan id ind-ai whose period has not ended (none = open-ended).
+ * Rows are the user's own `subscriptions` rows (plan_id, status,
+ * current_period_end). A failed read → false (no card).
+ */
+export function indAiActiveFrom(rows: unknown, nowMs: number): boolean {
+  if (!Array.isArray(rows)) return false;
+  return rows.some((r) => {
+    const row = (r ?? {}) as { plan_id?: unknown; status?: unknown; current_period_end?: unknown };
+    if (row.plan_id !== "ind-ai" || row.status !== "active") return false;
+    if (row.current_period_end === null || row.current_period_end === undefined) return true;
+    const end = typeof row.current_period_end === "string" ? Date.parse(row.current_period_end) : NaN;
+    return Number.isFinite(end) && end > nowMs;
+  });
+}
+
+/** The card's line: what the points buy beyond the smart plan's month, and the price before VAT. */
+export const INDIVIDUAL_TOPUP_LINE_AR =
+  "تُستخدم النقاط فيما زاد على حصة باقتك الذكية الشهرية: أسئلة «المجيب القانوني السريع» بعد الثلاثين، " +
+  "والعقود المبسّطة بعد العقدين حين يُفعَّل صائغ العقود المبسّط (قيد التفعيل). " +
+  "النقطة بريال واحد + ضريبة القيمة المضافة.";
+
 const AR_DIGITS = "٠١٢٣٤٥٦٧٨٩";
 /** «٣ أشهر», «شهراً واحداً» … for the validity line (1–10 → أشهر, else شهراً). */
 function monthsAr(n: number): string {

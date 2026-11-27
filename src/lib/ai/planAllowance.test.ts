@@ -27,7 +27,13 @@ import {
 } from "./planAllowance.ts";
 import { SIMPLE_CONTRACT_TOOL } from "./simpleContract.ts";
 import { parseToolPointsAnswer, toolPointsView } from "../points/toolPointsView.ts";
-import { individualTopupButtons, individualTopupFor, INDIVIDUAL_TOPUP_FALLBACK_HREF } from "../payments/individualTopup.ts";
+import {
+  individualTopupButtons,
+  individualTopupFor,
+  indAiActiveFrom,
+  INDIVIDUAL_TOPUP_FALLBACK_HREF,
+  INDIVIDUAL_TOPUP_LINE_AR,
+} from "../payments/individualTopup.ts";
 
 const read = (rel: string) => readFileSync(new URL(rel, import.meta.url), "utf8").replace(/\r\n/g, "\n");
 const RUN = "11111111-2222-4333-8444-555555555555";
@@ -327,7 +333,15 @@ test("both ind-ai card copies state the limit and no carry-over; the old unbacke
     assert.match(text, /لا يُرحَّل غير المستخدم إلى الشهر التالي/, rel);
     assert.match(text, /"Quick legal answer: 30 questions a month"/, rel);
     assert.doesNotMatch(text, /مساعد (قانوني ذكي|ذكاء اصطناعي قانوني) ذاتي طوال الاشتراك|توليد ومراجعة مسودات/, rel);
+    // l19 review (pay S3): the two contracts carry «(قيد التفعيل)» everywhere they appear
+    for (const m of text.matchAll(/عقدان مبسّطان[^"]*/g)) assert.match(m[0], /\(قيد التفعيل\)/, `${rel}: «${m[0]}»`);
+    for (const m of text.matchAll(/2 simplified contracts[^"]*/g)) assert.match(m[0], /\(coming soon\)/, `${rel}: «${m[0]}»`);
   }
+  const table = read("../../constants/pricing/pricing.individuals.ts");
+  assert.doesNotMatch(table, /صياغة الخطابات والإنذارات|Notice & Letter Drafting/, "no letters ✓ for the smart plan");
+  assert.match(table, /"ind-ai": "خصم ١٠٪ \(قيد التفعيل\)"/);
+  assert.match(table, /"ind-ai": "10% off \(coming soon\)"/);
+  assert.doesNotMatch(table, /"ind-ai": "(خصم ١٠٪|10% off)"/);
 });
 
 test("the wallet's top-up: topup-100 and topup-250, individuals only, checkout when payment is on", () => {
@@ -348,6 +362,22 @@ test("the wallet's top-up: topup-100 and topup-250, individuals only, checkout w
   assert.match(page, /<IndividualTopupCard isDark=\{isDark\} \/>/);
   assert.doesNotMatch(page, /بوابة الدفع في المنصة غير مفعَّلة حالياً|ولم تُفعَّل بوابة الدفع/);
   assert.match(read("../../components/payments/IndividualTopupCard.tsx"), /id="topup"/);
+  // l19 review (pay S2): an ind-ai subscriber only, and the honest line (what the points buy, + VAT)
+  const card = read("../../components/payments/IndividualTopupCard.tsx");
+  assert.match(card, /\.eq\("plan_id", "ind-ai"\)/);
+  assert.match(card, /if \(!individual \|\| !userId \|\| indAi\?\.userId !== userId \|\| !indAi\.active\) return null;/);
+  assert.match(card, /\{INDIVIDUAL_TOPUP_LINE_AR\}/);
+  assert.match(INDIVIDUAL_TOPUP_LINE_AR, /\+ ضريبة القيمة المضافة/);
+  assert.match(INDIVIDUAL_TOPUP_LINE_AR, /\(قيد التفعيل\)/);
+  assert.doesNotMatch(INDIVIDUAL_TOPUP_LINE_AR, /أدوات الذكاء الاصطناعي للأفراد/);
+  const now = Date.parse("2026-12-01T00:00:00Z");
+  assert.equal(indAiActiveFrom([{ plan_id: "ind-ai", status: "active", current_period_end: "2027-12-01T00:00:00Z" }], now), true);
+  assert.equal(indAiActiveFrom([{ plan_id: "ind-ai", status: "active", current_period_end: null }], now), true);
+  assert.equal(indAiActiveFrom([{ plan_id: "ind-ai", status: "active", current_period_end: "2026-11-30T00:00:00Z" }], now), false);
+  assert.equal(indAiActiveFrom([{ plan_id: "ind-ai", status: "cancelled", current_period_end: null }], now), false);
+  assert.equal(indAiActiveFrom([{ plan_id: "pro", status: "active", current_period_end: null }], now), false);
+  assert.equal(indAiActiveFrom([{ plan_id: "ind-ai", status: "active", current_period_end: "garbage" }], now), false);
+  assert.equal(indAiActiveFrom(null, now), false);
   assert.equal(PLAN_ALLOWANCE_TOPUP_HREF, "/dashboard/client/wallet#topup");
 });
 
