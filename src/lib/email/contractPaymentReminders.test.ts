@@ -2,6 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   CONTRACT_PAYMENT_COLUMNS,
+  FEE_SCHEDULE_MEMBER_ROLES,
+  feeReadersByFirm,
   OVERDUE_LOOKBACK_DAYS,
   PAYMENT_DUE_SOON_DAYS,
   paymentEmailMessage,
@@ -84,7 +86,7 @@ test("the select list reads no amount, notes, title or counterparty; the in-app 
   for (const c of ["amount_sar", "notes", "title", "counterparty_name", "lawyer_client_id"]) {
     assert.equal(CONTRACT_PAYMENT_COLUMNS.includes(c), false, c);
   }
-  assert.match(CONTRACT_PAYMENT_COLUMNS, /contracts!inner\(owner_user_id, status\)/);
+  assert.match(CONTRACT_PAYMENT_COLUMNS, /contracts!inner\(owner_user_id, status, firm_id\)/);
   const [due] = planPaymentReminders([pay()], TODAY);
   const n = paymentInAppNotice(due, "/dashboard/firm");
   assert.match(n.title, /^دفعة مستحقة: الدفعة الثانية/);
@@ -92,4 +94,27 @@ test("the select list reads no amount, notes, title or counterparty; the in-app 
   assert.equal(n.href, "/dashboard/firm/contracts/c1");
   const [late] = planPaymentReminders([pay({ due_on: "2026-11-15" })], TODAY);
   assert.match(paymentInAppNotice(late).title, /^دفعة متأخرة/);
+});
+
+// l18 review (owner ٢٢٩): a firm contract's schedule reminds its fee-schedule readers, never its creator.
+test("a firm contract reminds the firm owner, the managing partner and the finance manager — not the member lawyer who created it", () => {
+  const readers = feeReadersByFirm(
+    [{ id: "f1", owner_user_id: "owner" }],
+    [
+      { firm_id: "f1", user_id: "mp", role: "managing_partner", status: "active" },
+      { firm_id: "f1", user_id: "fin", role: "finance_manager", status: "active" },
+      { firm_id: "f1", user_id: "creator", role: "lawyer", status: "active" },
+      { firm_id: "f1", user_id: "gone", role: "finance_manager", status: "removed" },
+      { firm_id: "f1", user_id: "owner", role: "managing_partner", status: "active" },
+    ],
+  );
+  assert.deepEqual([...(readers.get("f1") ?? [])].sort(), ["fin", "mp", "owner"]);
+  const firmRow = pay({ contracts: { owner_user_id: "creator", status: "active", firm_id: "f1" } });
+  const plan = planPaymentReminders([firmRow], TODAY, readers);
+  assert.deepEqual(plan.map((p) => p.ownerId).sort(), ["fin", "mp", "owner"]);
+  // no readers known for the firm (none, or the read failed) → nobody, never the creator
+  assert.deepEqual(planPaymentReminders([firmRow], TODAY), []);
+  // a solo contract still reminds its lawyer
+  assert.deepEqual(planPaymentReminders([pay()], TODAY, readers).map((p) => p.ownerId), ["lawyer"]);
+  assert.deepEqual([...FEE_SCHEDULE_MEMBER_ROLES], ["managing_partner", "finance_manager"]);
 });

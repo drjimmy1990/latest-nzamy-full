@@ -5,6 +5,7 @@ import { practiceKindFromRead } from "@/lib/auth/courtPracticeDecision";
 import { callN8n } from "@/lib/ai/n8nClient";
 import { embedQueryWithin, graphRagEnabled } from "@/lib/ai/graphRagSwitch";
 import { retrieveLibrary } from "@/lib/ai/retrieval";
+import { articleOpenForViewer } from "@/lib/library/articleOpenServer";
 import { withGraphCallLog } from "@/lib/ai/graphCallLog";
 import { resolveAiFiles } from "@/lib/ai/aiFiles";
 import { aiTextFilesConfig, pastedFileUrlFrom } from "@/lib/ai/textFilesConfig";
@@ -227,15 +228,26 @@ export async function POST(request: NextRequest) {
         ...(graphOn ? { embedQuery: (text: string) => embedQueryWithin(text) } : {}),
         // Each graph call leaves one row in library_graph.call_log (20261121_10):
         // path, time, fallback reason; never the question. Not awaited.
-        retrieve: (queries, limits, pin, opts) =>
-          retrieveLibrary(
+        // Owner ٢٣٦ (l18 review): «اشرح لي» pins an article — dropped when that
+        // article is locked to the caller (the law route's rule, on the
+        // article's own law), so its text is never the run's first source.
+        retrieve: async (queries, limits, pin, opts) => {
+          let usedPin = pin;
+          if (pin?.articleId && !(await articleOpenForViewer(admin, user.id, pin.articleId))) {
+            const { articleId: _locked, ...rest } = pin;
+            void _locked;
+            usedPin = rest;
+          }
+          const r = await retrieveLibrary(
             admin,
             queries,
             limits,
-            pin,
+            usedPin,
             undefined,
             graphOn ? withGraphCallLog(opts ?? { useGraph: true }, admin, "ai_run") : undefined,
-          ).then((r) => (previewOnly ? previewOnlySources(r) : r)),
+          );
+          return previewOnly ? previewOnlySources(r) : r;
+        },
         resolveFiles: (userId, fileIds, rules) => resolveAiFiles(admin, userId, fileIds, rules, new Date(), textFiles ? { textFiles } : {}),
         // T17a: «قضية محددة» — the caller's OWN case, read on HIS RLS client
         // (never the service role), own rows only (assistantCase.ts).
