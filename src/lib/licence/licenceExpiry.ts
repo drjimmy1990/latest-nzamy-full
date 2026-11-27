@@ -130,6 +130,41 @@ export function planLicenceExpiryNotices(rows: readonly LicenceExpiryRow[], now:
   return out;
 }
 
+/** The once-only key of a planned notice — the columns of public.email_reminder_log, joined. */
+export function licenceNoticeKey(p: PlannedLicenceNotice): string {
+  return [licenceExpiryKind(p.stage), p.row.subject_id, p.row.user_id, String(p.row.expiry).slice(0, 10)].join("|");
+}
+
+/** A logged email_reminder_log row → the same key (kind, subject_id, recipient_user_id, due_on). */
+export function licenceLogKey(row: { kind?: unknown; subject_id?: unknown; recipient_user_id?: unknown; due_on?: unknown }): string {
+  return [row.kind, row.subject_id, row.recipient_user_id, String(row.due_on ?? "").slice(0, 10)].map(String).join("|");
+}
+
+/**
+ * l19 review N2: the cron's cap pages through the licences instead of
+ * re-planning the same head every run. The notices already SENT (their key in
+ * email_reminder_log) are dropped BEFORE the cap; the rest are ordered by
+ * urgency (fewest days left first, then subject and recipient, so the order
+ * is stable) and the first `max` are this run's batch — the next run starts
+ * where this one stopped. A key not known to be sent still goes through the
+ * once-only claim, so nothing can repeat.
+ */
+export function pageLicenceNotices(
+  planned: readonly PlannedLicenceNotice[],
+  sentKeys: ReadonlySet<string>,
+  max: number,
+): { batch: PlannedLicenceNotice[]; alreadySent: number; deferred: number } {
+  const open = planned.filter((p) => !sentKeys.has(licenceNoticeKey(p)));
+  open.sort(
+    (a, b) =>
+      a.daysLeft - b.daysLeft ||
+      a.row.subject_id.localeCompare(b.row.subject_id) ||
+      a.row.user_id.localeCompare(b.row.user_id),
+  );
+  const batch = open.slice(0, Math.max(0, max));
+  return { batch, alreadySent: planned.length - open.length, deferred: open.length - batch.length };
+}
+
 /** The banner's licence: the one with the nearest (or longest past) date within the window. Null when none. */
 export function bannerLicence(rows: readonly LicenceExpiryRow[], now: Date): PlannedLicenceNotice | null {
   const planned = planLicenceExpiryNotices(rows, now);

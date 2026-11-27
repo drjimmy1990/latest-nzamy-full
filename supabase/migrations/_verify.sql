@@ -9249,10 +9249,11 @@ select 'l19 plans: the ind-ai fair-use functions are SECURITY DEFINER with an em
                   where p.oid in (to_regprocedure('public.ind_ai_plan_active(uuid)'),
                                   to_regprocedure('public.ai_plan_allowance_status(uuid)'),
                                   to_regprocedure('public.ai_start_plan_allowance_run(uuid,text,text,text,int,int,text,timestamptz,boolean,jsonb,text[],int,uuid,jsonb)'))), false) as ok;
-select 'l19 plans: the allowance matches plan id ind-ai and counts the Riyadh month, failed runs excluded (run 20261209_70)' as check,
+select 'l19 plans: the allowance matches plan id ind-ai and counts the Riyadh month, failed runs excluded, the setting clamped to 0..1000 (run 20261209_70)' as check,
        coalesce(position('s.plan_id = ''ind-ai''' in pg_catalog.pg_get_functiondef(to_regprocedure('public.ind_ai_plan_active(uuid)'))) > 0
                 and position('Asia/Riyadh' in pg_catalog.pg_get_functiondef(to_regprocedure('public.ai_plan_allowance_status(uuid)'))) > 0
-                and position('r.status <> ''failed''' in pg_catalog.pg_get_functiondef(to_regprocedure('public.ai_plan_allowance_status(uuid)'))) > 0, false) as ok;
+                and position('r.status <> ''failed''' in pg_catalog.pg_get_functiondef(to_regprocedure('public.ai_plan_allowance_status(uuid)'))) > 0
+                and position('least(1000, greatest(0,' in pg_catalog.pg_get_functiondef(to_regprocedure('public.ai_plan_allowance_status(uuid)'))) > 0, false) as ok;
 select 'l19 plans: ai_plan_allowance_uses has RLS on, run_id as its key and no session access; the ind_ai_fair_use setting exists (run 20261209_70)' as check,
        coalesce((select c.relrowsecurity from pg_catalog.pg_class c where c.oid = to_regclass('public.ai_plan_allowance_uses')), false)
        and coalesce(exists (select 1 from pg_catalog.pg_constraint k

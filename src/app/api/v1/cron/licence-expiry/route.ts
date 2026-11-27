@@ -6,7 +6,9 @@ import {
   LICENCE_EXPIRY_HORIZON_DAYS,
   licenceExpiryKind,
   licenceExpiryNotice,
+  licenceLogKey,
   licenceNoticeMuted,
+  pageLicenceNotices,
   planLicenceExpiryNotices,
   type LicenceExpiryRow,
   type LicenceNoticeSettings,
@@ -26,8 +28,12 @@ import {
  *      (notifyReminderOnce, kinds licence_expiry_30d/7d/0d_app). A renewed
  *      date is a new cycle. Skipped for an account that turned notifications
  *      or the «تجديدات الترخيص» category off, or is suspended. A failed
- *      settings read sends nothing for those accounts (fail closed — a muted
- *      user is never notified because a read failed); the next run retries.
+ *      settings read — or (l19 review N3) a failed suspension read — sends
+ *      nothing for those accounts (fail closed — a muted or suspended user is
+ *      never notified because a read failed); the next run retries.
+ *   l19 review N2: past MAX_NOTICES the run pages — the notices already sent
+ *   are dropped first (email_reminder_log), the rest go most urgent first,
+ *   and the next run starts where this one stopped (pageLicenceNotices).
  *   No e-mail (the owner asked for the notifications and the dashboard).
  *
  * Before 20261209_10 runs the function is missing and the route answers 200
@@ -45,9 +51,36 @@ import {
 
 export const dynamic = "force-dynamic";
 
-/** At most this many licences a run (the rest wait for the next run). */
+/** At most this many licences a run (the rest wait for the next run — pageLicenceNotices). */
 const MAX_NOTICES = 5000;
 const ID_CHUNK = 150;
+const LICENCE_KINDS = ["licence_expiry_30d_app", "licence_expiry_7d_app", "licence_expiry_0d_app"];
+
+/**
+ * The once-only keys already SENT for these notices (email_reminder_log). A
+ * failed read answers an empty set: the cap then simply starts from the most
+ * urgent again, and the claim still stops any repeat.
+ */
+async function sentLicenceKeys(
+  admin: Awaited<ReturnType<typeof createServiceClient>>,
+  subjectIds: string[],
+): Promise<Set<string>> {
+  const keys = new Set<string>();
+  for (let i = 0; i < subjectIds.length; i += ID_CHUNK) {
+    const { data, error } = await admin
+      .from("email_reminder_log")
+      .select("kind, subject_id, recipient_user_id, due_on")
+      .in("kind", LICENCE_KINDS)
+      .in("subject_id", subjectIds.slice(i, i + ID_CHUNK))
+      .eq("status", "sent");
+    if (error) {
+      console.error("[cron/licence-expiry] sent keys:", error.code, error.message);
+      return new Set<string>();
+    }
+    for (const row of (data ?? []) as Array<Record<string, unknown>>) keys.add(licenceLogKey(row));
+  }
+  return keys;
+}
 const SCHEMA_MISSING = new Set(["42883", "PGRST202", "42P01", "PGRST205"]);
 
 export async function POST(request: NextRequest) {
@@ -67,7 +100,9 @@ export async function POST(request: NextRequest) {
     console.error("[cron/licence-expiry] licences:", error.code, error.message);
     return NextResponse.json({ ok: false, error: "licences_failed" }, { status: 500 });
   }
-  const planned = planLicenceExpiryNotices((Array.isArray(data) ? data : []) as LicenceExpiryRow[], now).slice(0, MAX_NOTICES);
+  const all = planLicenceExpiryNotices((Array.isArray(data) ? data : []) as LicenceExpiryRow[], now);
+  const sentKeys = all.length > MAX_NOTICES ? await sentLicenceKeys(admin, Array.from(new Set(all.map((p) => p.row.subject_id)))) : new Set<string>();
+  const { batch: planned, alreadySent, deferred } = pageLicenceNotices(all, sentKeys, MAX_NOTICES);
 
   // who may be told: settings (muted?) and suspension, per chunk of users
   const users = Array.from(new Set(planned.map((p) => p.row.user_id)));
@@ -88,10 +123,14 @@ export async function POST(request: NextRequest) {
       settingsFailed += part.length;
       continue;
     }
+    // l19 review N3: an unreadable suspension list sends nothing for this chunk (fail closed, like the settings).
+    if (!banned || banned.error || !Array.isArray(banned.data)) {
+      console.error("[cron/licence-expiry] admin_suspended_user_ids:", banned?.error?.code ?? "unreadable");
+      settingsFailed += part.length;
+      continue;
+    }
     const suspended = new Set<string>(
-      banned && !banned.error && Array.isArray(banned.data)
-        ? (banned.data as unknown[]).map((r) => (typeof r === "string" ? r : String((r as Record<string, unknown>)?.admin_suspended_user_ids ?? "")))
-        : [],
+      (banned.data as unknown[]).map((r) => (typeof r === "string" ? r : String((r as Record<string, unknown>)?.admin_suspended_user_ids ?? ""))),
     );
     const byUser = new Map<string, LicenceNoticeSettings>();
     for (const s of (settings.data ?? []) as Array<LicenceNoticeSettings & { user_id: string }>) byUser.set(s.user_id, s);
@@ -124,9 +163,10 @@ export async function POST(request: NextRequest) {
     ok: true,
     due: planned.length,
     sent,
-    already,
+    already: already + alreadySent,
     failed,
     muted,
+    ...(deferred > 0 ? { deferred } : {}),
     ...(settingsFailed > 0 ? { settingsFailed } : {}),
   });
 }

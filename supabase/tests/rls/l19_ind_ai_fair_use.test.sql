@@ -21,14 +21,18 @@
 --   sed -n "/^-- >>> verify:l19_ind_ai_fair_use/,/^-- <<< verify:l19_ind_ai_fair_use/p" $M/_verify.sql > "$B"
 --   bash $R/run.sh \
 --     $M/20260603_phase1_003_subscriptions_billing.sql $M/20260627_platform_settings.sql \
---     $M/20261022_10_payments_core.sql \
+--     $M/20261019_10_library_access_grants.sql $M/20261022_10_payments_core.sql \
+--     $R/prelude_points_lots_fixture.sql $M/20261022_20_points_lots.sql \
 --     $M/20261027_10_ai_runs.sql $M/20261108_41_drafter_daily_limit_excludes_sections.sql \
 --     $M/20261209_70_ind_ai_fair_use.sql $M/20261209_70_ind_ai_fair_use.sql \
 --     "$B" $R/l19_ind_ai_fair_use.test.sql
+--   (l19 review: 20261019_10, the points-lots fixture and 20261022_20 added —
+--   20261022_10 and 20261108_41 need them.)
 -- NEGATIVE CONTROLS: (1) the same chain without the two 20261209_70 files
 -- fails at T0; (2) with a copy of 20261209_70 whose month is UTC instead of
 -- Asia/Riyadh, T7 fails; (3) with a copy that matches the tier ('ai') instead
--- of the plan id, T6 fails.
+-- of the plan id, T6 fails; (4) l19 review N6: with a copy whose two
+-- «least(1000, » clamps are removed, T9d fails (integer out of range).
 --
 -- Every assertion RAISES.
 
@@ -258,6 +262,10 @@ begin
     (select questions_limit || '/' || works_limit from public.ai_plan_allowance_status('00000000-0000-0000-0000-00000000f002')), '40/3');
   perform pg_temp.expect('T9c a raised limit frees a question',
     pg_temp.refusal('00000000-0000-0000-0000-00000000f001', 'quick-answer', 'l19-s-q-040'), 'started');
+  -- l19 review N6: a typo is clamped to 0..1000, never an overflow
+  update public.platform_settings set value = '{"questions_per_month": 1e12, "works_per_month": -5}'::jsonb where key = 'ind_ai_fair_use';
+  perform pg_temp.expect('T9d a huge / negative number is clamped',
+    (select questions_limit || '/' || works_limit from public.ai_plan_allowance_status('00000000-0000-0000-0000-00000000f002')), '1000/0');
   update public.platform_settings set value = '{"questions_per_month": 30, "works_per_month": 2}'::jsonb where key = 'ind_ai_fair_use';
   raise notice 'T9 PASS: the setting';
 end $$;

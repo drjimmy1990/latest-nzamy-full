@@ -18,7 +18,10 @@ import {
   licenceExpiryKind,
   licenceExpiryNotice,
   licenceExpiryStage,
+  licenceLogKey,
+  licenceNoticeKey,
   licenceNoticeMuted,
+  pageLicenceNotices,
   planLicenceExpiryNotices,
   riyadhToday,
 } from "./licenceExpiry.ts";
@@ -145,4 +148,45 @@ test("٢٤١: no licence expiry refusal is left on the purchase paths", () => {
     const s = read(...f);
     assert.doesNotMatch(s, /جدّد رخصتك أولاً"|LICENCE_EXPIRED_PURCHASE_AR|license_expiry|detail === "expired"/, f.join("/"));
   }
+});
+
+test("l19 review N2: past the cap the cron pages — sent keys dropped first, most urgent first, stable order", () => {
+  const now = new Date("2026-12-01T06:00:00Z");
+  const rows = Array.from({ length: 12 }, (_, i) => ({
+    user_id: `00000000-0000-0000-0000-0000000000${String(10 + i)}`,
+    holder: "lawyer" as const,
+    subject_id: `00000000-0000-0000-0000-0000000000${String(10 + i)}`,
+    expiry: `2026-12-${String(2 + (i % 6)).padStart(2, "0")}`,
+  }));
+  const all = planLicenceExpiryNotices(rows, now);
+  assert.equal(all.length, 12);
+  const first = pageLicenceNotices(all, new Set(), 5);
+  assert.equal(first.batch.length, 5);
+  assert.equal(first.deferred, 7);
+  assert.equal(first.alreadySent, 0);
+  // most urgent first
+  for (let i = 1; i < first.batch.length; i++) assert.ok(first.batch[i - 1].daysLeft <= first.batch[i].daysLeft);
+  // the next run: the first batch's keys are logged as sent, so it moves on (never re-plans the head)
+  const sent = new Set(first.batch.map(licenceNoticeKey));
+  const second = pageLicenceNotices(all, sent, 5);
+  assert.equal(second.alreadySent, 5);
+  assert.equal(second.batch.length, 5);
+  assert.equal(second.batch.filter((p) => sent.has(licenceNoticeKey(p))).length, 0);
+  const third = pageLicenceNotices(all, new Set([...sent, ...second.batch.map(licenceNoticeKey)]), 5);
+  assert.equal(third.batch.length, 2);
+  assert.equal(third.deferred, 0);
+  // the log row's key is the planned key
+  const p = first.batch[0];
+  assert.equal(
+    licenceLogKey({ kind: licenceExpiryKind(p.stage), subject_id: p.row.subject_id, recipient_user_id: p.row.user_id, due_on: p.row.expiry }),
+    licenceNoticeKey(p),
+  );
+});
+
+test("l19 review N2 + N3: the route pages with the log, and a failed suspension read skips the chunk", () => {
+  const src = read("src", "app", "api", "v1", "cron", "licence-expiry", "route.ts");
+  assert.match(src, /pageLicenceNotices\(all, sentKeys, MAX_NOTICES\)/);
+  assert.match(src, /\.from\("email_reminder_log"\)[\s\S]{0,200}\.eq\("status", "sent"\)/);
+  assert.doesNotMatch(src, /\.slice\(0, MAX_NOTICES\)/, "no unordered head slice");
+  assert.match(src, /if \(!banned \|\| banned\.error \|\| !Array\.isArray\(banned\.data\)\) \{[\s\S]{0,200}continue;/, "fail closed on the suspension read");
 });

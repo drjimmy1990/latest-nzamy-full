@@ -170,11 +170,14 @@ begin
   end if;
   select ps.value into v_set from public.platform_settings ps where ps.key = 'ind_ai_fair_use';
   -- A missing or malformed number keeps the owner's default (never 0).
+  -- l19 review N6: clamped to 0..1000 BEFORE the int cast, so a typo such as
+  -- 1e12 neither overflows (every subscriber's status call failing → the
+  -- run route's «degraded» free path) nor makes the allowance unlimited.
   if jsonb_typeof(v_set -> 'questions_per_month') = 'number' then
-    v_q := greatest(0, floor((v_set ->> 'questions_per_month')::numeric))::int;
+    v_q := least(1000, greatest(0, floor((v_set ->> 'questions_per_month')::numeric)))::int;
   end if;
   if jsonb_typeof(v_set -> 'works_per_month') = 'number' then
-    v_w := greatest(0, floor((v_set ->> 'works_per_month')::numeric))::int;
+    v_w := least(1000, greatest(0, floor((v_set ->> 'works_per_month')::numeric)))::int;
   end if;
   return query
     select public.ind_ai_plan_active(p_user),
