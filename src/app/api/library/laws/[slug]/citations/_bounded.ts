@@ -99,12 +99,28 @@ export function closedViewer(): { isSubscriber: false; openIds: Set<string> } {
 // ── The reader's side (_ref-box.tsx) ─────────────────────────────────────────
 
 /**
- * The page's own wait for a links answer: longer than the route's whole budget
- * (guard + switch + graph, the viewer read beside the graph), so a slow server
- * still answers first; past it the request is dropped and the box shows the
- * article without its links («failed»), never an endless skeleton.
+ * The route's longest answer (l19 review N7): the ?article= path waits for the
+ * guard, the switch, the viewer read, then the article's own-law lock read
+ * (each within its budget, one after the other), then the graph read. The
+ * bulk path is shorter (its viewer read runs beside the graph read).
  */
-export const LINKS_FETCH_TIMEOUT_MS = 15_000;
+export const LINKS_ROUTE_WORST_MS = GATE_BUDGET_MS + FLAGS_BUDGET_MS + 2 * VIEWER_BUDGET_MS + GRAPH_BUDGET_MS;
+
+/**
+ * The page's own wait for a links answer: longer than the route's longest
+ * answer (LINKS_ROUTE_WORST_MS) plus a margin, so a slow server still answers
+ * first; past it the request is dropped and the box shows the article without
+ * its links («failed»), never an endless skeleton.
+ */
+export const LINKS_FETCH_TIMEOUT_MS = LINKS_ROUTE_WORST_MS + 1_500;
+
+/** A non-2xx links answer: its HTTP status (503 = links_busy, POST-L18-01 / l19 review S3). */
+export type LinksFetchError = Error & { status?: number };
+
+/** True for the route's «busy» answer (503 links_busy): the reader stops asking for this page view. */
+export function isLinksBusyError(err: unknown): boolean {
+  return !!err && typeof err === "object" && (err as LinksFetchError).status === 503;
+}
 
 /**
  * GET `url` as JSON within `ms`: a non-2xx answer, a network error and a
@@ -120,7 +136,11 @@ export async function fetchJsonWithin<T>(
   const timer = setTimeout(() => controller.abort(), Math.max(0, ms));
   try {
     const r = await fetchImpl(url, { signal: controller.signal });
-    if (!r.ok) throw new Error(String(r.status));
+    if (!r.ok) {
+      const err: LinksFetchError = new Error(String(r.status));
+      err.status = r.status;
+      throw err;
+    }
     return (await r.json()) as T;
   } finally {
     clearTimeout(timer);

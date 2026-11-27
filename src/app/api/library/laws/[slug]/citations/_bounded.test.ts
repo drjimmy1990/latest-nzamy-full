@@ -15,6 +15,8 @@ import {
   FLAGS_BUDGET_MS,
   GRAPH_BUDGET_MS,
   LINKS_FETCH_TIMEOUT_MS,
+  LINKS_ROUTE_WORST_MS,
+  isLinksBusyError,
   VIEWER_BUDGET_MS,
   closedViewer,
   createSingleFlight,
@@ -97,6 +99,9 @@ test("single flight: a failed read is shared, then forgotten (the next request r
 test("budgets: the reader's wait outlasts the route's whole budget", () => {
   assert.ok(VIEWER_BUDGET_MS <= GRAPH_BUDGET_MS, "the viewer read runs beside the graph read");
   assert.ok(LINKS_FETCH_TIMEOUT_MS > GATE_BUDGET_MS + FLAGS_BUDGET_MS + GRAPH_BUDGET_MS + 250 + 1000);
+  // l19 review N7: the ?article= path waits for the viewer read AND the own-law lock read, one after the other
+  assert.equal(LINKS_ROUTE_WORST_MS, GATE_BUDGET_MS + FLAGS_BUDGET_MS + 2 * VIEWER_BUDGET_MS + GRAPH_BUDGET_MS);
+  assert.ok(LINKS_FETCH_TIMEOUT_MS >= LINKS_ROUTE_WORST_MS + 1000, "the page waits longer than the route's longest answer");
 });
 
 test("fetchJsonWithin: JSON on 2xx; a non-2xx rejects", async () => {
@@ -104,6 +109,12 @@ test("fetchJsonWithin: JSON on 2xx; a non-2xx rejects", async () => {
   assert.deepEqual(await fetchJsonWithin<{ a: number }>("/x", 100, ok), { a: 1 });
   const bad = async () => ({ ok: false, status: 502, json: async () => ({}) });
   await assert.rejects(fetchJsonWithin("/x", 100, bad), /502/);
+  // l19 review S3: the status rides on the error, so the reader can tell «busy» (503) apart
+  const busy = async () => ({ ok: false, status: 503, json: async () => ({ code: "links_busy" }) });
+  await assert.rejects(fetchJsonWithin("/x", 100, busy), (err: unknown) => isLinksBusyError(err));
+  await assert.rejects(fetchJsonWithin("/x", 100, bad), (err: unknown) => !isLinksBusyError(err));
+  assert.equal(isLinksBusyError(null), false);
+  assert.equal(isLinksBusyError(new Error("503")), false, "only the status decides");
 });
 
 test("fetchJsonWithin: a hung request is aborted at the deadline", async () => {
@@ -148,8 +159,14 @@ test("route: the viewer read is bounded, starts beside the graph read and fails 
   const graphAt = route.indexOf("bulkFlight.run(", bulkAt);
   assert.ok(bulkAt > -1 && viewerAt > bulkAt && graphAt > viewerAt, "the viewer read must start before the graph read is awaited");
   assert.match(route, /orFallback\(\s*viewerLinksAccess\(db, slug\)\.catch\(\(\) => closedViewer\(\)\),\s*VIEWER_BUDGET_MS,\s*closedViewer\(\),\s*\)/);
-  // the article box: a lock read over budget keeps the box locked
-  assert.match(route, /if \(lockRun\.timedOut \|\| lockRun\.value\) \{\s*return tierJson\(\{ available: true, \.\.\.lockedArticleRefs\(\) \}/);
+  // l19 review S2: a viewer read or a lock read over budget is a 503 links_busy (fails closed, says so), never a 200 «no links»
+  const bulk = route.slice(bulkAt, route.indexOf("if (url.searchParams.has('article'))"));
+  assert.match(bulk, /const \{ viewer, timedOut: viewerLate, ms: viewerMs \} = await viewerRead;\s*\/\/[^\n]*\n(\s*\/\/[^\n]*\n)*\s*if \(viewerLate\) \{\s*return linksBusy\(/);
+  const article = route.slice(route.indexOf("if (url.searchParams.has('article'))"));
+  assert.match(article, /await boundedViewer\(serverOnly, slug\);\s*\/\/[^\n]*\n\s*if \(viewerLate\) \{\s*return linksBusy\(/);
+  assert.ok(article.indexOf("if (viewerLate) {") < article.indexOf("articleBoxLockedByOwnLaw("), "a late viewer read never runs the lock read");
+  assert.match(article, /if \(lockRun\.timedOut\) \{\s*return linksBusy\(/);
+  assert.match(article, /if \(lockRun\.value\) \{\s*return tierJson\(\{ available: true, \.\.\.lockedArticleRefs\(\) \}/);
 });
 
 test("route: a busy answer is never cached", () => {
@@ -164,6 +181,17 @@ test("reader: both links requests have a deadline (no bare fetch of citations)",
   assert.match(refBox, /fetchJsonWithin<.+?>\(`\/api\/library\/laws\/\$\{apiSlug\(lawSlug\)\}\/citations\?bulk=1`\)/);
   assert.match(refBox, /fetchJsonWithin<Refs>\(`\/api\/library\/laws\/\$\{apiSlug\(lawSlug\)\}\/citations\?article=/);
   assert.ok(!/\bfetch\(`\/api\/library\/laws\/\$\{apiSlug\(lawSlug\)\}\/citations\?(bulk|article)/.test(refBox));
-  // a failed bulk read still ends in a state the box can draw
-  assert.match(refBox, /bulkStore\.set\(lawSlug, \{ status: "failed" \}\)/);
+  // a failed bulk read still ends in a state the box can draw; a busy one (503) in «busy»
+  assert.match(refBox, /bulkStore\.set\(lawSlug, isLinksBusyError\(err\) \? \{ status: "busy" \} : \{ status: "failed" \}\)/);
+});
+
+test("reader (l19 review S3): after a busy answer the per-article fallback stops for the page view", () => {
+  // an article's 503 marks the law busy too
+  assert.match(refBox, /if \(isLinksBusyError\(err\)\) markLinksBusy\(lawSlug\);/);
+  // busy: only a press (the panel, `full`) asks again; the fallback's observer never starts
+  assert.match(refBox, /const wantFetch = !!key && enabled && !bulkEnough && \(full \|\| \(!bulkPending && !busy\)\);/);
+  assert.match(refBox, /needsNear = !!ctx && \(bulk\?\.status === "unavailable" \|\| bulk\?\.status === "failed"\)/);
+  // the side box says so
+  assert.match(refBox, /status: bulkPending \? "loading" : busy && enabled \? "failed" : "idle"/);
+  assert.match(refBox, /state\.status === "failed" && <p[^>]*>تعذّر تحميل الإحالات الآن\.<\/p>/);
 });

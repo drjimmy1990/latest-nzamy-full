@@ -424,6 +424,12 @@ export async function GET(
       // Owner ٢٣٦: per viewer, after the shared cache — a locked article's
       // links (groups, counts, titles) leave the answer.
       const { viewer, timedOut: viewerLate, ms: viewerMs } = await viewerRead;
+      // l19 review S2: a viewer read over budget is a 503 links_busy (the
+      // reader says «تعذّر تحميل الإحالات الآن»), not a 200 with every
+      // article's links stripped that the reader would keep as «no links».
+      if (viewerLate) {
+        return linksBusy(serverTiming([...baseSteps(), ['graph', graphMs], ['viewer', viewerMs], ['viewer_timeout', VIEWER_BUDGET_MS]], hit ? 'hit' : 'miss'));
+      }
       const body = { available: true, ...maskDecreeTitlesForViewer(withoutLockedArticles(shapedLaw, viewer.openIds), viewer.isSubscriber) };
       return tierJson(
         body,
@@ -449,6 +455,10 @@ export async function GET(
       // slug (articleBoxLockedByOwnLaw). POST-L18-01: both reads within the
       // viewer budget; a timeout keeps the box locked (fails closed).
       const { viewer, timedOut: viewerLate, ms: viewerMs } = await boundedViewer(serverOnly, slug);
+      // l19 review S2: over budget → 503 links_busy (fails closed: nothing shown), never a 200 «no links».
+      if (viewerLate) {
+        return linksBusy(serverTiming([...baseSteps(), ['viewer', viewerMs], ['viewer_timeout', VIEWER_BUDGET_MS]], 'miss'));
+      }
       const lockRun = await withinBudget(
         articleBoxLockedByOwnLaw(id, slug, {
           isSubscriber: viewer.isSubscriber,
@@ -460,9 +470,13 @@ export async function GET(
       );
       const viewerSteps: Array<[string, number]> = [
         ['viewer', viewerMs],
-        ...(viewerLate || lockRun.timedOut ? ([['viewer_timeout', VIEWER_BUDGET_MS]] as Array<[string, number]>) : []),
+        ...(lockRun.timedOut ? ([['viewer_timeout', VIEWER_BUDGET_MS]] as Array<[string, number]>) : []),
       ];
-      if (lockRun.timedOut || lockRun.value) {
+      // l19 review S2: the lock read over budget is busy too (nothing shown, the reader says so).
+      if (lockRun.timedOut) {
+        return linksBusy(serverTiming([...baseSteps(), ...viewerSteps], 'miss'));
+      }
+      if (lockRun.value) {
         return tierJson({ available: true, ...lockedArticleRefs() }, serverTiming([...baseSteps(), ...viewerSteps], 'miss'));
       }
       const key = linksCacheKey('article', slug, id, types);

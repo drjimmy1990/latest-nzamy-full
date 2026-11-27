@@ -94,7 +94,7 @@ import {
   type RefGroupOut,
   type RefItemOut,
 } from "@/app/api/library/laws/[slug]/citations/_shape";
-import { fetchJsonWithin } from "@/app/api/library/laws/[slug]/citations/_bounded";
+import { fetchJsonWithin, isLinksBusyError } from "@/app/api/library/laws/[slug]/citations/_bounded";
 import { buildCitation } from "./_citation";
 import { lawStatusPill, statusPill } from "./_cite-status";
 import { scrollToReaderAnchor } from "./_reader-anchors";
@@ -126,7 +126,14 @@ interface Preview {
 
 // ── The whole law: one request (batch l12, L1) ──
 
-type BulkState = { status: "loading" } | { status: "done"; data: LawLinks } | { status: "unavailable" | "failed" };
+/**
+ * `busy` (l19 review S3): the route answered 503 links_busy — the server is
+ * slow right now. For the rest of this page view the per-article fallback
+ * asks nothing (it would send three requests at a time exactly while the
+ * server is slow); the side box says «تعذّر تحميل الإحالات الآن». A press on
+ * «الإحالات» still asks once for that article.
+ */
+type BulkState = { status: "loading" } | { status: "done"; data: LawLinks } | { status: "unavailable" | "failed" | "busy" };
 
 /** Per page view and law: the bulk answer, and whoever waits for it. */
 const bulkStore = new Map<string, BulkState>();
@@ -166,10 +173,17 @@ export function prefetchLawLinks(lawSlug: string): void {
       );
       emitBulk();
     })
-    .catch(() => {
-      bulkStore.set(lawSlug, { status: "failed" });
+    .catch((err) => {
+      bulkStore.set(lawSlug, isLinksBusyError(err) ? { status: "busy" } : { status: "failed" });
       emitBulk();
     });
+}
+
+/** An article's request answered busy (503): the law's fallback stops for this page view (l19 review S3). */
+function markLinksBusy(lawSlug: string): void {
+  if (bulkStore.get(lawSlug)?.status === "done") return;
+  bulkStore.set(lawSlug, { status: "busy" });
+  emitBulk();
 }
 
 function useBulk(lawSlug: string): BulkState | undefined {
@@ -218,7 +232,10 @@ function fetchArticleRefs(lawSlug: string, articleId: string): Promise<Refs> {
       // POST-L18-01: bounded like the law's request — a slot of the three is never held for ever.
       fetchJsonWithin<Refs>(`/api/library/laws/${apiSlug(lawSlug)}/citations?article=${encodeURIComponent(articleId)}`)
         .then((d) => resolve(d))
-        .catch(reject)
+        .catch((err) => {
+          if (isLinksBusyError(err)) markLinksBusy(lawSlug);
+          reject(err);
+        })
         .finally(() => {
           running--;
           inflight.delete(id);
@@ -255,8 +272,10 @@ export function useArticleRefs(
   // The bulk answer is enough, unless the panel needs more than it holds.
   const bulkEnough = !!fromBulk && (!full || (fromBulk.available && fromBulk.groups?.every((g) => g.keys.length >= g.total)));
   const bulkPending = !bulk || bulk.status === "loading";
+  // l19 review S3: after a busy answer only a press (the panel, `full`) asks again.
+  const busy = bulk?.status === "busy";
   const key = articleId ? `${lawSlug}|${articleId}` : "";
-  const wantFetch = !!key && enabled && !bulkEnough && (full || !bulkPending);
+  const wantFetch = !!key && enabled && !bulkEnough && (full || (!bulkPending && !busy));
   const [settled, setSettled] = useState<{ key: string; failed: boolean }>({ key: "", failed: false });
   useEffect(() => {
     if (!wantFetch || !articleId || refsCache.has(key)) return;
@@ -280,7 +299,7 @@ export function useArticleRefs(
   if (cached) return { status: "done", data: cached };
   // The panel shows the three per group at once while the rest comes.
   if (fromBulk) return { status: "done", data: fromBulk, more: wantFetch && !(settled.key === key && settled.failed) };
-  if (!wantFetch) return { status: bulkPending ? "loading" : "idle" };
+  if (!wantFetch) return { status: bulkPending ? "loading" : busy && enabled ? "failed" : "idle" };
   return { status: settled.key === key && settled.failed ? "failed" : "loading" };
 }
 
