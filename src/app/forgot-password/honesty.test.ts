@@ -48,8 +48,8 @@ test("forgot-password never shows its 'sent' state without the real call", () =>
     const at = forgot.indexOf(`outcome === "${outcome}"`);
     assert.ok(at > classify && at < sent, outcome);
   }
-  // the neutral wording, verbatim from the brief
-  assert.match(forgot, /إن كان البريد مسجلاً فستصلك رسالة/);
+  // the neutral wording (l19 review S2: «إن كان البريد مسجّلًا لدينا فستصلك رسالة من «نظامي»…»)
+  assert.match(forgot, /إن كان البريد مسجّلًا لدينا فستصلك رسالة/);
 });
 
 test("forgot-password no longer fakes an OTP, a phone path or «تم بنجاح»", () => {

@@ -791,7 +791,7 @@ export default function FirmCaseDetailsPage() {
   }
 
   if ((officeGate.locked || officeGate.pending) && !isMarketClaimedCase(caseData as { assigned_to?: unknown; requester_user_id?: unknown }, user.userId)) {
-    if (officeGate.locked) return <OfficePlanTeaser need="office" />;
+    if (officeGate.locked) return <OfficePlanTeaser need="office" scope="firm" />;
     return null;
   }
 

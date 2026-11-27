@@ -233,6 +233,9 @@ const GATED: Array<[string, string, string]> = [
   ["lawyer/time-entries/[id]", "PATCH", "finance"],
   ["lawyer/trust", "POST", "finance"],
   ["lawyer/trust/[id]", "PATCH", "finance"],
+  // l19 review (access N9): outside the lawyer / firm trees, the case team and «قضية مقيّدة»
+  ["cases/[id]/team", "POST", "team"],
+  ["cases/[id]/restriction", "POST", "team"],
 ];
 
 /** The writes that stay free — the market, consultations, the profile, personal notes, pomodoro, removals. */
@@ -311,6 +314,18 @@ test("the free writes never call the office gate", () => {
     const body = methodBody(code(`src/app/api/v1/${rel}/route.ts`), meth);
     assert.ok(body, `${rel} ${meth}: no handler`);
     assert.equal(body!.includes("officePlanRefusal("), false, `${rel} ${meth}: gated`);
+  }
+});
+
+test("l19 review N9: every mutating handler of the case team and restriction routes is classified", () => {
+  const known = new Set(GATED.map(([r, m]) => `${r} ${m}`));
+  for (const route of ["cases/[id]/team", "cases/[id]/restriction"]) {
+    const src = code(`src/app/api/v1/${route}/route.ts`);
+    for (const meth of WRITE_METHODS) {
+      if (methodBody(src, meth)) assert.ok(known.has(`${route} ${meth}`), `${route} ${meth} is not classified`);
+    }
+    assert.ok(methodBody(src, "GET"), `${route}: the read stays`);
+    assert.equal(methodBody(src, "GET")!.includes("officePlanRefusal("), false, `${route} GET stays ungated`);
   }
 });
 
@@ -445,6 +460,21 @@ test("the lawyer and firm layouts guard their pages; the sidebar reads the level
     assert.ok(src.includes('useOfficeGateFor("office")'), rel);
     assert.ok(src.includes("isMarketClaimedCase("), rel);
   }
+});
+
+test("l19 review N8 + N6: a firm page names the firm plans; the last level of the same user shows at once while it is re-read", () => {
+  const guard = code("src/components/dashboard/OfficePlanGuard.tsx");
+  assert.ok(guard.includes("<OfficePlanTeaser need={need} scope={scope} />"));
+  assert.ok(guard.includes('need === "enterprise" ? "enterprise" : scope === "firm" ? "firm" : officeAudienceFor(user.userType)'));
+  assert.ok(code("src/app/dashboard/firm/cases/[id]/page.tsx").includes('<OfficePlanTeaser need="office" scope="firm" />'));
+  assert.ok(guard.includes("useOfficePlanLevel(enabled, user.userId ?? null)"));
+  const hook = code("src/hooks/useOfficePlanLevel.ts");
+  assert.ok(hook.includes("const LEVEL_MEMO_MS = 30_000;"));
+  // only the same user's ready answer, younger than 30 s; a failed read forgets it; the database is asked on every mount
+  assert.ok(hook.includes("if (!userId || !levelMemo || levelMemo.userId !== userId || now - levelMemo.at > LEVEL_MEMO_MS) return null;"));
+  assert.ok(hook.includes('if (read.state === "level" && userId) levelMemo = { userId, level: read.level, at: Date.now() };'));
+  assert.ok(hook.includes('else if (read.state !== "level") levelMemo = null;'));
+  assert.ok(hook.includes("}, [enabled, userId]);"));
 });
 
 test("20261209_60: 'none' IS office_features_locked; enterprise = firm-enterprise; only my_office_plan_level for sessions", () => {

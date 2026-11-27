@@ -39,7 +39,7 @@ import {
 export function useOfficeGateFor(need: OfficeNeed | null): { state: OfficePlanLevelState; locked: boolean; pending: boolean } {
   const user = useUser();
   const enabled = need !== null && isSupabaseMode && !user.loading && user.isLoggedIn && user.userType !== "admin";
-  const state = useOfficePlanLevel(enabled);
+  const state = useOfficePlanLevel(enabled, user.userId ?? null);
   const pending = need !== null && isSupabaseMode && (user.loading || state.status === "loading");
   const locked = need !== null && state.status === "ready" && !officeLevelGrants(state.level, need);
   return { state, locked, pending };
@@ -50,15 +50,19 @@ export default function OfficePlanGuard({ scope, children }: { scope: OfficeScop
   const need = officePageNeed(scope, pathname);
   const { locked, pending } = useOfficeGateFor(need);
   if (pending) return null;
-  if (locked && need) return <OfficePlanTeaser need={need} />;
+  if (locked && need) return <OfficePlanTeaser need={need} scope={scope} />;
   return <>{children}</>;
 }
 
-/** The lock teaser: what the tool is for, where the plans are, and that nothing he added is lost. */
-export function OfficePlanTeaser({ need, note }: { need: OfficeNeed; note?: string }) {
+/**
+ * The lock teaser: what the tool is for, where the plans are, and that nothing he added is lost.
+ * l19 review (access N8): on a firm page (`scope` firm) the firm plans are named even for a
+ * member whose own type is lawyer — his access comes from the firm.
+ */
+export function OfficePlanTeaser({ need, note, scope }: { need: OfficeNeed; note?: string; scope?: OfficeScope }) {
   const { isDark } = useTheme();
   const user = useUser();
-  const audience: OfficeAudience = need === "enterprise" ? "enterprise" : officeAudienceFor(user.userType);
+  const audience: OfficeAudience = need === "enterprise" ? "enterprise" : scope === "firm" ? "firm" : officeAudienceFor(user.userType);
   const backHref = user.userType ? getDashboardRoute(user.userType) : "/dashboard";
   const card = isDark ? "border-white/[0.07] bg-zinc-900/60" : "border-slate-200 bg-white shadow-sm";
   const tp = isDark ? "text-white" : "text-slate-800";
