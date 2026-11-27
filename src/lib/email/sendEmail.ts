@@ -60,9 +60,58 @@
  * `env`, `fetchImpl` and `createSmtpTransport` are injectable for the tests.
  */
 
-import { emailProvider, smtpSettings, type EmailEnv, type SmtpSettings } from "./emailConfig.ts";
+import { emailProvider, smtpSettings, type EmailEnv, type EmailProvider, type SmtpSettings } from "./emailConfig.ts";
 
 export type EmailSendResult = "sent" | "unavailable" | "failed" | "sunk";
+
+/**
+ * Where a failed send stopped (batch l19, LIVE-18 — the admin's test send
+ * shows it; the ordinary callers only see the EmailSendResult):
+ *   input      the recipient / subject / text was unusable — nothing attempted
+ *   transport  the SMTP transport could not be made (nodemailer not loadable)
+ *   send       the SMTP conversation failed (connect, TLS, login, envelope…)
+ *   timeout    the whole SMTP send passed SMTP_SEND_TIMEOUT_MS
+ *   rejected   the SMTP server answered but did not accept the recipient
+ *   http       Resend answered a non-2xx status
+ *   threw      anything else (Resend unreachable, an unexpected error)
+ */
+export type EmailFailureStage = "input" | "transport" | "send" | "timeout" | "rejected" | "http" | "threw";
+
+/** The loggable facts of a failure — codes only, never a message text, an address or a secret. */
+export interface EmailFailureDetail {
+  stage: EmailFailureStage;
+  /** nodemailer / Node error code (EAUTH, ECONNECTION, ESOCKET, MODULE_NOT_FOUND…), or null. */
+  code: string | null;
+  /** The system error under nodemailer's class (ECONNREFUSED, ENOTFOUND, ERR_SSL_…), or null. */
+  originalCode: string | null;
+  /** The SMTP server's reply code (535, 550…), or null. */
+  responseCode: number | null;
+  /** Resend's HTTP status, or null. */
+  httpStatus: number | null;
+}
+
+/** sendEmailDetailed's answer: the result, the provider used, and why it failed (null unless "failed"). */
+export interface EmailSendDetail {
+  result: EmailSendResult;
+  provider: EmailProvider | null;
+  failure: EmailFailureDetail | null;
+}
+
+const failure = (
+  provider: EmailProvider | null,
+  stage: EmailFailureStage,
+  parts: Partial<Omit<EmailFailureDetail, "stage">> = {},
+): EmailSendDetail => ({
+  result: "failed",
+  provider,
+  failure: {
+    stage,
+    code: parts.code ?? null,
+    originalCode: parts.originalCode ?? null,
+    responseCode: parts.responseCode ?? null,
+    httpStatus: parts.httpStatus ?? null,
+  },
+});
 export type { EmailEnv, EmailProvider, SmtpSettings } from "./emailConfig.ts";
 // "Is e-mail set up?" lives in emailConfig.ts (pure, no sender code).
 export {
@@ -206,28 +255,38 @@ export function fromHeader(env: EmailEnv): string {
 }
 
 export async function sendEmail(message: EmailMessage, deps: SendEmailDeps = {}): Promise<EmailSendResult> {
+  return (await sendEmailDetailed(message, deps)).result;
+}
+
+/**
+ * sendEmail with the reason of a failure (batch l19, LIVE-18): the same send,
+ * the same logs, the same "never throws" — plus the provider used and, for
+ * "failed", the stage and the error / reply codes (EmailFailureDetail). Used
+ * by the admin's «اختبار إرسال بريد»; every other caller uses sendEmail.
+ */
+export async function sendEmailDetailed(message: EmailMessage, deps: SendEmailDeps = {}): Promise<EmailSendDetail> {
   const env = deps.env ?? process.env;
   const provider = emailProvider(env);
-  if (!provider) return "unavailable";
+  if (!provider) return { result: "unavailable", provider: null, failure: null };
   const tag = message?.tag ? sanitizeTag(message.tag) : "";
   try {
     const to = typeof message?.to === "string" ? message.to.trim() : "";
     if (!isPlainEmail(to)) {
       console.error("[email] not sent: unusable recipient address", tag || "-", maskEmail(to));
-      return "failed";
+      return failure(provider, "input");
     }
     const subject = oneLine(message.subject ?? "");
     const text = typeof message.text === "string" ? message.text : "";
     if (!subject || !text.trim()) {
       console.error("[email] not sent: empty subject or text", tag || "-", maskEmail(to));
-      return "failed";
+      return failure(provider, "input");
     }
     const fetchImpl = deps.fetchImpl ?? fetch;
     const sinkInput: TestMailSinkInput = { to, userIds: cleanUserIds(message.userIds), subject, text, tag: tag || null };
     const sink = await (deps.sinkCheck ?? ((i: TestMailSinkInput) => checkTestMailSink(i, env, fetchImpl)))(sinkInput);
     if (sink.sink) {
       console.info("[email] sunk (test mail sink):", sink.reason || "-", tag || "-", maskEmail(to));
-      return "sunk";
+      return { result: "sunk", provider, failure: null };
     }
 
     if (provider === "smtp") {
@@ -251,25 +310,34 @@ export async function sendEmail(message: EmailMessage, deps: SendEmailDeps = {})
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(deps.timeoutMs ?? EMAIL_TIMEOUT_MS),
     });
-    if (res.ok) return "sent";
+    if (res.ok) return { result: "sent", provider, failure: null };
     // The response body is not logged: Resend may echo the address back.
     console.error("[email] send failed: status", res.status, tag || "-", maskEmail(to));
-    return "failed";
+    return failure(provider, "http", { httpStatus: res.status });
   } catch (err) {
     const name = err instanceof Error ? err.name : "error";
     console.error("[email] send threw:", name, tag || "-", maskEmail(message?.to));
-    return "failed";
+    const code = smtpErrorParts(err)[1];
+    return failure(provider, "threw", { code: code === "-" ? null : code });
   }
 }
 
 // ── SMTP: the operator's own mailbox ────────────────────────────────────────
 
-/** nodemailer, loaded on the first SMTP send only (ESM or CJS shape alike). */
+/**
+ * nodemailer, loaded on the first SMTP send only (ESM or CJS shape alike).
+ * next.config.ts lists it in serverExternalPackages (l19), so the server
+ * loads it from node_modules at run time instead of a bundled copy. A module
+ * that cannot be loaded fails with its own code (MODULE_NOT_FOUND /
+ * ERR_MODULE_NOT_FOUND) or EMODULE, at the "transport" stage.
+ */
 const nodemailerFactory: SmtpTransportFactory = async (options) => {
   type Mod = { createTransport?: (o: SmtpTransportOptions) => SmtpTransportLike };
   const mod = (await import("nodemailer")) as unknown as Mod & { default?: Mod };
   const lib = typeof mod.createTransport === "function" ? mod : mod.default;
-  if (!lib || typeof lib.createTransport !== "function") throw new Error("nodemailer unavailable");
+  if (!lib || typeof lib.createTransport !== "function") {
+    throw Object.assign(new Error("nodemailer unavailable"), { code: "EMODULE" });
+  }
   return lib.createTransport(options);
 };
 
@@ -347,12 +415,21 @@ function acceptedBy(info: unknown, to: string): boolean {
 }
 
 /** The loggable parts of an SMTP error: its code and reply code — never its message or the server's reply text. */
-function smtpErrorParts(err: unknown): [string, string, string] {
-  const e = (err && typeof err === "object" ? err : {}) as { name?: unknown; code?: unknown; responseCode?: unknown };
+function smtpErrorParts(err: unknown): [string, string, string, string] {
+  const e = (err && typeof err === "object" ? err : {}) as {
+    name?: unknown;
+    code?: unknown;
+    responseCode?: unknown;
+    originalCode?: unknown;
+  };
+  const okCode = (c: unknown) => (typeof c === "string" && /^[A-Z][A-Z0-9_]{0,39}$/.test(c) ? c : "-");
   const name = err instanceof Error && /^[A-Za-z]{1,40}$/.test(err.name) ? err.name : "error";
-  const code = typeof e.code === "string" && /^[A-Z][A-Z0-9_]{0,39}$/.test(e.code) ? e.code : "-";
+  const code = okCode(e.code);
   const reply = typeof e.responseCode === "number" && e.responseCode >= 100 && e.responseCode <= 599 ? String(e.responseCode) : "-";
-  return [name, code, reply];
+  // nodemailer 10 replaces a system error's code with its own class (ESOCKET…)
+  // and keeps the system code (ECONNREFUSED, ENOTFOUND, ERR_SSL_…) here.
+  const original = okCode(e.originalCode);
+  return [name, code, reply, original];
 }
 
 interface SmtpOutgoing {
@@ -364,9 +441,9 @@ interface SmtpOutgoing {
   idempotencyKey?: string;
 }
 
-async function sendViaSmtp(m: SmtpOutgoing, env: EmailEnv, deps: SendEmailDeps): Promise<EmailSendResult> {
+async function sendViaSmtp(m: SmtpOutgoing, env: EmailEnv, deps: SendEmailDeps): Promise<EmailSendDetail> {
   const settings = smtpSettings(env);
-  if (!settings) return "unavailable";
+  if (!settings) return { result: "unavailable", provider: null, failure: null };
   const mail: SmtpMail = { from: smtpFrom(settings), to: m.to, subject: m.subject, text: m.text };
   if (m.html) mail.html = m.html;
   if (m.tag) mail.headers = { "X-Nzamy-Category": m.tag };
@@ -376,8 +453,11 @@ async function sendViaSmtp(m: SmtpOutgoing, env: EmailEnv, deps: SendEmailDeps):
   const timeout = new Promise<"timeout">((resolve) => {
     timer = setTimeout(() => resolve("timeout"), deps.smtpTimeoutMs ?? SMTP_SEND_TIMEOUT_MS);
   });
+  // "transport" until nodemailer is loaded and the transport made, then "send".
+  let stage: "transport" | "send" = "transport";
   const work = (async () => {
     const transport = await transportFor(deps.createSmtpTransport ?? nodemailerFactory, settings);
+    stage = "send";
     return { info: await transport.sendMail(mail) };
   })();
   // A send that fails after the cut-off is already answered: not an unhandled rejection.
@@ -386,15 +466,20 @@ async function sendViaSmtp(m: SmtpOutgoing, env: EmailEnv, deps: SendEmailDeps):
     const outcome = await Promise.race([work, timeout]);
     if (outcome === "timeout") {
       console.error("[email] smtp send timed out", m.tag || "-", maskEmail(m.to));
-      return "failed";
+      return failure("smtp", "timeout");
     }
-    if (acceptedBy(outcome.info, m.to)) return "sent";
+    if (acceptedBy(outcome.info, m.to)) return { result: "sent", provider: "smtp", failure: null };
     console.error("[email] smtp: recipient not accepted", m.tag || "-", maskEmail(m.to));
-    return "failed";
+    return failure("smtp", "rejected");
   } catch (err) {
-    const [name, code, reply] = smtpErrorParts(err);
-    console.error("[email] smtp send failed:", name, code, reply, m.tag || "-", maskEmail(m.to));
-    return "failed";
+    const [name, code, reply, original] = smtpErrorParts(err);
+    // «stage name code reply original» — e.g. «send Error ESOCKET - ECONNREFUSED».
+    console.error("[email] smtp send failed:", stage, name, code, reply, original, m.tag || "-", maskEmail(m.to));
+    return failure("smtp", stage, {
+      code: code === "-" ? null : code,
+      originalCode: original === "-" ? null : original,
+      responseCode: reply === "-" ? null : Number(reply),
+    });
   } finally {
     if (timer) clearTimeout(timer);
   }

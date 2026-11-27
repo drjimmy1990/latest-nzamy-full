@@ -34,6 +34,7 @@ import { FirmRulesCard } from "./_components/FirmRulesCard";
 import { SimpleContractPriceCard } from "./_components/SimpleContractPriceCard";
 import { DrafterRevisionsCard } from "./_components/DrafterRevisionsCard";
 import { SignupPhoneOtpCard } from "./_components/SignupPhoneOtpCard";
+import { EmailTestCard } from "./_components/EmailTestCard";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -986,6 +987,8 @@ export default function AdminSettingsPage() {
       <DrafterRevisionsCard />
       {/* ── l15: the WhatsApp sign-up code — switch, diagnostic, test send (user decisions 2026-11-24) ── */}
       <SignupPhoneOtpCard />
+      {/* ── l19 (LIVE-18): the app's e-mail — diagnostic + test send to the admin's own address ── */}
+      <EmailTestCard />
 
       {/* ═══════════════════════════════════════════════════════════════════════ */}
       {/* ── Section 4: Legal Library Open/Close ── */}
