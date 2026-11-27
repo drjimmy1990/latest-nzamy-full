@@ -29,6 +29,9 @@ import {
 import type { WorkflowRequest } from "@/lib/workflowStore";
 import type { CaseStatus, CaseType, CourtDegree, Priority, ViewMode, KanbanGroupBy, Case } from "./_types";
 import AddCaseModal from "../_components/AddCaseModal";
+import { useOfficeGateFor } from "@/components/dashboard/OfficePlanGuard";
+import { OFFICE_MARKET_CASES_NOTE_AR, isMarketClaimedCase } from "@/lib/auth/officePages";
+import { OFFICE_PLAN_LINK_AR, OFFICE_PLAN_PRICING_HREF } from "@/lib/auth/officePlan";
 import CaseStageBar from "../_components/CaseStageBar";
 import EmptyState from "@/components/ui/EmptyState";
 import TestAccountBadge from "@/components/ui/TestAccountBadge";
@@ -151,7 +154,11 @@ function casePage(rows: WorkflowRequest[]): { cases: Case[]; keys: Record<string
   const keys: Record<string, CaseClientKeys> = {};
   for (const r of caseRows) {
     const raw = r as WorkflowRequest & { lawyer_client_id?: string | null };
-    keys[r.id] = { lawyer_client_id: raw.lawyer_client_id ?? null, requester_user_id: raw.requester_user_id ?? null };
+    keys[r.id] = {
+      lawyer_client_id: raw.lawyer_client_id ?? null,
+      requester_user_id: raw.requester_user_id ?? null,
+      assigned_to: (raw as { assigned_to?: string | null }).assigned_to ?? null,
+    };
   }
   return { cases: caseRows.map(workflowToCase), keys };
 }
@@ -189,7 +196,7 @@ export default function CasesPage() {
   // `latestDegreeByCase` below for why the tag matters.
   const [stageFilter,   setStageFilter]   = useState<StageBucket | "all">("all");
   const [stageRead,     setStageRead]     = useState<{ key: string; byCase: Record<string, string> | null } | null>(null);
-  const [cases,         setCases]         = useState<Case[]>([]);
+  const [rawCases,      setCases]         = useState<Case[]>([]);
   const [loading,       setLoading]       = useState(true);
   const [loadError,     setLoadError]     = useState(false);
   // l9 row 70: how many raw rows were read so far, of how many the server has.
@@ -217,6 +224,15 @@ export default function CasesPage() {
   const searchParams = useSearchParams();
   const clientParam = searchParams?.get("client")?.trim() ?? "";
   const [clientKeysById, setClientKeysById] = useState<Record<string, CaseClientKeys>>({});
+  // Owner ق٢٦-٤: «القضايا» is «إدارة المكتب», but «السوق والاستشارات الواردة»
+  // is free — on the free side (and until the database has answered) the list
+  // shows only the cases that reached him from the market (src/lib/auth/officePages.ts).
+  const officeGate = useOfficeGateFor("office");
+  const marketOnly = officeGate.locked || officeGate.pending;
+  const cases = useMemo(
+    () => (marketOnly ? rawCases.filter((c) => isMarketClaimedCase(clientKeysById[c.id], user.userId)) : rawCases),
+    [marketOnly, rawCases, clientKeysById, user.userId],
+  );
   // The card's name (chip label) and its linked platform account (second match
   // arm). A failed read leaves the filter on, by card id — never off.
   const [clientInfo, setClientInfo] = useState<{ id: string; name: string | null; linkedUserId: string | null } | null>(null);
@@ -649,7 +665,7 @@ export default function CasesPage() {
                   // Same label as the header button at :711. They opened the
                   // same modal under two names — «إضافة قضية» here and «قضية
                   // جديدة» there — on one screen, in one screenshot (shot 01).
-                  action={{ label: "قضية جديدة", onClick: () => setShowAddCase(true) }}
+                  action={marketOnly ? undefined : { label: "قضية جديدة", onClick: () => setShowAddCase(true) }}
                 />
               )
               : (
@@ -893,6 +909,16 @@ export default function CasesPage() {
         </motion.div>
       )}
 
+      {/* ق٢٦-٤: the free side sees its market cases only, and why */}
+      {officeGate.locked && (
+        <div role="note" className={`flex flex-col sm:flex-row sm:items-center gap-2 rounded-2xl border px-4 py-3 text-[13px] leading-6 ${
+          isDark ? "border-[#C8A762]/25 bg-[#C8A762]/10 text-zinc-200" : "border-[#C8A762]/40 bg-[#C8A762]/10 text-slate-700"
+        }`}>
+          <p className="flex-1">🔒 {OFFICE_MARKET_CASES_NOTE_AR}</p>
+          <Link href={OFFICE_PLAN_PRICING_HREF} className="text-[13px] font-bold text-[#C8A762] underline">{OFFICE_PLAN_LINK_AR}</Link>
+        </div>
+      )}
+
       {/* Critical Banner */}
       {criticalCount > 0 && (
         <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
@@ -935,10 +961,12 @@ export default function CasesPage() {
             <CalendarCheck size={15} />الجلسات
           </Link>
           )}
+          {!marketOnly && (
           <button onClick={() => setShowAddCase(true)}
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-[#0B3D2E] text-[#C8A762] hover:bg-[#0a3328] transition-colors">
             <Plus size={15} weight="bold" />قضية جديدة
           </button>
+          )}
         </div>
       </motion.div>
 

@@ -12,12 +12,15 @@ interface UpgradeModalProps {
   onClose: () => void;
   featureBlocked?: string;
   /**
-   * Owner ق٢٦-١: a locked office row's own page. Reads were never gated, so
-   * the dialog offers it as a second link («فتح الصفحة»).
+   * Owner ق٢٦-١ / l19: the part of a locked office row's page the free side
+   * may still open (the market's cases, the letterhead) — a second link.
+   * The rest of the page shows the lock teaser (OfficePlanGuard).
    */
   continueHref?: string;
+  /** The words of that link (default «فتح الصفحة»). */
+  continueLabel?: string;
   /** Whose office plan opens the feature (a locked office row); absent = a plan tier lock. */
-  officeAudience?: "lawyer" | "firm";
+  officeAudience?: "lawyer" | "firm" | "enterprise";
 }
 
 /**
@@ -28,7 +31,7 @@ interface UpgradeModalProps {
  * account sees only its own family's plans (audienceForUserType.ts) and buys
  * one online. It names no price and promises nothing a plan card does not.
  */
-export default function UpgradeModal({ open, onClose, featureBlocked, continueHref, officeAudience }: UpgradeModalProps) {
+export default function UpgradeModal({ open, onClose, featureBlocked, continueHref, continueLabel, officeAudience }: UpgradeModalProps) {
   const { isDark } = useTheme();
   const user = useUser();
   const creditsUsed = Math.max(0, (user.creditsMax ?? 0) - (user.credits ?? 0));
@@ -131,7 +134,7 @@ export default function UpgradeModal({ open, onClose, featureBlocked, continueHr
                     isDark ? "border-white/10 text-zinc-300 hover:bg-white/[0.04]" : "border-slate-200 text-slate-600 hover:bg-slate-50"
                   }`}
                 >
-                  فتح الصفحة
+                  {continueLabel ?? "فتح الصفحة"}
                 </Link>
               )}
             </div>

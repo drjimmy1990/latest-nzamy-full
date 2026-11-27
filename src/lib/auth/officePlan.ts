@@ -24,6 +24,8 @@ export const OFFICE_PLAN_REQUIRED_CODE = "office_plan_required" as const;
 export const OFFICE_PLAN_NAME_AR = "إدارة المكتب";
 /** A firm's plans (firm-basic «مكتب المحاماة» / firm-enterprise «شركة المحاماة»). */
 export const FIRM_PLANS_AR = "باقة المكتب («مكتب المحاماة» أو «شركة المحاماة»)";
+/** The firm's top step (ق٢٦-٥: departments, branches, governance, secondment …). */
+export const FIRM_ENTERPRISE_PLAN_AR = "باقة «شركة المحاماة»";
 
 /**
  * Where the plans are sold. Plain /pricing: a signed-in account lands on its
@@ -38,7 +40,7 @@ export const OFFICE_PLAN_LINK_AR = "اطّلع على الباقات";
  * firm's member (the firm plans), or unknown (a database refusal that carries
  * only a token — both are named).
  */
-export type OfficeAudience = "lawyer" | "firm" | "any";
+export type OfficeAudience = "lawyer" | "firm" | "enterprise" | "any";
 
 /** user_type → audience: a lawyer buys «إدارة المكتب»; a firm (and its members) a firm plan. */
 export function officeAudienceFor(userType: string | null | undefined): OfficeAudience {
@@ -50,6 +52,7 @@ export function officeAudienceFor(userType: string | null | undefined): OfficeAu
 const PLAN_PHRASE: Readonly<Record<OfficeAudience, string>> = Object.freeze({
   lawyer: `باقة «${OFFICE_PLAN_NAME_AR}»`,
   firm: FIRM_PLANS_AR,
+  enterprise: FIRM_ENTERPRISE_PLAN_AR,
   any: `باقة «${OFFICE_PLAN_NAME_AR}» للمحامي أو ${FIRM_PLANS_AR}`,
 });
 
@@ -62,7 +65,9 @@ export type OfficeFeature =
   | "hearings"
   | "deadlines"
   | "invoices"
-  | "reports";
+  | "reports"
+  | "contracts"
+  | "finance";
 
 const FEATURE_AR: Readonly<Record<OfficeFeature, string>> = Object.freeze({
   team: "إدارة الفريق والمقاعد",
@@ -74,6 +79,8 @@ const FEATURE_AR: Readonly<Record<OfficeFeature, string>> = Object.freeze({
   deadlines: "المواعيد النظامية",
   invoices: "الفواتير",
   reports: "التقارير وكشوف الأتعاب",
+  contracts: "العقود",
+  finance: "الحسابات المالية للمكتب",
 });
 
 /** The plan phrase for an audience: «باقة «إدارة المكتب»» / the firm plans / both. */
@@ -96,6 +103,7 @@ export function isOfficePlanMessage(message: string | null | undefined): boolean
   return (
     message.includes(`متاحة في باقة «${OFFICE_PLAN_NAME_AR}»`) ||
     message.includes(`متاحة في ${FIRM_PLANS_AR}`) ||
+    message.includes(`متاحة في ${FIRM_ENTERPRISE_PLAN_AR}`) ||
     message.includes(STORAGE_UPGRADE_AR)
   );
 }

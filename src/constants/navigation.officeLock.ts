@@ -13,11 +13,14 @@
  * an error or any other value locks nothing (the server gates stay the
  * enforcement: officePlanRefusal() and the database caps).
  *
- * The lock is on the MENU ROW, not the page: the pages stay readable (reads
- * were never gated — a lawyer's market-claimed cases and his letterhead,
- * which lives in the vault's branding tab, must stay reachable), so the
- * dialog also offers «فتح الصفحة». The 17-page guard of ق٢٦-٤ is a later
- * wave.
+ * l19 (ق٢٦-٤ / ق٢٦-٥): the pages themselves are now guarded too
+ * (src/components/dashboard/OfficePlanGuard.tsx, src/lib/auth/officePages.ts),
+ * so the dialog's old «فتح الصفحة» escape is gone. Two rows keep a second
+ * link, to the part the free side may still open: «القضايا» (the cases that
+ * came from the market — «السوق والاستشارات الواردة» is free) and the
+ * lawyer's «الخزنة» (its letterhead tab — «والورق المروّس» is free).
+ * A firm on «مكتب المحاماة» sees its «شركة المحاماة» rows locked
+ * (FIRM_ENTERPRISE_HREFS), by the database's my_office_plan_level().
  *
  * Not locked on purpose (free under ق٢٦-٤ / ق٢٦-٥): the home page, the
  * profile, consultations and messages from the market, the marketplace, the
@@ -61,21 +64,51 @@ export const FIRM_OFFICE_HREFS: readonly string[] = Object.freeze([
   "/dashboard/firm/secondment/new",
 ]);
 
-export type OfficeLockAudience = "lawyer" | "firm";
+/** The firm's «شركة المحاماة» rows (ق٢٦-٥: departments, branches, governance, secondment …). */
+export const FIRM_ENTERPRISE_HREFS: readonly string[] = Object.freeze([
+  "/dashboard/firm/departments",
+  "/dashboard/firm/branches",
+  "/dashboard/firm/departments/permissions",
+  "/dashboard/firm/compliance/walls",
+  "/dashboard/firm/health-check",
+  "/dashboard/firm/governance",
+  "/dashboard/firm/governance?tab=matrix",
+  "/dashboard/firm/client-portal",
+  "/dashboard/firm/secondment/new",
+]);
 
-const OFFICE_HREFS: Readonly<Record<OfficeLockAudience, ReadonlySet<string>>> = Object.freeze({
+/** Whose plan a locked row names: the lawyer's, a firm plan, or the firm's top step. */
+export type OfficeLockAudience = "lawyer" | "firm" | "enterprise";
+
+const OFFICE_HREFS: Readonly<Record<"lawyer" | "firm", ReadonlySet<string>>> = Object.freeze({
   lawyer: new Set(LAWYER_OFFICE_HREFS),
-  firm: new Set(FIRM_OFFICE_HREFS),
+  firm: new Set([...FIRM_OFFICE_HREFS, ...FIRM_ENTERPRISE_HREFS]),
 });
+const ENTERPRISE_HREFS: ReadonlySet<string> = new Set(FIRM_ENTERPRISE_HREFS);
 
 /** The badge beside a locked row: the plan that opens it. */
 export const OFFICE_LOCK_BADGE_AR: Readonly<Record<OfficeLockAudience, string>> = Object.freeze({
   lawyer: "إدارة المكتب",
   firm: "باقة المكتب",
+  enterprise: "شركة المحاماة",
 });
 
+/**
+ * The part of a locked row's page the free side may still open, offered as
+ * the dialog's second link (null: none — the page shows the lock teaser).
+ */
+export function officeLockContinue(href: string): { href: string; label: string } | null {
+  if (href === "/dashboard/lawyer/cases" || href === "/dashboard/firm/cases") {
+    return { href, label: "قضايا السوق المسندة إليك" };
+  }
+  if (href === "/dashboard/lawyer/vault") {
+    return { href: "/dashboard/lawyer/vault?tab=branding", label: "الورق المروّس" };
+  }
+  return null;
+}
+
 /** The menu type → whose office plan its rows belong to (null: no office lock in this menu). */
-export function officeLockAudience(menuUserType: string | null | undefined): OfficeLockAudience | null {
+export function officeLockAudience(menuUserType: string | null | undefined): "lawyer" | "firm" | null {
   return menuUserType === "lawyer" || menuUserType === "firm" ? menuUserType : null;
 }
 
@@ -87,7 +120,7 @@ export function officeLockAudience(menuUserType: string | null | undefined): Off
 export function withOfficeLocks(
   groups: SidebarGroup[],
   locked: boolean | null | undefined,
-  audience: OfficeLockAudience | null,
+  audience: "lawyer" | "firm" | null,
 ): SidebarGroup[] {
   if (locked !== true || !audience) return groups;
   const hrefs = OFFICE_HREFS[audience];
@@ -98,6 +131,32 @@ export function withOfficeLocks(
     return {
       ...group,
       items: group.items.map((item): SidebarItem => (hrefs.has(item.href) ? { ...item, officeLocked: audience } : item)),
+    };
+  });
+  return changed ? out : groups;
+}
+
+/**
+ * The same by the database's office step (my_office_plan_level, 20261209_60):
+ * 'none' locks every paid row of the menu (= withOfficeLocks(…, true, …));
+ * 'office' locks only the firm's «شركة المحاماة» rows; 'enterprise', null
+ * (not a professional account) and undefined (loading / failed) lock nothing.
+ */
+export function withOfficeLevelLocks(
+  groups: SidebarGroup[],
+  level: "none" | "office" | "enterprise" | null | undefined,
+  audience: "lawyer" | "firm" | null,
+): SidebarGroup[] {
+  if (!audience) return groups;
+  if (level === "none") return withOfficeLocks(groups, true, audience);
+  if (level !== "office" || audience !== "firm") return groups;
+  let changed = false;
+  const out = groups.map((group) => {
+    if (!group.items.some((i) => ENTERPRISE_HREFS.has(i.href))) return group;
+    changed = true;
+    return {
+      ...group,
+      items: group.items.map((item): SidebarItem => (ENTERPRISE_HREFS.has(item.href) ? { ...item, officeLocked: "enterprise" } : item)),
     };
   });
   return changed ? out : groups;

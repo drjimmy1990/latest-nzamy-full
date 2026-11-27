@@ -1,3 +1,4 @@
+import { officePlanRefusal } from "@/lib/auth/assertOfficePlan";
 import { NextResponse, NextRequest } from "next/server";
 import { dbErrorJson, DB_ERROR_AR } from "@/lib/api/dbError";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -201,6 +202,9 @@ export async function POST(request: NextRequest, context: { params: Promise<{ ca
   try {
     const auth = await assertCaseWorker();
     if (!auth.ok) return auth.response;
+    // Owner ق٢٦-٤ / ق٢٦-٥: «cases» is «إدارة المكتب» — refused on the free side.
+    const officeLocked = await officePlanRefusal(auth.supabase, "cases", auth.userType);
+    if (officeLocked) return officeLocked;
     const { user, supabase } = auth;
     // Art. 18: a legal consultant does not plead, so he records no court degree.
     const refused = await assertCourtPractice(supabase, user.id);
@@ -624,6 +628,9 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ c
   try {
     const auth = await assertCaseWorker();
     if (!auth.ok) return auth.response;
+    // Owner ق٢٦-٤ / ق٢٦-٥: «cases» is «إدارة المكتب» — refused on the free side.
+    const officeLocked = await officePlanRefusal(auth.supabase, "cases", auth.userType);
+    if (officeLocked) return officeLocked;
     const { user, supabase } = auth;
     // Art. 18: a legal consultant does not plead, so he records no judgment
     // (and so this PATCH's statutory-deadline hook never runs for him).

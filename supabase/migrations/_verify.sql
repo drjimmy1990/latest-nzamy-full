@@ -9214,3 +9214,22 @@ select 'l19 grant top-up: library_grant_points_topups has RLS on and no anon / a
                         and not has_table_privilege('authenticated', c.oid, 'SELECT')
                    from pg_catalog.pg_class c where c.oid = to_regclass('public.library_grant_points_topups')), false) as ok;
 -- <<< verify:l19_grant_topup
+-- >>> verify:l19_office — supabase/tests/rls/l19_office_plan_level.test.sql
+-- Batch l19 «office» (owner ق٢٦-٥): the office step of an account (none / office / enterprise) for the
+-- sidebar and the page guard. 20261209_60 runs any time (before or after the deploy). Before it runs,
+-- the check answers ok = false («run …»).
+select 'l19 office: office_plan_level(uuid) answers ''none'' through office_features_locked and is SECURITY DEFINER with an empty search_path, service role only; my_office_plan_level() is for authenticated only (run 20261209_60)' as check,
+       coalesce((select p.prosecdef
+                        and p.proconfig @> array['search_path=""']
+                        and position('office_features_locked(p_user)' in pg_catalog.pg_get_functiondef(p.oid)) > 0
+                        and position('office_enterprise_plan_ids()' in pg_catalog.pg_get_functiondef(p.oid)) > 0
+                        and not has_function_privilege('anon', p.oid, 'EXECUTE')
+                        and not has_function_privilege('authenticated', p.oid, 'EXECUTE')
+                   from pg_catalog.pg_proc p where p.oid = to_regprocedure('public.office_plan_level(uuid)')), false)
+       and coalesce((select p.prosecdef
+                        and p.proconfig @> array['search_path=""']
+                        and position('auth.uid()' in pg_catalog.pg_get_functiondef(p.oid)) > 0
+                        and not has_function_privilege('anon', p.oid, 'EXECUTE')
+                        and has_function_privilege('authenticated', p.oid, 'EXECUTE')
+                   from pg_catalog.pg_proc p where p.oid = to_regprocedure('public.my_office_plan_level()')), false) as ok;
+-- <<< verify:l19_office

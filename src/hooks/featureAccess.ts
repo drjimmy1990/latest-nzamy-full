@@ -98,26 +98,39 @@ export const FEATURE_GATES: Record<string, UserTier> = {
   reviews:              "free",
   hearings:             "pro",
 
-  // Law firm B2B subscription features
-  "firm-cases":         "free",
-  "firm-team":          "free",
-  "firm-departments":   "free",
-  "firm-branches":      "free",
-  "firm-finance":       "free",
-  "firm-hr":            "free",
-  "firm-governance":    "free",
-  "firm-chinese-walls": "free",
-  "firm-client-portal": "free",
-  "firm-branding":      "free",
+  // Law firm plans — owner ق٢٦-٥ (package 2026-11-26). The value is the plan's
+  // tier (priceBook.ts: firm-basic «مكتب المحاماة» = corp, firm-enterprise
+  // «شركة المحاماة» = enterprise). WHO holds it is NOT the session tier — that
+  // reads the user's own subscriptions only, so it would lock every member of
+  // a paid firm and every founder out. It is the database's answer,
+  // my_office_plan_level() (20261209_60, over office_features_locked of
+  // 20261206_70), read by OfficePlanGuard, the sidebar's office locks and the
+  // API's officePlanRefusal. So can() lets these keys through
+  // (OFFICE_DECIDED_FEATURES below) and the values here name the plan.
+  //   free: the market, the wallet, the AI tools (points + licence, runCore)
+  //         and the library (its own grant + 50 points).
   "firm-marketplace":   "free",
-  "firm-collaboration": "free",
-  "firm-secondment":    "free",
-  "firm-shared-rooms":  "free",
-  "firm-ai":            "free",
-  "firm-analytics":     "free",
-  "firm-health-check":  "free",
   "firm-wallet":        "free",
-  "firm-legal-library": "free", // matches every other firm-* gate — no server entitlement truth yet
+  "firm-ai":            "free",
+  "firm-legal-library": "free",
+  //   «مكتب المحاماة» (firm-basic): team, cases, finance, tasks, rooms, collaboration, analytics.
+  "firm-cases":         "corp",
+  "firm-team":          "corp",
+  "firm-finance":       "corp",
+  "firm-collaboration": "corp",
+  "firm-shared-rooms":  "corp",
+  "firm-analytics":     "corp",
+  //   «شركة المحاماة» (firm-enterprise): branches, departments, chinese walls,
+  //   governance, HR, branding, client portal, health check, secondment.
+  "firm-departments":   "enterprise",
+  "firm-branches":      "enterprise",
+  "firm-chinese-walls": "enterprise",
+  "firm-governance":    "enterprise",
+  "firm-hr":            "enterprise",
+  "firm-branding":      "enterprise",
+  "firm-client-portal": "enterprise",
+  "firm-health-check":  "enterprise",
+  "firm-secondment":    "enterprise",
 
   // Government sector gates — local Backend-ready entitlements
   "gov-judiciary":      "free",
@@ -161,6 +174,15 @@ export const FEATURE_GATES: Record<string, UserTier> = {
   "library-full-access":    "pro",   // Full access to all library content
   "library-advanced-search":"ai",    // Advanced search & filtering
 };
+
+/**
+ * The firm-* keys: the plan they need is decided by the database (see the
+ * comment in FEATURE_GATES), never by the session tier — can() passes them,
+ * and OfficePlanGuard / the sidebar's office locks / officePlanRefusal lock.
+ */
+export const OFFICE_DECIDED_FEATURES: ReadonlySet<string> = new Set(
+  Object.keys(FEATURE_GATES).filter((k) => k.startsWith("firm-")),
+);
 
 /**
  * The ~40 browser-local admin/demo-scenario overrides `can()` used to
@@ -283,6 +305,8 @@ export function resolveFeatureAccess(
     }
   }
   if (featureKey === "celebrity" && !adminFlags.mounted) return false;
+  // ق٢٦-٥: a firm plan is the database's answer, not the tier (OFFICE_DECIDED_FEATURES).
+  if (OFFICE_DECIDED_FEATURES.has(featureKey)) return true;
 
   const minTier = FEATURE_GATES[featureKey];
   if (!minTier) return true; // unknown feature = unrestricted

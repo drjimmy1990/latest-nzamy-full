@@ -10,6 +10,7 @@ import { UserCircle, ArrowDown } from "@phosphor-icons/react";
 import { UserTypeGuard } from "@/components/dashboard/UserTypeGuard";
 import { QuickAddProvider } from "@/components/dashboard/quickAdd/QuickAdd";
 import LicenceExpiryBanner from "@/components/dashboard/LicenceExpiryBanner";
+import OfficePlanGuard from "@/components/dashboard/OfficePlanGuard";
 import type { FirmRole } from "@/types/firmBackendReady";
 import { FIRM_ROLES, FirmRoleContext } from "./firmRoleContext";
 import { useAdminSimulation } from "@/hooks/useAdminSimulation";
@@ -203,7 +204,8 @@ export default function FirmDashboardLayout({
             <EntityRouteGuard scope="firm">
               {/* l19 (owner ٢٤١): the firm owner's licence expiry reminder; nothing unless within 30 days or past */}
               <LicenceExpiryBanner />
-              {children}
+              {/* ق٢٦-٤ / ق٢٦-٥: a paid office page shows the lock teaser to the free side (src/lib/auth/officePages.ts) */}
+              <OfficePlanGuard scope="firm">{children}</OfficePlanGuard>
             </EntityRouteGuard>
           </div>
         </div>

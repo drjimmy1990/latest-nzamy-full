@@ -21,8 +21,8 @@ import { useClientGroupMembership } from "@/hooks/useClientGroupMembership";
 import { getSidebarByUserType, getRoleLabel, withoutConsultantBlockedItems } from "@/constants/navigation";
 import { comingSoonToolIds } from "@/constants/navigation.comingSoon";
 import { useLiveTools } from "@/hooks/useLiveTools";
-import { useOfficeFeaturesLocked } from "@/hooks/useOfficeFeaturesLocked";
-import { officeLockAudience, withOfficeLocks } from "@/constants/navigation.officeLock";
+import { useOfficePlanLevel } from "@/hooks/useOfficePlanLevel";
+import { officeLockAudience, withOfficeLevelLocks } from "@/constants/navigation.officeLock";
 import { withAdminAiGroup } from "@/lib/ai/adminAiTools";
 import { useLibraryAccountLocked } from "@/lib/library/useLibraryFullAccess";
 import { withoutLibraryItems } from "@/lib/library/accountAccess";
@@ -148,15 +148,22 @@ export default function SharedSidebar() {
   // type: a lawyer member drawn the firm menu keeps it).
   const libraryLock = useLibraryAccountLocked(isSupabaseMode && !loading && isLoggedIn);
   const libraryGroups = libraryLock.locked ? withoutLibraryItems(roleGroups) : roleGroups;
-  // Owner ق٢٦-١: a paid office row shows 🔒 while the database says this
-  // account is on the free side (my_office_features_locked); its click opens
-  // the upgrade dialog. Asked only for the lawyer / firm menus, never for an
-  // admin (whose own answer would say nothing about the view he draws).
+  // Owner ق٢٦-١ / ق٢٦-٥: a paid office row shows 🔒 while the database says
+  // this account is on the free side (my_office_plan_level 'none', which is
+  // my_office_features_locked) — and a firm on «مكتب المحاماة» sees its
+  // «شركة المحاماة» rows locked ('office'); its click opens the upgrade
+  // dialog. Asked only for the lawyer / firm menus, never for an admin (whose
+  // own answer would say nothing about the view he draws). Loading or a failed
+  // read locks nothing (the pages and the server still decide).
   const officeAudience = officeLockAudience(userType);
-  const officeLocked = useOfficeFeaturesLocked(
+  const officeLevel = useOfficePlanLevel(
     isSupabaseMode && !loading && isLoggedIn && !isRealAdmin && officeAudience !== null,
   );
-  const lockedGroups = withOfficeLocks(libraryGroups, officeLocked, officeAudience);
+  const lockedGroups = withOfficeLevelLocks(
+    libraryGroups,
+    officeLevel.status === "ready" ? officeLevel.level : undefined,
+    officeAudience,
+  );
   // N2 (batch l12): a real admin in a working view gets every AI tool, the drafter
   // and محترف العقود first, untagged (display only: src/lib/ai/adminAiTools.ts).
   const groups = withAdminAiGroup(lockedGroups, isRealAdmin && adminBypassesUiGates(sessionUserType, adminSim), userType);
@@ -434,6 +441,7 @@ export default function SharedSidebar() {
         onClose={() => setUpgradeOpen(false)}
         featureBlocked={featureBlocked}
         continueHref={lockOpts.continueHref}
+        continueLabel={lockOpts.continueLabel}
         officeAudience={lockOpts.officeAudience}
       />
     </>

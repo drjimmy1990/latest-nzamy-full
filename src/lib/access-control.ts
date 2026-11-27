@@ -109,6 +109,32 @@ const SERVER_FEATURE_GATES: Record<string, ServerTier> = {
   finance:              "pro",
   // Owner ق٢٦-٦: the dead shield gates (marketplace, reports, ai-contracts)
   // are removed here and in the browser's FEATURE_GATES — no caller read them.
+
+  // Owner ق٢٦-٥ — the firm plans, mirrored from FEATURE_GATES
+  // (src/hooks/featureAccess.ts) for the record. Do NOT enforce these through
+  // checkAccess / getUserTier: the tier is the user's own subscriptions and
+  // would refuse every member of a paid firm. The server gate is
+  // officePlanRefusal() (src/lib/auth/assertOfficePlan.ts) over the database's
+  // office_features_locked / office_plan_level.
+  "firm-marketplace":   "free",
+  "firm-wallet":        "free",
+  "firm-ai":            "free",
+  "firm-legal-library": "free",
+  "firm-cases":         "corp",
+  "firm-team":          "corp",
+  "firm-finance":       "corp",
+  "firm-collaboration": "corp",
+  "firm-shared-rooms":  "corp",
+  "firm-analytics":     "corp",
+  "firm-departments":   "enterprise",
+  "firm-branches":      "enterprise",
+  "firm-chinese-walls": "enterprise",
+  "firm-governance":    "enterprise",
+  "firm-hr":            "enterprise",
+  "firm-branding":      "enterprise",
+  "firm-client-portal": "enterprise",
+  "firm-health-check":  "enterprise",
+  "firm-secondment":    "enterprise",
 };
 
 // ─── Helper: Get user's active tier ───────────────────────────────────────────
@@ -268,6 +294,11 @@ export async function checkAccess(
   const currentRank = TIER_RANK[currentTier] ?? 0;
 
   const requiredTier = SERVER_FEATURE_GATES[featureKey];
+  // ق٢٦-٥: a firm plan is never decided by the caller's own tier (a member of
+  // a paid firm holds none) — officePlanRefusal() is the gate for these keys.
+  if (featureKey.startsWith("firm-")) {
+    return { allowed: true, currentTier, requiredTier: null };
+  }
   if (!requiredTier) {
     // Unknown feature = unrestricted
     return { allowed: true, currentTier, requiredTier: null };

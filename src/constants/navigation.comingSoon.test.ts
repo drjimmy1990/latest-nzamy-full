@@ -220,16 +220,18 @@ test("the firm's paid rows lock with the firm plan; the market, wallet, profile,
   assert.equal(officeLockAudience("admin"), null);
 });
 
-test("the locked row's click opens the upgrade dialog (→ /pricing) with a link to the page; the dialog no longer sends to /contact", () => {
+test("the locked row's click opens the upgrade dialog (→ /pricing); l19: only the free part of a page is linked, the dialog no longer sends to /contact", () => {
   const link = readFileSync(new URL("../components/dashboard/SidebarComponents.tsx", import.meta.url), "utf8");
-  assert.match(link, /onLockedClick\(isAr \? item\.label : item\.labelEn, \{ continueHref: item\.href, officeAudience: officeLock \}\)/);
+  // l19 (ق٢٦-٤): the pages are guarded now — the old «فتح الصفحة» to every locked page is gone
+  assert.doesNotMatch(link, /continueHref: item\.href/);
+  assert.match(link, /const cont = officeLockContinue\(item\.href\);/);
   const modal = readFileSync(new URL("../components/UpgradeModal.tsx", import.meta.url), "utf8");
   assert.doesNotMatch(modal, /\/contact\?type=feature-access/);
   assert.match(modal, /href=\{OFFICE_PLAN_PRICING_HREF\}/);
   assert.match(modal, /href=\{continueHref\}/);
   const sidebar = readFileSync(new URL("../components/dashboard/SharedSidebar.tsx", import.meta.url), "utf8");
-  assert.match(sidebar, /withOfficeLocks\(libraryGroups, officeLocked, officeAudience\)/);
-  const hook = readFileSync(new URL("../hooks/useOfficeFeaturesLocked.ts", import.meta.url), "utf8");
+  assert.match(sidebar, /withOfficeLevelLocks\(\s*libraryGroups,/);
+  const hook = readFileSync(new URL("../hooks/useOfficePlanLevel.ts", import.meta.url), "utf8");
+  assert.match(hook, /rpc\("my_office_plan_level"\)/);
   assert.match(hook, /rpc\("my_office_features_locked"\)/);
-  assert.match(hook, /setLocked\(!error && data === true\)/);
 });

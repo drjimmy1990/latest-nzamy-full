@@ -24,6 +24,8 @@ import {
 } from "./_caseFileView";
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
+import { OfficePlanTeaser, useOfficeGateFor } from "@/components/dashboard/OfficePlanGuard";
+import { isMarketClaimedCase } from "@/lib/auth/officePages";
 import { countPhraseAr, type ArabicCountForms } from "@/lib/services/arabicCount";
 import { getLawyerHearings, type HearingDto } from "@/lib/services/lawyerHearingsService";
 import { getCaseStages, autoDeadlineChanged, type CaseStage } from "@/lib/services/caseStagesService";
@@ -537,6 +539,9 @@ export default function CaseDetailPage() {
   const [deletingNoteId, setDeletingNoteId] = useState<string | null>(null);
 
   const user = useUser();
+  // Owner ق٢٦-٤: a case the lawyer filed himself is «إدارة المكتب»; a case
+  // that came to him from the market stays open on the free side.
+  const officeGate = useOfficeGateFor("office");
   // Art. 18 (owner ١٧٣ / ٢١٩): a consultant may not plead or manage hearings,
   // and the hearing, stage and deadline writes refuse him with 403. His case
   // tabs keep everything they read and lose the controls that write (and the
@@ -1193,6 +1198,11 @@ export default function CaseDetailPage() {
         </div>
       </div>
     );
+  }
+
+  if ((officeGate.locked || officeGate.pending) && !isMarketClaimedCase(caseData as { assigned_to?: unknown; requester_user_id?: unknown }, user.userId)) {
+    if (officeGate.locked) return <OfficePlanTeaser need="office" />;
+    return null;
   }
 
   const card = isDark

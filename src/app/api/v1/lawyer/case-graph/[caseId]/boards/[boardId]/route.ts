@@ -1,3 +1,4 @@
+import { officePlanRefusal } from "@/lib/auth/assertOfficePlan";
 import { NextResponse, NextRequest } from "next/server";
 import { DB_ERROR_AR } from "@/lib/api/dbError";
 import { assertCaseWorker } from "@/lib/auth/assertCaseWorker";
@@ -58,6 +59,9 @@ export async function PUT(request: NextRequest, context: Ctx) {
   try {
     const o = await open(context);
     if ("response" in o) return o.response;
+    // Owner ق٢٦-٤ / ق٢٦-٥: «cases» is «إدارة المكتب» — refused on the free side.
+    const officeLocked = await officePlanRefusal(o.auth.supabase, "cases", o.auth.userType);
+    if (officeLocked) return officeLocked;
     const { user, supabase } = o.auth;
     const body = (await request.json().catch(() => null)) as { nodes?: unknown; edges?: unknown; viewport?: unknown; baseUpdatedAt?: unknown } | null;
     if (!body || !Array.isArray(body.nodes) || !Array.isArray(body.edges)) {
@@ -97,6 +101,9 @@ export async function PATCH(request: NextRequest, context: Ctx) {
   try {
     const o = await open(context);
     if ("response" in o) return o.response;
+    // Owner ق٢٦-٤ / ق٢٦-٥: «cases» is «إدارة المكتب» — refused on the free side.
+    const officeLocked = await officePlanRefusal(o.auth.supabase, "cases", o.auth.userType);
+    if (officeLocked) return officeLocked;
     const body = (await request.json().catch(() => null)) as { name?: unknown } | null;
     const checked = checkBoardName(body?.name);
     if (!checked.ok) return NextResponse.json({ error: checked.error }, { status: 400 });
