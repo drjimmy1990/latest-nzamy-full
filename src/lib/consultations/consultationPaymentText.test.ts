@@ -22,3 +22,9 @@ for (const rel of SCREENS) {
     assert.ok(!src.includes("لا يُخصم أي مبلغ في المنصة"), "no «not charged on the platform» line");
   });
 }
+
+test("٢٣٤: the provider's pricing tab says the platform collects the consultation fee", () => {
+  const src = readFileSync(join(process.cwd(), "src/app/dashboard/provider/profile/page.tsx"), "utf8");
+  assert.ok(src.includes("تُحصَّل أتعاب الاستشارة للمنصة أولاً ثم تُحوَّل إليك"), "platform-collects line present");
+  assert.ok(!src.includes("بينك وبين العميل مباشرة خارج المنصة"), "no direct-settlement line");
+});
