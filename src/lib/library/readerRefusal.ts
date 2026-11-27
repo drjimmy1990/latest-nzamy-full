@@ -55,8 +55,10 @@ export type ReaderRefusal =
        * Owner ٤٠ (20261127_60): "code" — a new device waits for the e-mail
        * code. Absent for the device-limit refusal itself (owner ٦٣: a third
        * device is refused with the list, never suspended).
+       * Batch l19 (owner ٢٣٣): "account" — the account's one phone + one
+       * computer are taken; no list, no removal: contact the administration.
        */
-      mode?: "code";
+      mode?: "code" | "account";
     };
 
 const HOUR_MS = 3_600_000;
@@ -226,6 +228,9 @@ export function deviceRefusalOf(status: number, body: unknown): Extract<ReaderRe
   return refusal?.kind === "device" ? refusal : null;
 }
 
+const ACCOUNT_DEVICE_FALLBACK_AR =
+  "تم الوصول إلى الحد الأقصى للأجهزة المسموحة لهذا الحساب (جوال واحد وحاسوب واحد). لفتح جهاز جديد أو تبديله يُرجى التواصل مع الدعم / إدارة نظامي";
+
 const DEVICE_CODE_FALLBACK_AR = "هذا جهاز جديد على حسابك. أدخل رمز التحقق المرسل إلى بريدك لتفتح المكتبة منه.";
 
 const DEVICE_FALLBACK_AR =
@@ -239,6 +244,10 @@ const DEVICE_FALLBACK_AR =
 function deviceRefusalFrom(b: Record<string, unknown>): ReaderRefusal | null {
   // device_cookie_required: a read that carried no device id while the limit
   // is on (a Bearer caller; a browser always gets one minted).
+  // Batch l19 (owner ٢٣٣): the whole account's limit (account_device_limit).
+  if (b.code === "account_device_limit") {
+    return { kind: "device", messageAr: text(b.error) ?? ACCOUNT_DEVICE_FALLBACK_AR, limit: 2, devices: [], mode: "account" };
+  }
   if (
     b.code !== "device_limit" &&
     b.code !== "device_cookie_required" &&

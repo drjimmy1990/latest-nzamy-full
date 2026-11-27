@@ -30,6 +30,7 @@ const HIDDEN_PREFIXES = [
   "/demo-login",
   "/account-frozen",
   "/account-suspended",
+  "/device-limit",
 ] as const;
 
 /** Subtrees hidden below their home page (the home itself keeps the button). */

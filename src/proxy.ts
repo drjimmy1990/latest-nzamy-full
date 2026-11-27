@@ -125,6 +125,7 @@ import {
 } from "@/lib/phoneOtp/phoneOtpRules";
 // LIVE-01 (batch l18): a signed-in visitor of /login goes to a safe ?next=.
 import { postLoginPath } from "@/lib/auth/postLoginPath";
+import { accountDevicePageGate } from "@/lib/devices/accountDeviceProxy";
 import {
   hasTokenPass,
   loadSignupPhoneOtpSetting,
@@ -1367,6 +1368,12 @@ async function proxyRoutes(req: NextRequest) {
       supabaseResponse.cookies.getAll().forEach((cookie) => verifyRedirect.cookies.set(cookie));
       return verifyRedirect;
     }
+
+    // ─── Batch l19 (owner ٢٣٣): one mobile + one computer per account ──────
+    // An extra device goes to /device-limit (not PROTECTED: no loop). Nothing
+    // while the admin's switch is off; fails open (src/lib/devices/).
+    const deviceRefused = await accountDevicePageGate(req, user, supabaseResponse);
+    if (deviceRefused) return deviceRefused;
 
     // ─── One read of `profiles`, shared by both gates below ─────────────────
     // Both gates used to read `user.user_metadata`. An OAuth provider never

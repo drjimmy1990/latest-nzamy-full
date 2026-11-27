@@ -29,6 +29,7 @@ export const PRIVATE_PATH_PREFIXES: readonly string[] = Object.freeze([
   "/onboarding",
   "/account-frozen",
   "/account-suspended",
+  "/device-limit", // batch l19 (owner ٢٣٣): an extra device's refusal page
   // Sign-in and registration flows.
   "/login",
   "/register",

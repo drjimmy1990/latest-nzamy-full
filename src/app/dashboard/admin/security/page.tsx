@@ -18,7 +18,7 @@ import AdminMfaOffBanner from "@/components/admin/AdminMfaOffBanner";
 // collects duplicate-account, bot or threat data yet. S6-T19 (slice A §1.6)
 // removed the invented accounts, IPs, percentages and the KPI row that used
 // to fill them, as promised in the Wave 1 owner report.
-// "library_devices" — owner ٤٢٧, the device limit (20261108_20).
+// "library_devices" — the device limit: owner ٤٢٧ (20261108_20), the whole account since l19 (owner ٢٣٣, 20261209_40).
 // "library_protection" — batch l11 (20261201_30): the non-subscriber view
 // cap, the verified crawlers, the sequential / parallel reading alerts.
 type SecTab = "library_activity"|"library_locks"|"library_devices"|"library_protection"|"two_factor"|"restricted_cases"|"overview"|"duplicates"|"scraping"|"threats";
@@ -41,7 +41,7 @@ export default function SecurityPage() {
   const TABS:{id:SecTab;label:string;icon:React.ElementType;soon?:true}[] = [
     { id:"library_activity", label:"نشاط المكتبة", icon:BookOpenText },
     { id:"library_locks", label:"قفل المكتبة", icon:LockSimple },
-    { id:"library_devices", label:"أجهزة المكتبة", icon:Devices },
+    { id:"library_devices", label:"حد الأجهزة", icon:Devices },
     { id:"library_protection", label:"حماية المكتبة من السحب", icon:ShieldWarning },
     // Owner item 18 (batch l7): the staff member's own two-step state.
     { id:"two_factor", label:"التحقق بخطوتين", icon:ShieldCheck },
