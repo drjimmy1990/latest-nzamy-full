@@ -1,5 +1,6 @@
 import { NextResponse, NextRequest } from "next/server";
 import { officePlanRefusal } from "@/lib/auth/assertOfficePlan";
+import { taskNeedsOfficePlan } from "@/lib/auth/officePages";
 import { dbErrorJson, DB_ERROR_AR } from "@/lib/api/dbError";
 import { assertCaseWorker } from "@/lib/auth/assertCaseWorker";
 import { recordActivity, RequestEvent } from "@/lib/events";
@@ -202,10 +203,6 @@ export async function POST(request: NextRequest) {
     const auth = await assertCaseWorker();
     if (!auth.ok) return auth.response;
     const { user, supabase } = auth;
-    // Owner س٢١٢: tasks are «إدارة المكتب» — refused on the free side.
-    const locked = await officePlanRefusal(supabase, "tasks", auth.userType);
-    if (locked) return locked;
-
     const body = await request.json();
     const { title, category, priority, dueDate, caseId, caseRef, notes, subtasks, assigneeUserId } = body as {
       title?: string;
@@ -218,6 +215,12 @@ export async function POST(request: NextRequest) {
       subtasks?: unknown;
       assigneeUserId?: unknown;
     };
+    // Owner ق٢٦-٤ (newer than س٢١٢): «مهامي/البومودورو (بلا قضايا)» is free —
+    // only a task linked to a case or given to a colleague is «إدارة المكتب».
+    if (taskNeedsOfficePlan({ caseId, assigneeUserId, callerId: user.id })) {
+      const locked = await officePlanRefusal(supabase, "tasks", auth.userType);
+      if (locked) return locked;
+    }
 
     const parsedTitle = validateTaskTitle(title);
     if (!parsedTitle.ok) return NextResponse.json({ error: parsedTitle.error }, { status: 400 });
@@ -361,6 +364,11 @@ export async function PATCH(request: NextRequest) {
 
     if (!taskId) {
       return NextResponse.json({ error: "taskId required" }, { status: 400 });
+    }
+    // ق٢٦-٤: handing a task to a colleague is the paid team; the rest of an edit is free.
+    if (taskNeedsOfficePlan({ assigneeUserId, callerId: user.id })) {
+      const locked = await officePlanRefusal(supabase, "tasks", auth.userType);
+      if (locked) return locked;
     }
 
     const update: Record<string, unknown> = { updated_at: new Date().toISOString() };

@@ -37,6 +37,8 @@ export function isLawyerCaseRow(request: Pick<WorkflowRequest, "type" | "metadat
 export interface CaseClientKeys {
   lawyer_client_id?: string | null;
   requester_user_id?: string | null;
+  /** l19 ق٢٦-٤: who works the case — a market case is the client's, assigned to him. */
+  assigned_to?: string | null;
 }
 
 /**

@@ -70,6 +70,9 @@ import type { WorkflowRequest } from "@/lib/workflowStore";
 import { workflowToCase, STATUS_CONFIG, TYPE_LABELS } from "@/constants/lawyerCasesData";
 import type { Case, CaseStatus } from "@/app/dashboard/lawyer/cases/_types";
 import AddCaseModal from "@/app/dashboard/lawyer/_components/AddCaseModal";
+import { useOfficeGateFor } from "@/components/dashboard/OfficePlanGuard";
+import { OFFICE_MARKET_CASES_NOTE_AR, isMarketClaimedCase } from "@/lib/auth/officePages";
+import { OFFICE_PLAN_LINK_AR, OFFICE_PLAN_PRICING_HREF } from "@/lib/auth/officePlan";
 import EmptyState from "@/components/ui/EmptyState";
 import { toArabicDigits } from "@/lib/services/arabicCount";
 import {
@@ -118,6 +121,13 @@ export default function FirmCasesPage() {
   // (/api/v1/firm/cases/[id]/assign) re-checks the role and the case's firm.
   const canAssign = user.userType === "admin" || getFirmRouteDecision("/dashboard/firm/cases/assign", firmRole).allowed;
   const [assigning, setAssigning] = useState<Case | null>(null);
+  // Owner ق٢٦-٥: the firm's cases are «مكتب المحاماة»; the market is free —
+  // on the free side (and until the database answered) only the cases that
+  // reached the firm from the market are listed (src/lib/auth/officePages.ts).
+  const officeGate = useOfficeGateFor("office");
+  const marketOnly = officeGate.locked || officeGate.pending;
+  // who filed / works each listed row, for the market-only view (read with the list)
+  const [rowParties, setRowParties] = useState<Record<string, { requester_user_id?: unknown; assigned_to?: unknown }>>({});
 
   const [search, setSearch] = useState("");
   // T10-F5 (batch l11): the search runs on the server (debounced), so a case
@@ -161,6 +171,10 @@ export default function FirmCasesPage() {
         // count, not the case-only count after `isCaseRow`. There is no
         // server-side count of cases alone.
         setTruncated((response.total ?? rawRows.length) > rawRows.length);
+        setRowParties(Object.fromEntries(rawRows.map((r) => {
+          const raw = r as { requester_user_id?: unknown; assigned_to?: unknown };
+          return [r.id, { requester_user_id: raw.requester_user_id, assigned_to: raw.assigned_to }];
+        })));
         setRead(listFromApi({ data: rawRows.filter(isCaseRow).map(workflowToCase) }));
       } catch {
         if (cancelled) return;
@@ -181,7 +195,8 @@ export default function FirmCasesPage() {
   }, [reloadKey, serverQuery]);
 
   const viewState = listViewState(loading, read);
-  const cases = itemsOf(read);
+  const allCases = itemsOf(read);
+  const cases = marketOnly ? allCases.filter((c) => isMarketClaimedCase(rowParties[c.id], user.userId)) : allCases;
 
   // «📝 ملاحظة مشتركة» (owner decision ١٦٩): shared notes the caller can read
   // on each listed case — counted by case_notes RLS, so a team-only note the
@@ -293,12 +308,23 @@ export default function FirmCasesPage() {
               <CalendarCheck size={15} />الجلسات
             </Link>
           )}
+          {!marketOnly && (
           <button onClick={() => setShowAddCase(true)}
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-[#0B3D2E] text-[#C8A762] hover:bg-[#0a3328] transition-colors">
             <Plus size={15} weight="bold" />قضية جديدة
           </button>
+          )}
         </div>
       </motion.div>
+
+      {officeGate.locked && (
+        <div role="note" className={`flex flex-col sm:flex-row sm:items-center gap-2 rounded-2xl border px-4 py-3 text-[13px] leading-6 ${
+          isDark ? "border-[#C8A762]/25 bg-[#C8A762]/10 text-zinc-200" : "border-[#C8A762]/40 bg-[#C8A762]/10 text-slate-700"
+        }`}>
+          <p className="flex-1">🔒 {OFFICE_MARKET_CASES_NOTE_AR}</p>
+          <Link href={OFFICE_PLAN_PRICING_HREF} className="text-[13px] font-bold text-[#C8A762] underline">{OFFICE_PLAN_LINK_AR}</Link>
+        </div>
+      )}
 
       {/* Search + archive toggle */}
       <div className="flex flex-col sm:flex-row gap-3">
@@ -367,7 +393,7 @@ export default function FirmCasesPage() {
                   icon={<Gavel />}
                   title="لا توجد قضايا بعد"
                   description="القضايا التي يضيفها المكتب أو تُسند إليه ستظهر هنا."
-                  action={{ label: "قضية جديدة", onClick: () => setShowAddCase(true) }}
+                  action={marketOnly ? undefined : { label: "قضية جديدة", onClick: () => setShowAddCase(true) }}
                 />
               ) : (
                 <EmptyState

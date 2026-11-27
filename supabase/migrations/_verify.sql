@@ -9144,3 +9144,22 @@ select 'l18 review: the owner of a verified firm reads the open requests, with e
 select 'l18 review: exactly one index on the confirmed mobiles — the plain one of 20261208_20 until 20261208_50''s unique index exists, then only the unique one (run 20261208_20, then 20261208_50)' as check,
        (to_regclass('public.profiles_confirmed_phone_idx') is not null) <> (to_regclass('public.profiles_confirmed_phone_unique') is not null) as ok;
 -- <<< verify:l18_review
+-- >>> verify:l19_office — supabase/tests/rls/l19_office_plan_level.test.sql
+-- Batch l19 «office» (owner ق٢٦-٥): the office step of an account (none / office / enterprise) for the
+-- sidebar and the page guard. 20261209_60 runs any time (before or after the deploy). Before it runs,
+-- the check answers ok = false («run …»).
+select 'l19 office: office_plan_level(uuid) answers ''none'' through office_features_locked and is SECURITY DEFINER with an empty search_path, service role only; my_office_plan_level() is for authenticated only (run 20261209_60)' as check,
+       coalesce((select p.prosecdef
+                        and p.proconfig @> array['search_path=""']
+                        and position('office_features_locked(p_user)' in pg_catalog.pg_get_functiondef(p.oid)) > 0
+                        and position('office_enterprise_plan_ids()' in pg_catalog.pg_get_functiondef(p.oid)) > 0
+                        and not has_function_privilege('anon', p.oid, 'EXECUTE')
+                        and not has_function_privilege('authenticated', p.oid, 'EXECUTE')
+                   from pg_catalog.pg_proc p where p.oid = to_regprocedure('public.office_plan_level(uuid)')), false)
+       and coalesce((select p.prosecdef
+                        and p.proconfig @> array['search_path=""']
+                        and position('auth.uid()' in pg_catalog.pg_get_functiondef(p.oid)) > 0
+                        and not has_function_privilege('anon', p.oid, 'EXECUTE')
+                        and has_function_privilege('authenticated', p.oid, 'EXECUTE')
+                   from pg_catalog.pg_proc p where p.oid = to_regprocedure('public.my_office_plan_level()')), false) as ok;
+-- <<< verify:l19_office

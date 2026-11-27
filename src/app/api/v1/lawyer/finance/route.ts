@@ -436,6 +436,9 @@ export async function PATCH(request: NextRequest) {
   try {
     const auth = await assertRole(["lawyer", "firm"]);
     if (!auth.ok) return auth.response;
+    // Owner ق٢٦-٤ / ق٢٦-٥: «invoices» is «إدارة المكتب» — refused on the free side.
+    const officeLocked = await officePlanRefusal(auth.supabase, "invoices", auth.userType);
+    if (officeLocked) return officeLocked;
     const { user } = auth;
 
     const body = await request.json();

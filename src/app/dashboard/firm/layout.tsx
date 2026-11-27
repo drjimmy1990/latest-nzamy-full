@@ -9,6 +9,7 @@ import { isDemoUiEnabled } from "@/lib/runtimeMode";
 import { UserCircle, ArrowDown } from "@phosphor-icons/react";
 import { UserTypeGuard } from "@/components/dashboard/UserTypeGuard";
 import { QuickAddProvider } from "@/components/dashboard/quickAdd/QuickAdd";
+import OfficePlanGuard from "@/components/dashboard/OfficePlanGuard";
 import type { FirmRole } from "@/types/firmBackendReady";
 import { FIRM_ROLES, FirmRoleContext } from "./firmRoleContext";
 import { useAdminSimulation } from "@/hooks/useAdminSimulation";
@@ -200,7 +201,8 @@ export default function FirmDashboardLayout({
 
           <div className="p-4 md:p-6 pt-4" onClick={() => open && setOpen(false)}>
             <EntityRouteGuard scope="firm">
-              {children}
+              {/* ق٢٦-٤ / ق٢٦-٥: a paid office page shows the lock teaser to the free side (src/lib/auth/officePages.ts) */}
+              <OfficePlanGuard scope="firm">{children}</OfficePlanGuard>
             </EntityRouteGuard>
           </div>
         </div>

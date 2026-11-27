@@ -1,3 +1,4 @@
+import { officePlanRefusal } from "@/lib/auth/assertOfficePlan";
 import { NextResponse, NextRequest } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { assertCaseWorker } from "@/lib/auth/assertCaseWorker";
@@ -209,6 +210,9 @@ export async function POST(request: NextRequest) {
   try {
     const auth = await assertCaseWorker();
     if (!auth.ok) return auth.response;
+    // Owner ق٢٦-٤ / ق٢٦-٥: «contracts» is «إدارة المكتب» — refused on the free side.
+    const officeLocked = await officePlanRefusal(auth.supabase, "contracts", auth.userType);
+    if (officeLocked) return officeLocked;
     const { user, supabase } = auth;
     // R9b (l11): an unverified account creates no contract (403, Arabic).
     const unverified = await requireVerifiedProvider(user.id, auth.userType);

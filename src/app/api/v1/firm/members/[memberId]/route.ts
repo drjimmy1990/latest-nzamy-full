@@ -1,3 +1,4 @@
+import { officePlanRefusal } from "@/lib/auth/assertOfficePlan";
 import { NextResponse, type NextRequest } from "next/server";
 import { assertRole } from "@/lib/auth/assertRole";
 import { createServiceClient } from "@/lib/supabase/server";
@@ -69,6 +70,13 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ m
 
     const body = await request.json().catch(() => ({}));
     const { role, status } = body as { role?: string; status?: string };
+    // Owner ق٢٦-٥: managing the team is «مكتب المحاماة» — refused on the free
+    // side. Suspending or removing a member (no role change) is never refused:
+    // an unpaid firm can always shrink its team.
+    if (!(role === undefined && (status === "suspended" || status === "removed"))) {
+      const officeLocked = await officePlanRefusal(supabase, "team", auth.userType);
+      if (officeLocked) return officeLocked;
+    }
 
     if (role === undefined && status === undefined) {
       return NextResponse.json({ error: "لا يوجد ما يُحدَّث." }, { status: 400 });

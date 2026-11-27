@@ -1,3 +1,4 @@
+import { officePlanRefusal } from "@/lib/auth/assertOfficePlan";
 import { NextResponse, type NextRequest } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { assertRole } from "@/lib/auth/assertRole";
@@ -57,6 +58,9 @@ export async function PUT(request: NextRequest) {
   const caller = await resolveBrandingCaller("lawyer");
   if (!caller.ok) return caller.response;
   const { supabase, owner, user } = caller;
+  // Owner ق٢٦-٤: the invoices' issuer is «المالية والكشوفات» — «إدارة المكتب».
+  const officeLocked = await officePlanRefusal(supabase, "invoices", "lawyer");
+  if (officeLocked) return officeLocked;
 
   const body = (await request.json().catch(() => null)) as { vatNumber?: unknown } | null;
   if (!body || (body.vatNumber !== null && typeof body.vatNumber !== "string")) {
