@@ -7,6 +7,8 @@
  *     photo included) is never pulled away;
  *   - /verify-phone never returns to a sign-up page (phoneOtp.test.ts);
  *   - a signed-in visitor of /register* or /login is sent home by the proxy;
+ *   - l19 (POST-L18-02): those pages are rendered per request, so no shared
+ *     cache in front of Next answers them with a guest copy;
  *   - a form sign-up is marked onboarded when its mobile is confirmed; a
  *     Google sign-up keeps the wizard.
  *
@@ -27,6 +29,24 @@ test("the proxy sends a signed-in visitor home from the sign-up pages, never fro
   }
   for (const p of ["/forgot-password", "/reset-password", "/register/provider/verify", "/verify-phone", "/onboarding", "/"]) {
     assert.equal(isSignedInHomePath(p), false, p);
+  }
+});
+
+test("l19 POST-L18-02: every page the proxy sends a signed-in visitor home from is dynamic (never a cached guest copy)", () => {
+  // Live 27 Nov: these pages were prerendered (`s-maxage=31536000`) and the
+  // nginx cache in front of Next kept them by address alone — a signed-in
+  // visitor got the guest copy and the proxy never ran. A dynamic page is
+  // sent `private, no-store`.
+  const layouts: Record<string, string> = { "/register": "src/app/register/layout.tsx", "/login": "src/app/login/layout.tsx" };
+  for (const file of Object.values(layouts)) {
+    assert.match(code(file), /^export const dynamic = "force-dynamic";$/m, file);
+  }
+  for (const p of ["/register", "/register/client", "/register/provider", "/login"]) {
+    assert.equal(isSignedInHomePath(p), true, p);
+    const root = p.startsWith("/login") ? "/login" : "/register";
+    assert.ok(layouts[root], `${p} sits under a dynamic layout`);
+    const page = code(`src/app${p}/page.tsx`);
+    assert.doesNotMatch(page, /export const (dynamic|revalidate)/, `${p}: no page-level override of the layout`);
   }
 });
 
