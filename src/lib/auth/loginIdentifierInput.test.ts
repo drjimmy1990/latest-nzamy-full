@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
 
-import { classifyLoginInput, loginInputMessage, looksLikePhoneInput } from "./loginIdentifierInput.ts";
+import { classifyLoginInput, loginInputMessage, looksLikePhoneInput, recoveryChannel } from "./loginIdentifierInput.ts";
 
 test("an «@» makes it an e-mail: trimmed, lower-cased", () => {
   assert.deepEqual(classifyLoginInput("  Some.One@Example.TEST "), { ok: true, kind: "email", value: "some.one@example.test" });
@@ -70,9 +70,36 @@ test("/forgot-password: the same field takes the mobile only while the WhatsApp 
   const forgot = read("../../app/forgot-password/page.tsx");
   assert.match(forgot, /\{waOn \? t\.idLabel : t\.emailLabel\}/);
   assert.match(forgot, /type=\{waOn \? "text" : "email"\}/);
-  assert.match(forgot, /const typed = classifyLoginInput\(email\);\s*if \(!typed\.ok\)/);
-  assert.match(forgot, /typed\.kind === "email" \? \{ email: typed\.value \} : \{ phone: typed\.value \}/);
   assert.match(forgot, /body: JSON\.stringify\(\{ \.\.\.target, turnstileToken/);
   assert.match(forgot, /body: JSON\.stringify\(\{ \.\.\.waTarget, code: waCode/, "verify sends the identifier start was asked for");
-  assert.match(forgot, /waOn && typed\.ok && typed\.kind === "phone" \? t\.linkNeedsEmail : t\.invalidEmail/, "the e-mail link never fires for a mobile");
+});
+
+test("l19 POST-L18-06: recoveryChannel — the typed value decides the one button", () => {
+  // WhatsApp on: a mobile → the code, an e-mail → the link, anything else → why.
+  assert.deepEqual(recoveryChannel("0512345678", true), { ok: true, via: "whatsapp", phone: "+966512345678" });
+  assert.deepEqual(recoveryChannel("٠٥١٢٣٤٥٦٧٨", true), { ok: true, via: "whatsapp", phone: "+966512345678" });
+  assert.deepEqual(recoveryChannel(" Ali@Example.com ", true), { ok: true, via: "email", email: "ali@example.com" });
+  assert.deepEqual(recoveryChannel("", true), { ok: false, input: { ok: false, reason: "empty" } });
+  assert.deepEqual(recoveryChannel("0123", true), { ok: false, input: { ok: false, reason: "not_saudi_mobile" } });
+  assert.deepEqual(recoveryChannel("ali@", true), { ok: false, input: { ok: false, reason: "email" } });
+  assert.deepEqual(recoveryChannel("hello", true), { ok: false, input: { ok: false, reason: "neither" } });
+  // WhatsApp off: the e-mail page as before — a mobile is not an e-mail.
+  assert.deepEqual(recoveryChannel("ali@example.com", false), { ok: true, via: "email", email: "ali@example.com" });
+  assert.deepEqual(recoveryChannel("0512345678", false), { ok: false, input: { ok: false, reason: "email" } });
+  assert.deepEqual(recoveryChannel("", false), { ok: false, input: { ok: false, reason: "empty" } });
+});
+
+test("l19 POST-L18-06: /forgot-password has ONE submit button; Enter and the button take the same path", () => {
+  const forgot = read("../../app/forgot-password/page.tsx");
+  const form = forgot.slice(forgot.indexOf('key="request"'), forgot.lastIndexOf("</motion.form>"));
+  assert.equal((form.match(/<button\b/g) ?? []).length, 1, "one button in the request form");
+  assert.match(form, /<button\s+type="submit"/);
+  assert.match(form, /onSubmit=\{\(e\) => \{ e\.preventDefault\(\); if \(!sending && !waSending\) handleRequest\(\); \}\}/);
+  assert.doesNotMatch(forgot, /onClick=\{\(\) => \{ if \(!waSending && !sending\) void handleWhatsAppStart\(\); \}\}/, "no second WhatsApp button");
+  const handle = forgot.slice(forgot.indexOf("function handleRequest()"), forgot.indexOf("async function handleSubmit("));
+  assert.match(handle, /const choice = recoveryChannel\(email, waOn\);/);
+  assert.match(handle, /if \(choice\.via === "whatsapp"\) void handleWhatsAppStart\(\{ phone: choice\.phone \}\);\s*else void handleSubmit\(choice\.email\);/);
+  assert.match(handle, /setError\(waOn \? loginInputMessage\(choice\.input, isAr\) : t\.invalidEmail\)/);
+  assert.match(forgot, /resetPasswordForEmail\(address, \{/, "the link goes to the e-mail the field holds");
+  assert.doesNotMatch(forgot, /linkNeedsEmail|t\.waOr/);
 });

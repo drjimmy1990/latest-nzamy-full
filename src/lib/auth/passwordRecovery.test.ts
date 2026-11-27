@@ -13,7 +13,24 @@ import {
   linkErrorInUrl,
   resetPasswordProblem,
   resetPasswordErrorMessage,
+  recoverySenderDomain,
 } from "./passwordRecovery.ts";
+import { readFileSync } from "node:fs";
+
+test("l19: «تحقق من بريدك» names the sender domain from the site address, never a mailbox", () => {
+  assert.equal(recoverySenderDomain("https://nezamy.sa"), "nezamy.sa");
+  assert.equal(recoverySenderDomain("https://www.nezamy.sa/"), "nezamy.sa");
+  assert.equal(recoverySenderDomain(" https://Example.COM/path "), "example.com");
+  for (const bad of [undefined, null, "", "   ", "nezamy.sa", "ftp://nezamy.sa", "https://localhost:3000", "http://127.0.0.1", "https://example.invalid", "https://app.test"]) {
+    assert.equal(recoverySenderDomain(bad), null, String(bad));
+  }
+  const page = readFileSync(new URL("../../app/forgot-password/page.tsx", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+  assert.match(page, /const SENDER_DOMAIN = recoverySenderDomain\(process\.env\.NEXT_PUBLIC_SITE_URL\);/);
+  assert.match(page, /sentFromBrand: "ستصلك رسالة من «نظامي»"/);
+  assert.match(page, /sentFromDomain: "من عنوان ينتهي بـ"/);
+  assert.match(page, /\{SENDER_DOMAIN \? \(/, "no domain → the clause is left out");
+  assert.doesNotMatch(page, /[a-z0-9._-]+@nezamy\.sa|noreply@|no-reply@/i, "no mailbox written in the page");
+});
 
 const params = (q: string) => new URLSearchParams(q);
 

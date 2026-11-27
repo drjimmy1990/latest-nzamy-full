@@ -71,6 +71,25 @@ export function loginInputMessage(input: LoginInput, isAr: boolean): string {
   return isAr ? m.ar : m.en;
 }
 
+/**
+ * /forgot-password's ONE button (batch l19, POST-L18-06): the typed value
+ * decides. A Saudi mobile while the WhatsApp choice is on → a code on
+ * WhatsApp; an e-mail → the e-mail link (with the choice off, the field takes
+ * an e-mail only, as before); anything else → why (loginInputMessage).
+ */
+export type RecoveryChannel =
+  | { ok: true; via: "email"; email: string }
+  | { ok: true; via: "whatsapp"; phone: string }
+  | { ok: false; input: LoginInput };
+
+export function recoveryChannel(raw: unknown, whatsappOn: boolean): RecoveryChannel {
+  const typed = classifyLoginInput(raw);
+  if (typed.ok && typed.kind === "email") return { ok: true, via: "email", email: typed.value };
+  if (!whatsappOn) return { ok: false, input: typed.ok || typed.reason !== "empty" ? { ok: false, reason: "email" } : typed };
+  if (typed.ok) return { ok: true, via: "whatsapp", phone: typed.value };
+  return { ok: false, input: typed };
+}
+
 /** Does the text typed so far look like a number (to pick the field's icon)? Display only. */
 export function looksLikePhoneInput(raw: string): boolean {
   const s = toAsciiDigits(raw).trim();

@@ -21,8 +21,8 @@ import { BACKEND_MODE } from "@/lib/runtimeMode";
 import { canSubmitWithCaptcha, captchaMessage, captchaSubmitError } from "@/lib/auth/captcha";
 import { useTurnstile } from "@/components/auth/useTurnstile";
 import { TurnstileWidget } from "@/components/auth/TurnstileWidget";
-import { classifyRecoverError, isPlausibleEmail, recoveryRedirectTo, resetPasswordProblem } from "@/lib/auth/passwordRecovery";
-import { classifyLoginInput, loginInputMessage, LOGIN_ID_LABEL_AR, LOGIN_ID_LABEL_EN, LOGIN_ID_PLACEHOLDER } from "@/lib/auth/loginIdentifierInput";
+import { classifyRecoverError, recoveryRedirectTo, recoverySenderDomain, resetPasswordProblem } from "@/lib/auth/passwordRecovery";
+import { loginInputMessage, recoveryChannel, LOGIN_ID_LABEL_AR, LOGIN_ID_LABEL_EN, LOGIN_ID_PLACEHOLDER } from "@/lib/auth/loginIdentifierInput";
 import {
   LOGIN_AFTER_RESET_PATH,
   LOGIN_PREFILL_EMAIL_KEY,
@@ -59,7 +59,17 @@ import {
  * code) and answers with the same words as for an e-mail. The e-mail link
  * needs an e-mail; with a mobile typed, the page says so and points to the
  * WhatsApp button.
+ *
+ * Batch l19 (POST-L18-06): ONE button. The typed value decides
+ * (recoveryChannel): a Saudi mobile while the WhatsApp choice is on -> the
+ * WhatsApp code; an e-mail -> the e-mail link; Enter does the same. The
+ * answers stay the neutral ones above. «تحقق من بريدك» also says who the
+ * mail comes from: «نظامي», from an address ending in @<the site's domain>
+ * (recoverySenderDomain, read from NEXT_PUBLIC_SITE_URL).
  */
+
+/** The domain the recovery mail comes from (null -> the clause is left out). */
+const SENDER_DOMAIN = recoverySenderDomain(process.env.NEXT_PUBLIC_SITE_URL);
 
 const inputCls =
   "w-full rounded-xl border border-slate-200 bg-white py-3 px-4 text-sm text-ink placeholder:text-ink-faint outline-none focus:border-royal focus:ring-2 focus:ring-royal/10 transition-all dark:border-white/10 dark:bg-dark-card dark:placeholder:text-gray-600 dark:focus:border-gold dark:focus:ring-gold/10";
@@ -85,12 +95,13 @@ const TEXT = {
     brandTitle: "الأمان أولويتنا",
     brandBody: "رابط الاستعادة يصل إلى بريدك المسجّل وحده، ويصلح لمرة واحدة ولمدة محدودة.",
     recovery: "استعادة كلمة المرور",
-    introChoice: "أدخل بريدك الإلكتروني المسجّل أو رقم جوالك المؤكَّد في حسابك، ثم اختر طريقة الاستعادة.",
+    introChoice: "أدخل بريدك الإلكتروني المسجّل لنرسل إليه رابط الاستعادة، أو رقم جوالك المؤكَّد في حسابك لنرسل إليه رمزًا عبر واتساب.",
     idLabel: LOGIN_ID_LABEL_AR,
-    linkNeedsEmail: "رابط الاستعادة يُرسل إلى البريد الإلكتروني فقط. لاستعمال رقم الجوال اضغط «أرسل رمزًا إلى واتساب».",
     submitEmail: "أرسل رابطًا إلى بريدي",
     submitWhatsApp: "أرسل رمزًا إلى واتساب",
-    waOr: "أو",
+    submitNext: "متابعة",
+    sentFromBrand: "ستصلك رسالة من «نظامي»",
+    sentFromDomain: "من عنوان ينتهي بـ",
     waTitle: "أدخل الرمز وكلمة المرور الجديدة",
     waSent: WHATSAPP_START_SENT_AR,
     waFor: "الحساب:",
@@ -130,12 +141,13 @@ const TEXT = {
     brandTitle: "Your Security First",
     brandBody: "The reset link goes to your registered email only, and works once for a limited time.",
     recovery: "Password Recovery",
-    introChoice: "Enter your registered email or the mobile confirmed on your account, then choose how to reset your password.",
+    introChoice: "Enter your registered email to get a reset link, or the mobile confirmed on your account to get a code on WhatsApp.",
     idLabel: LOGIN_ID_LABEL_EN,
-    linkNeedsEmail: "The reset link is sent to an email address only. To use your mobile, press «Send a code to WhatsApp».",
     submitEmail: "Send a link to my email",
     submitWhatsApp: "Send a code to WhatsApp",
-    waOr: "or",
+    submitNext: "Continue",
+    sentFromBrand: "The message comes from «Nezamy»",
+    sentFromDomain: "from an address ending in",
     waTitle: "Enter the code and your new password",
     waSent: WHATSAPP_START_SENT_EN,
     waFor: "Account:",
@@ -204,18 +216,30 @@ export default function ForgotPasswordPage() {
     };
   }, [realBackend]);
 
-  async function handleSubmit() {
+  // Batch l19 (POST-L18-06): what the one button will do with the value typed so far.
+  const channel = recoveryChannel(email, waOn);
+  const submitLabel = !waOn ? t.submit : channel.ok ? (channel.via === "whatsapp" ? t.submitWhatsApp : t.submitEmail) : t.submitNext;
+
+  /** The one button (and Enter): the typed value decides — the WhatsApp code or the e-mail link. */
+  function handleRequest() {
     setError("");
+    setWaError("");
     if (!realBackend) {
       setError(t.demo);
       return;
     }
-    if (!isPlausibleEmail(email)) {
-      // Batch l18: a mobile typed while the WhatsApp choice is on — the link needs an e-mail.
-      const typed = classifyLoginInput(email);
-      setError(waOn && typed.ok && typed.kind === "phone" ? t.linkNeedsEmail : t.invalidEmail);
+    const choice = recoveryChannel(email, waOn);
+    if (!choice.ok) {
+      setError(waOn ? loginInputMessage(choice.input, isAr) : t.invalidEmail);
       return;
     }
+    if (choice.via === "whatsapp") void handleWhatsAppStart({ phone: choice.phone });
+    else void handleSubmit(choice.email);
+  }
+
+  /** The e-mail link (GoTrue). */
+  async function handleSubmit(address: string) {
+    setError("");
     if (!canSubmitWithCaptcha(captcha.state)) {
       setError(captchaSubmitError(captcha.state, isAr));
       return;
@@ -226,7 +250,7 @@ export default function ForgotPasswordPage() {
       const captchaToken = captcha.token;
       let result: Awaited<ReturnType<typeof supabase.auth.resetPasswordForEmail>>;
       try {
-        result = await supabase.auth.resetPasswordForEmail(email.trim(), {
+        result = await supabase.auth.resetPasswordForEmail(address, {
           redirectTo: recoveryRedirectTo(window.location.origin),
           ...(captchaToken ? { captchaToken } : {}),
         });
@@ -259,18 +283,15 @@ export default function ForgotPasswordPage() {
     }
   }
 
-  /** «أرسل رمزًا إلى واتساب»: the server answers the same for every address. */
-  async function handleWhatsAppStart() {
+  /**
+   * The WhatsApp code: the server answers the same for every address and
+   * number. Batch l19: the page sends the mobile typed in the field (the
+   * route still takes an e-mail too, as in l17).
+   */
+  async function handleWhatsAppStart(target: { email: string } | { phone: string }) {
     setError("");
     setWaError("");
     if (!realBackend || !waOn) return;
-    // Batch l18 (LIVE-06): the e-mail or the Saudi mobile, in the same field.
-    const typed = classifyLoginInput(email);
-    if (!typed.ok) {
-      setError(loginInputMessage(typed, isAr));
-      return;
-    }
-    const target = typed.kind === "email" ? { email: typed.value } : { phone: typed.value };
     if (!canSubmitWithCaptcha(captcha.state)) {
       setError(captchaSubmitError(captcha.state, isAr));
       return;
@@ -439,6 +460,16 @@ export default function ForgotPasswordPage() {
                   </div>
                   <h1 className="font-brand text-2xl font-bold text-ink">{t.sentTitle}</h1>
                   <p className="mt-3 text-sm text-ink dark:text-gray-300" role="status">{t.sent}</p>
+                  <p className="mt-2 text-xs text-ink-muted dark:text-gray-400">
+                    {t.sentFromBrand}
+                    {SENDER_DOMAIN ? (
+                      <>
+                        {" "}
+                        {t.sentFromDomain} <bdi dir="ltr" className="font-medium">@{SENDER_DOMAIN}</bdi>
+                      </>
+                    ) : null}
+                    .
+                  </p>
                   <p className="mt-2 text-xs text-ink-muted dark:text-gray-400">{t.sentHint}</p>
                   <Link
                     href="/login"
@@ -567,7 +598,7 @@ export default function ForgotPasswordPage() {
                   initial={{ opacity: 0, y: 12 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ type: "spring", stiffness: 300, damping: 28 }}
-                  onSubmit={(e) => { e.preventDefault(); if (!sending) void handleSubmit(); }}
+                  onSubmit={(e) => { e.preventDefault(); if (!sending && !waSending) handleRequest(); }}
                   noValidate
                 >
                   <div className="mb-2 flex h-14 w-14 items-center justify-center rounded-2xl bg-royal/8 dark:bg-royal/20">
@@ -623,28 +654,12 @@ export default function ForgotPasswordPage() {
                     disabled={sending || waSending || !realBackend}
                     className="w-full rounded-xl bg-royal py-3.5 text-sm font-semibold text-white shadow-[0_4px_16px_-4px_rgba(11,61,46,0.4)] hover:bg-royal-light transition-all disabled:opacity-40"
                   >
-                    {sending ? t.sending : waOn ? t.submitEmail : t.submit}
+                    {/* Batch l19: one button — a mobile typed in the field is the WhatsApp choice, not a second button. */}
+                    <span className="inline-flex items-center justify-center gap-2">
+                      {channel.ok && channel.via === "whatsapp" && <WhatsappLogo size={18} weight="duotone" />}
+                      {sending || waSending ? t.sending : submitLabel}
+                    </span>
                   </button>
-
-                  {/* Batch l17: the WhatsApp code — only while the server offers it. */}
-                  {waOn && (
-                    <>
-                      <div className="my-3 flex items-center gap-3 text-xs text-ink-faint dark:text-gray-500">
-                        <span className="h-px flex-1 bg-slate-200 dark:bg-dark-border" />
-                        {t.waOr}
-                        <span className="h-px flex-1 bg-slate-200 dark:bg-dark-border" />
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => { if (!waSending && !sending) void handleWhatsAppStart(); }}
-                        disabled={sending || waSending || !realBackend}
-                        className="flex w-full items-center justify-center gap-2 rounded-xl border border-royal/30 bg-white py-3.5 text-sm font-semibold text-royal hover:bg-royal/5 transition-all disabled:opacity-40 dark:border-gold/40 dark:bg-dark-card dark:text-gold dark:hover:bg-gold/10"
-                      >
-                        <WhatsappLogo size={18} weight="duotone" />
-                        {waSending ? t.sending : t.submitWhatsApp}
-                      </button>
-                    </>
-                  )}
 
                   <Link
                     href="/login"
