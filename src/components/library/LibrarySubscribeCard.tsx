@@ -2,13 +2,13 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Crown, Lock, X, ArrowLeft } from "@phosphor-icons/react";
+import { Crown, Lock, X, ArrowLeft, Coins } from "@phosphor-icons/react";
 import { bookPriceText } from "@/lib/pricing/priceBook";
 import { VatNoticeText } from "@/components/pricing/VatNoticeText";
 import { activeCampaign, campaignFromApi, type Campaign } from "@/lib/pricing/campaigns";
 import { useLibraryAccountLocked, useLibraryLockNoteState } from "@/lib/library/useLibraryFullAccess";
 import { LIBRARY_ACCOUNT_LOCKED_AR } from "@/lib/library/accountAccess";
-import LibraryPointsLockBanner from "@/components/library/LibraryPointsLockBanner";
+import { LIBRARY_TOPUP_LABEL_AR, libraryPointsLockedMessageAr } from "@/lib/library/pointsGate";
 
 /**
  * The subscribe card a non-subscriber sees on locked library content (owner
@@ -119,18 +119,32 @@ export function LibrarySubscribeCard({ title, onClose, className = "" }: { title
  * LIVE-10 (owner 27 Nov, batch l19): a SUBSCRIBER whose points fell below the
  * minimum (50) is not offered the subscription again — he sees the owner's
  * sentence «رصيدك أقل من ٥٠ نقطة؛ اشحن لتستمر في المكتبة» with the top-up
- * button, as PaywallModal shows it on the laws reader. One access read per
- * page for every note (useLibraryLockNoteState); the account-type lock still
- * comes first.
+ * button, as PaywallModal shows it on the laws reader — here in the note's own
+ * compact form, since a book repeats the note under every locked block. One
+ * access read (and, when locked by points, one payments read) per page for
+ * every note (useLibraryLockNoteState); the account-type lock still comes first.
  */
 export function LibraryLockedNote({ message, className = "" }: { message: string; className?: string }) {
   const [open, setOpen] = useState(false);
-  const { accountLocked, pointsLock } = useLibraryLockNoteState();
+  const { accountLocked, pointsLock, topupHref } = useLibraryLockNoteState();
   if (accountLocked) return <AccountLockedLine className={className} />;
   if (pointsLock) {
     return (
-      <div className={className} data-library-locked-note-points>
-        <LibraryPointsLockBanner lock={pointsLock} />
+      <div
+        role="note"
+        dir="rtl"
+        data-library-locked-note-points
+        className={`flex flex-wrap items-center gap-2 rounded-xl border border-amber-500/20 bg-amber-500/[0.05] px-4 py-3 text-xs font-bold text-amber-700 dark:text-amber-400 ${className}`}
+      >
+        <Lock size={14} weight="fill" className="flex-shrink-0" />
+        <span className="flex-1">{pointsLock.message || libraryPointsLockedMessageAr(pointsLock.minPoints)}</span>
+        <Link
+          href={topupHref ?? pointsLock.topupHref}
+          className="inline-flex min-h-[36px] items-center gap-1.5 rounded-lg bg-[#C8A762] px-3 text-xs font-black text-white hover:brightness-110"
+        >
+          <Coins size={14} weight="bold" />
+          {LIBRARY_TOPUP_LABEL_AR}
+        </Link>
       </div>
     );
   }

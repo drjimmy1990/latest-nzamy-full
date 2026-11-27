@@ -22,6 +22,7 @@
 --     $M/20261108_41_drafter_daily_limit_excludes_sections.sql \
 --     $M/20261108_50_free_daily_question.sql \
 --     $M/20261127_40_points_wallets.sql \
+--     $M/20261203_10_points_soonest_first.sql \
 --     $M/20261209_50_l19_library_grant_points_topup.sql \
 --     $M/20261209_50_l19_library_grant_points_topup.sql \
 --     "$B" \

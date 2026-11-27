@@ -132,8 +132,11 @@ test("LibraryLockedNote: account lock first, then the points notice, then the su
   const hookAt = fn.indexOf("useLibraryLockNoteState()");
   const accountAt = fn.indexOf("if (accountLocked) return <AccountLockedLine");
   const pointsAt = fn.indexOf("if (pointsLock) {");
-  const bannerAt = fn.indexOf("<LibraryPointsLockBanner lock={pointsLock} />");
+  const bannerAt = fn.indexOf("{LIBRARY_TOPUP_LABEL_AR}");
   const subscribeAt = fn.indexOf("{LIBRARY_SUBSCRIBE_LABEL}");
   assert.ok(hookAt > -1 && accountAt > hookAt && pointsAt > accountAt && bannerAt > pointsAt && subscribeAt > bannerAt);
   assert.ok(!fn.slice(0, subscribeAt).includes("useLibraryStatus("), "no per-note polling");
+  assert.ok(!fn.slice(0, subscribeAt).includes("usePaymentsStatus("), "no per-note payments polling");
+  assert.ok(!fn.slice(0, subscribeAt).includes("LibraryPointsLockBanner"), "the banner polls payments per mount");
+  assert.match(fn, /href=\{topupHref \?\? pointsLock\.topupHref\}/);
 });
