@@ -13,7 +13,12 @@ import {
   LICENCE_PURCHASE_CODE,
   LICENCE_UNVERIFIED_FIRM_PURCHASE_AR,
   LICENCE_UNVERIFIED_PURCHASE_AR,
+  LICENCE_EXPIRED_PURCHASE_AR,
+  LICENCE_RESUBMIT_FIRM_PURCHASE_AR,
+  LICENCE_RESUBMIT_PURCHASE_AR,
   licenceCheckoutDecision,
+  licenceDetail,
+  licenceExpired,
   licenceFreeCodeDecision,
   licenceGatedPurchase,
   licenceStanding,
@@ -46,16 +51,48 @@ test("standing: verified / pending (own licence or owned firm) / unverified; unr
   assert.equal(licenceStanding(null), null);
 });
 
-test("٢٣٩ — a paid purchase: verified goes; PENDING goes and is held until the approval; unverified → 403 with the verify link; unread → 503", () => {
-  assert.deepEqual(licenceCheckoutDecision("lawyer", facts()), { ok: true, held: false });
-  assert.deepEqual(licenceCheckoutDecision("lawyer", facts({ lawyerStatus: "pending" })), { ok: true, held: true });
-  assert.deepEqual(licenceCheckoutDecision("lawyer", facts({ lawyerStatus: "rejected" })), {
+test("٢٣٩ (l18 review ruling) — a paid purchase: verified goes; PENDING and NOT SUBMITTED go held; rejected → «أعد تقديم التوثيق أولاً»; suspended → verify; expired → «جدّد رخصتك أولاً»; unread → 503", () => {
+  const NOW = new Date("2026-11-27T08:00:00Z");
+  assert.deepEqual(licenceCheckoutDecision("lawyer", facts(), { now: NOW }), { ok: true, held: false });
+  assert.deepEqual(licenceCheckoutDecision("lawyer", facts({ lawyerStatus: "pending" }), { now: NOW }), { ok: true, held: true });
+  // never submitted: no lawyer row, or a pending row without the licence image → held, and the copy asks for it
+  assert.deepEqual(licenceCheckoutDecision("lawyer", facts({ lawyerStatus: null }), { itemKind: "plan", now: NOW }), { ok: true, held: true, submitLicence: true });
+  assert.deepEqual(licenceCheckoutDecision("lawyer", { ...facts({ lawyerStatus: "pending" }), licenceSubmitted: false }, { itemKind: "plan", now: NOW }), { ok: true, held: true, submitLicence: true });
+  assert.deepEqual(licenceCheckoutDecision("firm", facts({ userType: "firm", lawyerStatus: null }), { itemKind: "plan", now: NOW }), { ok: true, held: true, submitLicence: true });
+  // the founder membership still needs a submitted licence (founder_reserve_seat refuses the same)
+  assert.deepEqual(licenceCheckoutDecision("lawyer", facts({ lawyerStatus: null }), { itemKind: "membership", now: NOW }), {
     ok: false, status: 403, error: LICENCE_UNVERIFIED_PURCHASE_AR, code: LICENCE_PURCHASE_CODE, verifyHref: "/register/provider/verify",
   });
-  assert.deepEqual(licenceCheckoutDecision("firm", facts({ userType: "firm", lawyerStatus: null })), {
+  assert.deepEqual(licenceCheckoutDecision("lawyer", facts({ lawyerStatus: "rejected" }), { now: NOW }), {
+    ok: false, status: 403, error: LICENCE_RESUBMIT_PURCHASE_AR, code: LICENCE_PURCHASE_CODE, verifyHref: "/register/provider/verify",
+  });
+  assert.deepEqual(licenceCheckoutDecision("firm", facts({ userType: "firm", lawyerStatus: null, ownedFirmStatuses: ["rejected"] }), { now: NOW }), {
+    ok: false, status: 403, error: LICENCE_RESUBMIT_FIRM_PURCHASE_AR, code: LICENCE_PURCHASE_CODE, verifyHref: null,
+  });
+  assert.deepEqual(licenceCheckoutDecision("lawyer", facts({ lawyerStatus: "suspended" }), { now: NOW }), {
+    ok: false, status: 403, error: LICENCE_UNVERIFIED_PURCHASE_AR, code: LICENCE_PURCHASE_CODE, verifyHref: "/register/provider/verify",
+  });
+  assert.deepEqual(licenceCheckoutDecision("firm", facts({ userType: "firm", lawyerStatus: null, ownedFirmStatuses: ["suspended"] }), { now: NOW }), {
     ok: false, status: 403, error: LICENCE_UNVERIFIED_FIRM_PURCHASE_AR, code: LICENCE_PURCHASE_CODE, verifyHref: null,
   });
+  // verified, but the recorded expiry passed (Riyadh day) → renew first; today or later → goes
+  assert.deepEqual(licenceCheckoutDecision("lawyer", { ...facts(), licenceExpiry: "2026-11-26" }, { now: NOW }), {
+    ok: false, status: 403, error: LICENCE_EXPIRED_PURCHASE_AR, code: LICENCE_PURCHASE_CODE, verifyHref: null,
+  });
+  assert.deepEqual(licenceCheckoutDecision("lawyer", { ...facts(), licenceExpiry: "2026-11-27" }, { now: NOW }), { ok: true, held: false });
+  assert.deepEqual(licenceCheckoutDecision("lawyer", { ...facts(), licenceExpiry: "not a date" }, { now: NOW }), { ok: true, held: false });
   assert.deepEqual(licenceCheckoutDecision("lawyer", null), { ok: false, status: 503, error: LICENCE_CHECK_FAILED_AR });
+});
+
+test("licenceDetail and licenceExpired: the finer standing behind the ruling", () => {
+  const NOW = new Date("2026-11-27T22:30:00Z"); // already 28 Nov in Riyadh
+  assert.equal(licenceExpired("2026-11-27", NOW), true);
+  assert.equal(licenceExpired("2026-11-28", NOW), false);
+  assert.equal(licenceExpired(null, NOW), false);
+  assert.equal(licenceDetail(facts({ lawyerStatus: "pending", memberFirmStatuses: ["verified"] }), NOW), "verified", "works under a verified firm");
+  assert.equal(licenceDetail({ ...facts({ lawyerStatus: "pending" }), licenceSubmitted: true }, NOW), "pending");
+  assert.equal(licenceDetail(facts({ userType: "firm", lawyerStatus: null, ownedFirmStatuses: ["pending", "rejected"] }), NOW), "pending");
+  assert.equal(licenceDetail(null, NOW), null);
 });
 
 test("a free activation needs a verified licence (nothing paid to hold): pending → 403 «فعّل الكود بعد الاعتماد»", () => {
@@ -65,4 +102,8 @@ test("a free activation needs a verified licence (nothing paid to hold): pending
   });
   assert.equal(licenceFreeCodeDecision("lawyer", facts({ lawyerStatus: "rejected" })).ok, false);
   assert.equal(licenceFreeCodeDecision("lawyer", null).ok, false);
+  // l18 review: not submitted and expired stay refused for a free activation (nothing paid to hold)
+  assert.equal(licenceFreeCodeDecision("lawyer", facts({ lawyerStatus: null })).ok, false);
+  const expired = licenceFreeCodeDecision("lawyer", { ...facts(), licenceExpiry: "2020-01-01" });
+  assert.equal(expired.ok === false && expired.error, LICENCE_EXPIRED_PURCHASE_AR);
 });

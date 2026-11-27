@@ -222,6 +222,27 @@ export interface FullDiscountInput {
   gatewayMode?: "test" | "live";
 }
 
+/**
+ * l18 review: a TEST ACCOUNT (public.is_test_account, 20261127_80) gets no
+ * real 0 SAR activation outside the gateway's test mode — the rule its paid
+ * orders follow (test_account_payment_guard). Null = go on; otherwise the
+ * refusal (403 with the paid path's own sentence, or 503 when the question
+ * cannot be answered — fail closed). For checkout's 3f and the code box.
+ */
+export async function testAccountActivationRefusal(
+  admin: SupabaseClient,
+  userId: string,
+  gatewayMode: "test" | "live" | null | undefined,
+): Promise<{ status: 403 | 503; error: string } | null> {
+  if (gatewayMode === "test") return null;
+  const { data, error } = await admin.rpc("is_test_account", { p_user: userId });
+  if (error) {
+    if (!isMissingPaymentsObject(error.code)) console.error("[coupons/free] is_test_account failed:", error.code);
+    return { status: 503, error: FREE_ACTIVATION_UNAVAILABLE_AR };
+  }
+  return data === true ? { status: 403, error: DEMO_LIVE_PAYMENT_AR } : null;
+}
+
 /** Checkout's step 3f: the 0 SAR activation of a code that covers the whole price. */
 export async function activateFullDiscountWith(
   deps: { admin: SupabaseClient; ranks?: TierRankTable; catalog?: Readonly<Record<string, PayableItem>> },
@@ -250,14 +271,8 @@ export async function activateFullDiscountWith(
 
   // 1b. a test account: never a real activation outside test mode (l18 review;
   // the same rule as its paid orders, 20261127_80)
-  if (input.gatewayMode !== "test") {
-    const { data: isTest, error: testErr } = await admin.rpc("is_test_account", { p_user: input.userId });
-    if (testErr) {
-      if (!isMissingPaymentsObject(testErr.code)) console.error("[coupons/free] is_test_account failed:", testErr.code);
-      return fail(503, FREE_ACTIVATION_UNAVAILABLE_AR);
-    }
-    if (isTest === true) return fail(403, DEMO_LIVE_PAYMENT_AR);
-  }
+  const testRefusal = await testAccountActivationRefusal(admin, input.userId, input.gatewayMode);
+  if (testRefusal) return fail(testRefusal.status, testRefusal.error);
 
   // 2. the redemption, under the coupon's row lock
   const { data: opened, error: openErr } = await admin.rpc("coupon_redeem_full_open", {

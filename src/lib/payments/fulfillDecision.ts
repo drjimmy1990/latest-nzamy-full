@@ -344,7 +344,7 @@ export const LICENCE_PENDING_REASON = "licence_pending_verification";
 
 /** The owner's words for a held professional plan (٢٣٩). */
 export const LICENCE_PENDING_SENTENCE_AR =
-  "تُفعَّل الباقة بعد اعتماد التوثيق: تبدأ مدتها من يوم اعتماد الإدارة لتوثيقك، وإن لم يُعتمد يُردّ المبلغ كاملاً.";
+  "تُفعَّل الباقة بعد اعتماد التوثيق: تبدأ مدتها من يوم اعتماد الإدارة لتوثيقك، وإن لم يُعتمد يُردّ المبلغ كاملاً. وإن لم ترفع توثيق رخصتك بعد فارفعه ليراجعه فريق المنصة.";
 /** The state label wherever a held order is listed. */
 export const LICENCE_PENDING_STATE_AR = "بانتظار اعتماد التوثيق";
 

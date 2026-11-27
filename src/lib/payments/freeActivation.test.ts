@@ -24,7 +24,7 @@ import { FREE_ACTIVATION_HIGHER_PLAN_AR, FREE_ACTIVATION_OPEN_ORDER_AR, FREE_ACT
 import { COUPON_PENDING_AR } from "./couponServer.ts";
 import { DEMO_LIVE_PAYMENT_AR } from "../api/dbErrorCore.ts";
 import { parseCouponPreview, parseFreeActivation } from "./checkoutView.ts";
-import { LICENCE_FREE_CODE_PENDING_AR, LICENCE_PURCHASE_CODE, LICENCE_UNVERIFIED_PURCHASE_AR } from "./licenceGate.ts";
+import { LICENCE_FREE_CODE_PENDING_AR, LICENCE_PURCHASE_CODE, LICENCE_RESUBMIT_PURCHASE_AR, LICENCE_UNVERIFIED_PURCHASE_AR } from "./licenceGate.ts";
 import { LIBRARY_ACCOUNT_LOCKED_AR } from "../library/accountAccess.ts";
 
 const ROOT = join(import.meta.dirname, "..", "..", "..");
@@ -330,11 +330,20 @@ test("٢٣٩: a lawyer whose licence is PENDING may pay for a professional plan 
   assert.equal(orderWrites(log).filter((q) => q.op === "insert").length, 1);
 });
 
-test("٢٣٩: an unverified licence (rejected / none) is sent to verify first — 403 with the code and the link, nothing written; a failed read → 503", async () => {
+test("٢٣٩ (l18 review ruling): a rejected licence is asked to resubmit first, a suspended one to verify — 403 with the code and the link, nothing written; a failed read → 503", async () => {
   const { client, log } = db({ userType: "lawyer" });
   const m = moyasar();
   const r = await startCheckoutWith(deps(client, m, { licenceFacts: async () => REJECTED_FACTS }), input({ itemId: "lawyer-pro", billing: "yearly", couponCode: null }));
-  assert.deepEqual(r, { status: 403, body: { error: LICENCE_UNVERIFIED_PURCHASE_AR, code: LICENCE_PURCHASE_CODE, verifyHref: "/register/provider/verify" } });
+  assert.deepEqual(r, { status: 403, body: { error: LICENCE_RESUBMIT_PURCHASE_AR, code: LICENCE_PURCHASE_CODE, verifyHref: "/register/provider/verify" } });
+  const susp = db({ userType: "lawyer" });
+  const rs = await startCheckoutWith(deps(susp.client, moyasar(), { licenceFacts: async () => ({ ...PENDING_FACTS, lawyerStatus: "suspended" }) }), input({ itemId: "lawyer-pro", billing: "yearly", couponCode: null }));
+  assert.deepEqual(rs, { status: 403, body: { error: LICENCE_UNVERIFIED_PURCHASE_AR, code: LICENCE_PURCHASE_CODE, verifyHref: "/register/provider/verify" } });
+  // never submitted → may pay, held at fulfilment (the intent is created)
+  const none = db({ userType: "lawyer" });
+  const nm = moyasar();
+  const rn = await startCheckoutWith(deps(none.client, nm, { licenceFacts: async () => ({ ...PENDING_FACTS, lawyerStatus: null }) }), input({ itemId: "lawyer-pro", billing: "yearly", couponCode: null }));
+  assert.equal(rn.status, 200, JSON.stringify(rn.body));
+  assert.equal(nm.intents.length, 1);
   assert.equal(orderWrites(log).length, 0);
   assert.equal(m.intents.length, 0);
   const down = db({ userType: "lawyer" });
@@ -374,9 +383,11 @@ test("source contract: the checkout route wires the licence facts; the page tell
   const route = readFileSync(join(ROOT, "src", "app", "api", "v1", "payments", "checkout", "route.ts"), "utf8");
   assert.match(route, /licenceFacts: \(userId, userType\) => readLicenceFacts\(admin, userId, userType\),/);
   const page = readFileSync(join(ROOT, "src", "app", "checkout", "page.tsx"), "utf8");
-  assert.match(page, /const licence = licenceCheckoutDecision\(userType, facts\);/);
+  assert.match(page, /const licence = licenceCheckoutDecision\(userType, facts, \{ itemKind: item\.kind \}\);/);
   assert.match(page, /<Notice title=\{licence\.error\} verifyHref=\{licence\.verifyHref \?\? null\} \/>/);
-  assert.match(page, /const notes = licenceHeld \? \[LICENCE_HELD_NOTE_AR, \.\.\.itemNotes\] : itemNotes;/);
+  // l18 review: a licence not submitted yet is held too, with a note that asks for it
+  assert.match(page, /licenceHeldNote = licence\.submitLicence\s+\? userType === "firm" \? LICENCE_HELD_SUBMIT_FIRM_NOTE_AR : LICENCE_HELD_SUBMIT_NOTE_AR\s+: LICENCE_HELD_NOTE_AR;/);
+  assert.match(page, /const notes = licenceHeldNote \? \[licenceHeldNote, \.\.\.itemNotes\] : itemNotes;/);
   const redeem = readFileSync(join(ROOT, "src", "app", "api", "v1", "coupons", "redeem", "route.ts"), "utf8");
   assert.match(redeem, /licenceFacts: \(userId, userType\) => readLicenceFacts\(admin, userId, userType\),/);
 });
@@ -434,4 +445,22 @@ test("checkout S4: a test account gets no real 0 SAR activation outside test mod
   const d = await startCheckoutWith(deps(down.client), input({ gatewayMode: "live" }));
   assert.equal(d.status, 503);
   assert.equal(rpcs(down.log, "coupon_redeem_full_open").length, 0);
+});
+
+test("redeem box S4: a test account's free code is activated only in test mode; the route passes the gateway's mode", async () => {
+  const libCode = { ...FULL, id: "c-lib", code: "LIBFREE", discount_type: "plan_upgrade", plan_granted: "lib-q2", points_granted: 0, metadata: { grant_billing: "once" } };
+  const testAccount = (q: FakeQuery) => (q.op === "rpc" && q.table === "is_test_account" ? { data: true } : undefined);
+  const base = { ranks: RANKS, giftValidDays: async () => 90, now: () => NOW, libraryAccountAllowed: async () => true };
+  for (const mode of ["live", null] as const) {
+    const t = db({ userType: "lawyer", row: libCode }, testAccount);
+    const r = await redeemCouponWith({ ...base, admin: t.client, attempts: createCouponAttemptBudget(), gatewayMode: mode }, { userId: USER, code: "LIBFREE" });
+    assert.deepEqual(r, { status: 403, body: { error: DEMO_LIVE_PAYMENT_AR } }, String(mode));
+    assert.equal(rpcs(t.log, "coupon_redeem_open").length, 0, `${mode}: the code is never opened`);
+  }
+  const sandbox = db({ userType: "lawyer", row: libCode }, testAccount);
+  const ok = await redeemCouponWith({ ...base, admin: sandbox.client, attempts: createCouponAttemptBudget(), gatewayMode: "test" }, { userId: USER, code: "LIBFREE" });
+  assert.equal(ok.status, 200, JSON.stringify(ok.body));
+  const route = readFileSync(join(ROOT, "src", "app", "api", "v1", "coupons", "redeem", "route.ts"), "utf8");
+  assert.match(route, /gatewayMode = cfg\.enabled \? cfg\.mode : null;/);
+  assert.match(route, /\n\s+gatewayMode,\r?\n/);
 });

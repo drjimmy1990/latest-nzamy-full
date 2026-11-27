@@ -159,13 +159,21 @@ export interface FulfilDeps extends GrantPurchaseDeps {
    * l18 (owner ٢٣٩): may this PLAN be activated now for its buyer? "go" (no
    * licence rule, or the licence is verified); "hold" (a pending licence —
    * the plan waits for the admin's approval, heldPlanActivation.ts);
-   * "review" (paid by an account whose licence is rejected / suspended / not
-   * submitted — no approval will come: held and sent to the admin's refund
-   * review); null (the read failed → pending, the sweep retries). Read at
-   * fulfilment, not at checkout: the licence may change in between. Absent →
-   * "go" (fulfillOrder.ts wires it).
+   * "review" (paid by an account whose licence is rejected / suspended —
+   * no approval will come: held and sent to the admin's refund review); null
+   * (the read failed → pending, the sweep retries). Read at fulfilment, not
+   * at checkout: the licence may change in between. Absent → "go"
+   * (fulfillOrder.ts wires it).
    */
   licenceHold?: (userId: string, item: PayableItem) => Promise<"go" | "hold" | "review" | null>;
+  /**
+   * l18 review: the approval's own release of the buyer's held plans
+   * (heldPlanActivation.settleHeldPlansOnVerification, "approve"). Called when
+   * the licence reads verified right AFTER an order was held and stamped — the
+   * approval ran while this order was being held and could not see it.
+   * Absent → not asked.
+   */
+  activateHeldPlans?: (userId: string) => Promise<{ activated: readonly string[] }>;
 }
 
 interface OrderRow {
@@ -544,6 +552,31 @@ async function holdForLicence(
   if (stampErr) return pendingForDbError("fulfilled_at stamp", stampErr);
   if (!Array.isArray(stamped) || stamped.length === 0) return { outcome: "already_done", receiptNumber };
 
+  // l18 review: the admin may have approved the licence while this order was
+  // being held — that approval read the held orders before this one carried
+  // the flag. Read again AFTER the flag and the stamp: verified now → the
+  // approval's own release runs for this buyer at once (keyed on the order,
+  // never twice; it sends the activation notice itself).
+  if (deps.activateHeldPlans && deps.licenceHold) {
+    let again: "go" | "hold" | "review" | null = null;
+    try {
+      again = await deps.licenceHold(order.user_id, item);
+    } catch {
+      again = null;
+    }
+    if (again === "go") {
+      try {
+        const settled = await deps.activateHeldPlans(order.user_id);
+        if (settled.activated.includes(order.id)) {
+          await reportHeldPurchase(deps, order, item);
+          return { outcome: "granted", receiptNumber };
+        }
+      } catch (err) {
+        console.error("[payments] fulfillOrder: releasing a held plan after a late approval failed:", order.id, err instanceof Error ? err.message : "unknown");
+      }
+    }
+  }
+
   const notice = fulfilmentNoticeAr({ kind: "plan", labelAr: item.labelAr, receiptNumber, alreadyEntitled: review, licencePending: !review });
   await deps.notify({ userId: order.user_id, title: notice.title, body: notice.body, href: notice.href });
   if (review) {
@@ -561,22 +594,26 @@ async function holdForLicence(
     }
     return { outcome: "already_done", reason: "already_entitled", receiptNumber };
   }
-  if (deps.reportPurchase && order.live === true) {
-    try {
-      await deps.reportPurchase({
-        orderId: order.id,
-        itemId: order.item_id,
-        itemName: item.labelAr,
-        kind: order.kind,
-        totalHalalas: order.total_halalas,
-        currency: order.currency,
-        metadata: order.metadata,
-      });
-    } catch {
-      // analytics never touches a sale
-    }
-  }
+  await reportHeldPurchase(deps, order, item);
   return { outcome: "granted", reason: LICENCE_PENDING_REASON, receiptNumber };
+}
+
+/** The held sale's one analytics call (live orders only); never touches the sale. */
+async function reportHeldPurchase(deps: FulfilDeps, order: OrderRow, item: PayableItem): Promise<void> {
+  if (!deps.reportPurchase || order.live !== true) return;
+  try {
+    await deps.reportPurchase({
+      orderId: order.id,
+      itemId: order.item_id,
+      itemName: item.labelAr,
+      kind: order.kind,
+      totalHalalas: order.total_halalas,
+      currency: order.currency,
+      metadata: order.metadata,
+    });
+  } catch {
+    // analytics never touches a sale
+  }
 }
 
 /** The sweep's resume: the claim already verified the payment; fetch it only for the card. */

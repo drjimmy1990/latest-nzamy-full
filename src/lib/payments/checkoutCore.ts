@@ -184,7 +184,7 @@ import type { Attribution } from "../attribution/utmAttribution.ts";
 import type { OrderAnalytics } from "../analytics/analytics.ts";
 import { DEMO_NO_PAYMENT_AR, demoRefusal } from "../api/dbErrorCore.ts";
 import { licenceCheckoutDecision, licenceFreeCodeDecision, licenceGatedPurchase } from "./licenceGate.ts";
-import type { VerifiedProviderFacts } from "../auth/verifiedProvider.ts";
+import type { LicenceFacts } from "./licenceGate.ts";
 import {
   callbackUrlFor,
   cancelOrderAfterIntentCancel,
@@ -290,7 +290,7 @@ export interface CheckoutDeps {
    * suspended, none) is refused 403; a failed read / throw → 503; a 0 SAR
    * activation (3f) needs a verified licence. Absent → not asked.
    */
-  licenceFacts?: (userId: string, userType: string) => Promise<VerifiedProviderFacts | null>;
+  licenceFacts?: (userId: string, userType: string) => Promise<LicenceFacts | null>;
 }
 
 export interface CheckoutInput {
@@ -574,7 +574,7 @@ export async function startCheckoutWith(deps: CheckoutDeps, input: CheckoutInput
   // in pending_verification, 20261127_10); an unverified one (rejected,
   // suspended, none submitted) is refused before any price or write, since
   // no approval would ever release it. The facts are kept for step 3f.
-  let licenceFacts: VerifiedProviderFacts | null | undefined;
+  let licenceFacts: LicenceFacts | null | undefined;
   const licenceGated = !!deps.licenceFacts && licenceGatedPurchase(known, userType);
   if (licenceGated && deps.licenceFacts) {
     try {
@@ -582,7 +582,7 @@ export async function startCheckoutWith(deps: CheckoutDeps, input: CheckoutInput
     } catch {
       licenceFacts = null;
     }
-    const decision = licenceCheckoutDecision(userType as string, licenceFacts ?? null);
+    const decision = licenceCheckoutDecision(userType as string, licenceFacts ?? null, { itemKind: known.kind, now: deps.now?.() ?? new Date() });
     if (decision.ok === false) {
       return {
         status: decision.status,
@@ -725,7 +725,7 @@ export async function startCheckoutWith(deps: CheckoutDeps, input: CheckoutInput
     // l18 (٢٣٩): a free activation of a professional plan needs a VERIFIED
     // licence (nothing paid to hold) — refused before the code is opened
     if (licenceGated) {
-      const free = licenceFreeCodeDecision(userType as string, licenceFacts ?? null);
+      const free = licenceFreeCodeDecision(userType as string, licenceFacts ?? null, now);
       if (free.ok === false) return { status: free.status, body: { error: free.error, ...(free.code ? { code: free.code } : {}) } };
     }
     // l18 review: an open order for this item (any billing) — e.g. a payment

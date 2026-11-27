@@ -63,9 +63,9 @@ import { readConsultantStanding } from "../auth/consultantScopeServer.ts";
 import { CONSULTANT_REFUSED_PLAN_ID_LIST } from "../pricing/audienceForUserType.ts";
 import { isMissingPaymentsObject } from "./fulfillDecision.ts";
 import type { TierRankTable } from "../entitlementGrantRules.ts";
-import { auditRedemption, finishRedemption as finish, grantRedeemedItem } from "./freeActivationCore.ts";
+import { auditRedemption, finishRedemption as finish, grantRedeemedItem, testAccountActivationRefusal } from "./freeActivationCore.ts";
 import { licenceFreeCodeDecision, licenceGatedPurchase } from "./licenceGate.ts";
-import type { VerifiedProviderFacts } from "../auth/verifiedProvider.ts";
+import type { LicenceFacts } from "./licenceGate.ts";
 import { LIBRARY_ACCOUNT_LOCKED_AR } from "../library/accountAccess.ts";
 
 export const REDEEM_UNAVAILABLE_AR = "تفعيل الأكواد غير متاح حالياً، حاول مرة أخرى بعد قليل";
@@ -89,7 +89,13 @@ export interface RedeemDeps {
   /** l18: the library lock for the account type (checkout's step 2b) — asked for a library pass or the bundle; a throw is a refusal. Absent → not asked. */
   libraryAccountAllowed?: (userId: string) => Promise<boolean>;
   /** l18 (٢٣٩): the verification facts — a free code activates a professional plan only for a VERIFIED licence. Absent → not asked. */
-  licenceFacts?: (userId: string, userType: string) => Promise<VerifiedProviderFacts | null>;
+  licenceFacts?: (userId: string, userType: string) => Promise<LicenceFacts | null>;
+  /**
+   * l18 review: the gateway's mode (getMoyasarConfig; null when the gateway is
+   * off). A test account's free-plan / points code is activated only in test
+   * mode (testAccountActivationRefusal). Absent (undefined) → not asked.
+   */
+  gatewayMode?: "test" | "live" | null;
 }
 
 export type RedeemReply =
@@ -203,13 +209,13 @@ export async function redeemCouponWith(deps: RedeemDeps, input: { userId: string
     // l18 (٢٣٩): a free code activates a professional plan only for a verified
     // licence (nothing paid to hold until approval) — refused before the code is opened
     if (deps.licenceFacts && licenceGatedPurchase(item, userType)) {
-      let facts: VerifiedProviderFacts | null;
+      let facts: LicenceFacts | null;
       try {
         facts = await deps.licenceFacts(input.userId, userType as string);
       } catch {
         facts = null;
       }
-      const decision = licenceFreeCodeDecision(userType as string, facts);
+      const decision = licenceFreeCodeDecision(userType as string, facts, now);
       if (decision.ok === false) return fail(decision.status, decision.error);
     }
     if (item.kind === "plan" && item.tier) {
@@ -224,6 +230,12 @@ export async function redeemCouponWith(deps: RedeemDeps, input: { userId: string
       if (otherPaidPlanRunning(read.rows, item.id, now.getTime())) return fail(409, REDEEM_PAID_PLAN_RUNNING_AR);
     }
     plan = { item, billing: billing as Billing, listNet };
+  }
+
+  // 4b. a test account: no real activation outside test mode (l18 review)
+  if (deps.gatewayMode !== undefined) {
+    const refused = await testAccountActivationRefusal(admin, input.userId, deps.gatewayMode);
+    if (refused) return fail(refused.status, refused.error);
   }
 
   // 5. the redemption, under the coupon's row lock

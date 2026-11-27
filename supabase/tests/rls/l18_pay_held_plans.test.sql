@@ -22,7 +22,9 @@ insert into public.payment_orders (id, user_id, kind, item_id, billing, net_hala
   ('23900000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-0000000239a1', 'plan', 'lawyer-pro', 'yearly', 399000, 59850, 458850, 'exclusive', 'paid', 'NZ-H-2', now(), '{"licence_pending": false}'),
   ('23900000-0000-0000-0000-000000000003', '00000000-0000-0000-0000-0000000239a1', 'library', 'lib-q1', 'once', 199000, 29850, 228850, 'exclusive', 'paid', 'NZ-H-3', now(), '{"licence_pending": true}'),
   ('23900000-0000-0000-0000-000000000004', '00000000-0000-0000-0000-0000000239a2', 'plan', 'lawyer-pro', 'yearly', 399000, 59850, 458850, 'exclusive', 'paid', 'NZ-H-4', now(), '{"licence_pending": true}'),
-  ('23900000-0000-0000-0000-000000000005', '00000000-0000-0000-0000-0000000239a1', 'plan', 'lawyer-pro', 'yearly', 399000, 59850, 458850, 'exclusive', 'created', null, null, '{"licence_pending": true}');
+  ('23900000-0000-0000-0000-000000000005', '00000000-0000-0000-0000-0000000239a1', 'plan', 'lawyer-pro', 'yearly', 399000, 59850, 458850, 'exclusive', 'created', null, null, '{"licence_pending": true}'),
+  -- l18 review: held for the refund review (licence rejected at payment) — not «awaiting approval»
+  ('23900000-0000-0000-0000-000000000006', '00000000-0000-0000-0000-0000000239a1', 'plan', 'lawyer-pro', 'yearly', 399000, 59850, 458850, 'exclusive', 'paid', 'NZ-H-6', now(), '{"licence_pending": true, "licence_review": true, "already_entitled": true}');
 
 do $$ begin
   if to_regprocedure('public.my_licence_held_orders()') is null then raise exception 'T0 FAIL: 20261208_32 not applied'; end if;
@@ -40,7 +42,7 @@ begin
     perform metadata from public.payment_orders;
     raise exception 'T1 FAIL: a session read payment_orders.metadata';
   exception when insufficient_privilege then null; end;
-  raise notice 'T1 PASS: only the caller''s own paid, held PLAN order (not a released, unpaid, library or other account''s one); metadata stays unreadable';
+  raise notice 'T1 PASS: only the caller''s own paid, held PLAN order (not a released, unpaid, refund-review, library or other account''s one); metadata stays unreadable';
 end $$;
 reset role;
 set role anon;

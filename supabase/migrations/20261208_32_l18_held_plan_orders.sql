@@ -51,6 +51,9 @@ as $$
      and o.status = 'paid'
      and o.kind = 'plan'
      and o.metadata ->> 'licence_pending' = 'true'
+     -- l18 review: an order held for the refund review (licence rejected or
+     -- suspended at payment) is not «بانتظار اعتماد التوثيق»
+     and coalesce(o.metadata ->> 'licence_review', 'false') <> 'true'
    order by o.paid_at desc nulls last
    limit 20
 $$;
@@ -80,6 +83,9 @@ begin
     if position('auth.uid()' in pg_get_functiondef(to_regprocedure(fn))) = 0 then
       missing := missing || ' it is not keyed on auth.uid();';
     end if;
+    if position('licence_review' in pg_get_functiondef(to_regprocedure(fn))) = 0 then
+      missing := missing || ' it lists the refund-review orders as awaiting approval;';
+    end if;
   end if;
   if has_column_privilege('authenticated', 'public.payment_orders', 'metadata', 'SELECT') then
     missing := missing || ' authenticated can read payment_orders.metadata;';
@@ -87,7 +93,7 @@ begin
   if missing <> '' then
     raise exception 'l18_pay_held verify:%', missing;
   end if;
-  raise notice 'l18_pay_held verify: OK — my_licence_held_orders() (definer, own rows by auth.uid(), authenticated only); payment_orders.metadata still not readable by a session';
+  raise notice 'l18_pay_held verify: OK — my_licence_held_orders() (definer, own rows by auth.uid(), authenticated only, no refund-review orders); payment_orders.metadata still not readable by a session';
 end
 $verify$;
 

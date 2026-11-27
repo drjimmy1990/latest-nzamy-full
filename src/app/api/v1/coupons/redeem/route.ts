@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { frozenAccountResponse, isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
-import { TIER_RANK } from "@/lib/access-control";
+import { getMoyasarConfig, TIER_RANK } from "@/lib/access-control";
 import { readGiftValidDays } from "@/lib/points/pointsSettings";
 import { REDEEM_UNAVAILABLE_AR, redeemCouponWith } from "@/lib/payments/couponRedeemCore";
 import { readLicenceFacts } from "@/lib/payments/licenceGate";
@@ -49,6 +49,15 @@ export async function POST(request: NextRequest) {
     return reply({ error: REDEEM_UNAVAILABLE_AR }, 503);
   }
 
+  // l18 review: the gateway's mode — a test account's code is activated only in test mode
+  let gatewayMode: "test" | "live" | null = null;
+  try {
+    const cfg = await getMoyasarConfig();
+    gatewayMode = cfg.enabled ? cfg.mode : null;
+  } catch {
+    gatewayMode = null;
+  }
+
   try {
     const result = await redeemCouponWith(
       {
@@ -58,6 +67,7 @@ export async function POST(request: NextRequest) {
         // l18: checkout's gates — the library lock for the account type, and the licence (٢٣٩: a free code needs it verified)
         libraryAccountAllowed: async (userId) => (await readLibraryAccountAccess(userId)).allowed,
         licenceFacts: (userId, userType) => readLicenceFacts(admin, userId, userType),
+        gatewayMode,
       },
       { userId: user.id, code },
     );

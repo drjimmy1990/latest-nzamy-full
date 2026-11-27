@@ -18,6 +18,7 @@ import { getMoyasarConfig, TIER_RANK } from "@/lib/access-control";
 import { recordNotification } from "@/lib/notify";
 import { grantLibraryAccess } from "@/lib/libraryAccessServer";
 import { licenceHoldFor } from "./heldPlanActivation.ts";
+import { settleHeldPlansAfterDecision } from "./heldPlanActivationServer.ts";
 import { createMoyasarClient } from "./moyasarClient.ts";
 import { sendPurchaseEvent } from "@/lib/analytics/analytics";
 import {
@@ -65,6 +66,8 @@ async function serverDeps(): Promise<FulfilDeps> {
     },
     // l18 (owner ٢٣٩): a professional plan paid before the licence approval is held until it
     licenceHold: (userId, item) => licenceHoldFor(admin, userId, item),
+    // l18 review: an approval that landed while the order was being held — the approval's own release
+    activateHeldPlans: (userId) => settleHeldPlansAfterDecision(admin, userId, userId, "approve"),
     // l7-analytics: GA4 Measurement Protocol; "off" unless NEXT_PUBLIC_GA4_ID
     // AND GA4_API_SECRET are set, "skipped" unless the buyer consented.
     reportPurchase: (p) =>

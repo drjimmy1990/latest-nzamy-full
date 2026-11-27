@@ -18,7 +18,14 @@ import {
   NOT_FOR_SALE_AR,
   UNKNOWN_ITEM_AR,
 } from "@/lib/payments/checkoutCore";
-import { LICENCE_HELD_NOTE_AR, licenceCheckoutDecision, licenceGatedPurchase, readLicenceFacts } from "@/lib/payments/licenceGate";
+import {
+  LICENCE_HELD_NOTE_AR,
+  LICENCE_HELD_SUBMIT_FIRM_NOTE_AR,
+  LICENCE_HELD_SUBMIT_NOTE_AR,
+  licenceCheckoutDecision,
+  licenceGatedPurchase,
+  readLicenceFacts,
+} from "@/lib/payments/licenceGate";
 import { readConsultantStanding } from "@/lib/auth/consultantScopeServer";
 import { buyerAllowed, formatHalalas, quote, sellableItem, vatPercentFor } from "@/lib/payments/catalog";
 import { readVatRegistered } from "@/lib/payments/vatStatus";
@@ -172,7 +179,7 @@ export default async function CheckoutPage({ searchParams }: { searchParams: Sea
   // licence may pay and is told plainly that the plan activates after the
   // approval; an unverified one is sent to verify first (the POST's rule,
   // checkoutCore step 2d); a failed read refuses too, never a guess.
-  let licenceHeld = false;
+  let licenceHeldNote: string | null = null;
   if (userType && licenceGatedPurchase(item, userType)) {
     let facts: Awaited<ReturnType<typeof readLicenceFacts>> = null;
     try {
@@ -180,9 +187,14 @@ export default async function CheckoutPage({ searchParams }: { searchParams: Sea
     } catch {
       facts = null;
     }
-    const licence = licenceCheckoutDecision(userType, facts);
+    const licence = licenceCheckoutDecision(userType, facts, { itemKind: item.kind });
     if (licence.ok === false) return <Notice title={licence.error} verifyHref={licence.verifyHref ?? null} />;
-    licenceHeld = licence.held;
+    // l18 review: a licence not submitted yet is held too, and asked for
+    if (licence.held) {
+      licenceHeldNote = licence.submitLicence
+        ? userType === "firm" ? LICENCE_HELD_SUBMIT_FIRM_NOTE_AR : LICENCE_HELD_SUBMIT_NOTE_AR
+        : LICENCE_HELD_NOTE_AR;
+    }
   }
 
   // The price the POST will charge now: the launch price while its campaign
@@ -223,7 +235,7 @@ export default async function CheckoutPage({ searchParams }: { searchParams: Sea
     billing: parsed.billing,
   });
   // l18 (٢٣٩): a pending licence — the plan activates after the approval
-  const notes = licenceHeld ? [LICENCE_HELD_NOTE_AR, ...itemNotes] : itemNotes;
+  const notes = licenceHeldNote ? [licenceHeldNote, ...itemNotes] : itemNotes;
 
   // l6-pay: before paying, what the POST will take off — the same server
   // functions checkout prices with (upgradeProration / founderDiscount). A

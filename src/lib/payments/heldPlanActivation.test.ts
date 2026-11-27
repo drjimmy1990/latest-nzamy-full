@@ -126,6 +126,36 @@ test("٢٣٩ licenceHoldFor: not gated → go; verified → go; pending → hold
   assert.equal(await licenceHoldFor(mk("lawyer", "pending"), USER, pro), "hold");
   assert.equal(await licenceHoldFor(mk("lawyer", "rejected"), USER, pro), "review");
   assert.equal(await licenceHoldFor(mk("lawyer", "pending", true), USER, pro), null);
+  // l18 review ruling: a licence not submitted yet (no lawyer row) is held too — its approval releases it
+  assert.equal(await licenceHoldFor(mk("lawyer", null), USER, pro), "hold");
+  assert.equal(await licenceHoldFor(mk("lawyer", "suspended"), USER, pro), "review");
+});
+
+// l18 review S2: the approval ran while this order was being held (it could not see the flag yet)
+test("fulfilment: a licence that reads verified right after the hold → the approval's release runs at once; the plan is active", async () => {
+  const { client, log } = fulfilDb();
+  const answers: Array<"go" | "hold"> = ["hold", "go"];
+  const released: string[] = [];
+  const { d, notices } = fulfilDeps(client, undefined);
+  d.licenceHold = async () => answers.shift() ?? "go";
+  d.activateHeldPlans = async (userId) => {
+    released.push(userId);
+    return { activated: [ORDER] };
+  };
+  const r = await fulfillOrderWith(d, INPUT);
+  assert.deepEqual(r, { outcome: "granted", receiptNumber: "NZ-2026-000239" });
+  assert.deepEqual(released, [USER]);
+  const stamp = log.findIndex((q) => q.table === "payment_orders" && q.op === "update" && "fulfilled_at" in (q.payload as object));
+  assert.ok(stamp > -1, "held and stamped first; the second read comes after");
+  assert.equal(notices.length, 0, "no «held» notice — the release sends the activation notice");
+  // still pending on the second read → held as before, nothing released
+  const still = fulfilDb();
+  const s = fulfilDeps(still.client, "hold");
+  const calls: string[] = [];
+  s.d.activateHeldPlans = async (u) => { calls.push(u); return { activated: [] }; };
+  assert.equal((await fulfillOrderWith(s.d, INPUT)).reason, LICENCE_PENDING_REASON);
+  assert.deepEqual(calls, []);
+  assert.equal(s.notices.length, 1);
 });
 
 // ── the settlement on the admin's decision ──
@@ -169,8 +199,38 @@ test("٢٣٩ approve: the held plan is granted keyed on the order, its period ST
   const sel = log.find((q) => q.table === "payment_orders" && q.op === "select")!;
   assert.ok(sel.filters.some(([op, c, v]) => op === "eq" && c === "metadata->>licence_pending" && v === "true"));
   const patch = (rpcs(log, "merge_payment_order_metadata")[0].payload as { p_patch: Record<string, unknown> }).p_patch;
-  assert.deepEqual(patch, { licence_pending: false, licence_activated_at: APPROVED_AT.toISOString() });
+  // l18 review S3: an order first held for review leaves the refund queue once active
+  assert.deepEqual(patch, { licence_pending: false, already_entitled: false, licence_review: false, licence_activated_at: APPROVED_AT.toISOString() });
   assert.equal(notices.length, 1);
+});
+
+// l18 review S7: two held plans of different ranks — only the highest is activated, the lower refunded once it is
+test("approve: two held plans → the highest (rank, then total, then the earlier payment) is activated; the lower is refunded with an admin note", async () => {
+  const LOW = "00000000-0000-0000-0000-0000000ab240";
+  // a firm: firm-enterprise ranks above firm-basic (the lawyer plans share one tier)
+  const lower = { ...HELD, id: LOW, item_id: "firm-basic", total_halalas: 990000, paid_at: "2026-11-27T07:00:00Z" };
+  const higher = { ...HELD, item_id: "firm-enterprise", billing: "quarterly", total_halalas: 449000, paid_at: "2026-11-28T07:00:00Z" };
+  assert.ok(RANKS[PAYABLE_ITEMS["firm-enterprise"].tier as keyof typeof RANKS] > RANKS[PAYABLE_ITEMS["firm-basic"].tier as keyof typeof RANKS], "fixture: enterprise ranks above corp");
+  // the lower one comes FIRST from the read (no order by): the rank decides
+  const { client, log } = settleDb((q) => (q.table === "payment_orders" && q.op === "select" ? { data: [lower, higher] } : undefined));
+  const { d, refunds, admins } = settleDeps(client);
+  const r = await settleHeldPlansOnVerification(d, USER, "approve");
+  assert.deepEqual(r, { activated: [ORDER], refunded: [LOW], review: [] });
+  const grants = rpcs(log, "grant_plan_subscription").map((q) => (q.payload as { p_order: string }).p_order);
+  assert.deepEqual(grants, [ORDER], "the lower plan is never granted (it would be replaced and lost)");
+  assert.deepEqual(refunds, [LOW]);
+  const lowPatch = rpcs(log, "merge_payment_order_metadata").map((q) => q.payload as { p_order: string; p_patch: Record<string, unknown> }).find((p) => p.p_order === LOW)!.p_patch;
+  assert.deepEqual(lowPatch, { licence_pending: false, licence_superseded: true, licence_superseded_by: ORDER, already_entitled: true }, "never marked rejected");
+  assert.equal(admins.length, 1, "an admin-visible note of the automatic refund");
+  // the highest grant fails → nothing refunded, both stay held
+  const broken = settleDb((q) =>
+    q.table === "payment_orders" && q.op === "select" ? { data: [lower, higher] } : q.table === "grant_plan_subscription" ? { error: { code: "XX000", message: "x" } } : undefined,
+  );
+  const b = settleDeps(broken.client);
+  const rb = await settleHeldPlansOnVerification(b.d, USER, "approve");
+  assert.deepEqual(rb, { activated: [], refunded: [], review: [ORDER] });
+  assert.deepEqual(b.refunds, []);
+  assert.equal(rpcs(broken.log, "merge_payment_order_metadata").length, 0, "both still held");
 });
 
 test("٢٣٩ approve: a higher plan running → refund review + alert; a failed grant → stays held + alert (never fails the decision)", async () => {
