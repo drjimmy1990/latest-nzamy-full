@@ -34,6 +34,8 @@ import { logout } from "@/hooks/useUser";
 import { createClient } from "@/lib/supabase/client";
 import { normalizeSaudiMobile, saudiMobileMessage } from "@/lib/services/saudiMobile";
 import { apiGet, apiMutate, isSupabaseMode } from "@/lib/services/api";
+import { PhoneTakenNotice } from "@/components/auth/PhoneTakenNotice";
+import { isPhoneTakenText } from "@/lib/phoneOtp/confirmedPhone";
 import TermsConsentCheckbox from "@/components/legal/TermsConsentCheckbox";
 import { CURRENT_TERMS_VERSION } from "@/lib/legal/termsVersion";
 import { fetchTermsStatus, recordTermsAcceptance } from "@/lib/legal/termsAcceptanceClient";
@@ -1351,7 +1353,9 @@ export default function OnboardingPage() {
 
               {step < 5 && (
                 <div className="mt-8">
-                  {saveError && (
+                  {/* Owner ٢٣٥ (batch l19): the mobile is used on another account — his sentence and its three links. */}
+                  {saveError && isPhoneTakenText(saveError) && <PhoneTakenNotice isAr={isAr} className="mb-4" />}
+                  {saveError && !isPhoneTakenText(saveError) && (
                     <div
                       role="alert"
                       className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300"
