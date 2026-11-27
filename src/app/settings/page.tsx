@@ -25,6 +25,7 @@ import {
 } from "@phosphor-icons/react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
+import LicenceExpiryBanner from "@/components/dashboard/LicenceExpiryBanner";
 import { useTheme } from "@/components/ThemeProvider";
 import { useSettingsTabs } from "./hooks/useSettingsTabs";
 import type { TabIconKey } from "./hooks/useSettingsTabs";
@@ -190,6 +191,9 @@ export default function SettingsPage() {
         >
           {isRTL ? "الإعدادات" : "Settings"}
         </motion.h1>
+
+        {/* l19 (owner ٢٤١): the licence expiry reminder; renders nothing unless the account's verified licence is within 30 days or past. */}
+        <LicenceExpiryBanner />
 
         {/* WP-6 B-9. The corporate role predicates now DENY when the role is
             unknown (they used to default to «owner», i.e. full manager). A

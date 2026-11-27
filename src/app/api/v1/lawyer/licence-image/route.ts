@@ -134,6 +134,23 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: AR.noRow }, { status: 404 });
     }
 
+    // l19 (owner ٢٤١): the licence expiry alerts ask a verified lawyer to
+    // upload his renewed licence here, so a VERIFIED lawyer's new image is
+    // brought to the admins (best-effort; the upload stands either way).
+    try {
+      const { data: own } = await service.from("lawyer_profiles").select("verification_status").eq("user_id", user.id).maybeSingle();
+      if ((own as { verification_status?: unknown } | null)?.verification_status === "verified") {
+        const { error: notifyError } = await service.rpc("library_monitor_notify_admins", {
+          p_title: "محامٍ موثَّق رفع صورة رخصة جديدة",
+          p_body: "رفع محامٍ موثَّق صورة جديدة لرخصته، وقد تكون تجديدًا. راجعها، وحدّث تاريخ انتهاء الرخصة في ملفه إن تغيّر.",
+          p_href: `/dashboard/admin/users/${user.id}`,
+        });
+        if (notifyError) console.warn("[lawyer/licence-image POST] admin notice failed:", notifyError.code);
+      }
+    } catch {
+      // best-effort
+    }
+
     return NextResponse.json({ ok: true });
   } catch (err) {
     console.error("[lawyer/licence-image POST] Unexpected error:", err);

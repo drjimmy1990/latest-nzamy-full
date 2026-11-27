@@ -9144,3 +9144,24 @@ select 'l18 review: the owner of a verified firm reads the open requests, with e
 select 'l18 review: exactly one index on the confirmed mobiles — the plain one of 20261208_20 until 20261208_50''s unique index exists, then only the unique one (run 20261208_20, then 20261208_50)' as check,
        (to_regclass('public.profiles_confirmed_phone_idx') is not null) <> (to_regclass('public.profiles_confirmed_phone_unique') is not null) as ok;
 -- <<< verify:l18_review
+-- >>> verify:l19_corr — supabase/tests/rls/l19_licence_expiry.test.sql
+-- Batch l19 corr (owner ٢٤١): the licence expiry alerts. 20261209_10 runs any time (before or after
+-- the deploy). Before it runs, both checks answer ok = false («run 20261209_10»).
+select 'l19 corr: licence_expiry_alerts(uuid[], integer) is a stable SECURITY DEFINER with an empty search_path, service role only, verified accounts only (run 20261209_10)' as check,
+       coalesce((select p.prosecdef
+                        and p.provolatile = 's'
+                        and p.proconfig @> array['search_path=""']
+                        and position('verification_status = ''verified''' in pg_catalog.pg_get_functiondef(p.oid)) > 0
+                        and not has_function_privilege('anon', p.oid, 'EXECUTE')
+                        and not has_function_privilege('authenticated', p.oid, 'EXECUTE')
+                        and has_function_privilege('service_role', p.oid, 'EXECUTE')
+                   from pg_catalog.pg_proc p where p.oid = to_regprocedure('public.licence_expiry_alerts(uuid[], integer)')), false) as ok;
+select 'l19 corr: email_reminder_log accepts licence_expiry_30d_app, licence_expiry_7d_app and licence_expiry_0d_app, and still the 20261201_45 kinds (run 20261209_10)' as check,
+       coalesce((select bool_and(position(quote_literal(k) in d.def) > 0)
+                   from (select string_agg(pg_catalog.pg_get_constraintdef(con.oid), ' ') as def
+                           from pg_catalog.pg_constraint con
+                          where con.conrelid = to_regclass('public.email_reminder_log') and con.contype = 'c'
+                            and pg_catalog.pg_get_constraintdef(con.oid) ~ '\mkind\M') d,
+                        unnest(array['licence_expiry_30d_app', 'licence_expiry_7d_app', 'licence_expiry_0d_app',
+                                     'task_due_1d_app', 'contract_pay_due_app', 'firm_invite']) as k), false) as ok;
+-- <<< verify:l19_corr

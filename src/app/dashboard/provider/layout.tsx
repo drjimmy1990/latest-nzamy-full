@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import SharedSidebar from "@/components/dashboard/SharedSidebar";
 import { UserTypeGuard } from "@/components/dashboard/UserTypeGuard";
+import LicenceExpiryBanner from "@/components/dashboard/LicenceExpiryBanner";
 
 /**
  * Provider Dashboard Layout
@@ -23,7 +24,11 @@ export default function ProviderDashboardLayout({
       <div className="min-h-[100dvh] bg-surface dark:bg-dark-bg" dir="rtl" suppressHydrationWarning>
         <SharedSidebar />
         <div className="print-main lg:mr-64 pt-[calc(env(safe-area-inset-top)+60px)] lg:pt-0 min-h-[100dvh]">
-          <div className="p-4 md:p-6">{children}</div>
+          <div className="p-4 md:p-6">
+            {/* l19 (owner ٢٤١): nothing unless the verified licence is within 30 days or past */}
+            <LicenceExpiryBanner />
+            {children}
+          </div>
         </div>
               </div>
     </UserTypeGuard>
