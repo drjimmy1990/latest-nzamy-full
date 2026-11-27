@@ -266,7 +266,11 @@ test("source contract: fulfilment wires the hold; the admin decision (lawyer AND
   const route = readFileSync(join(ROOT, "src", "app", "api", "v1", "admin", "verifications", "[id]", "route.ts"), "utf8");
   assert.match(route, /updatedType === "lawyer" \|\| updatedType === "firm"\s*\? await settleHeldPlansAfterDecision\(adminClient, gate\.userId, userId, action === "approve" \? "approve" : "reject"\)/);
   const approve = readFileSync(join(ROOT, "src", "lib", "lawyerSignup", "approve.ts"), "utf8");
-  assert.match(approve, /await settleHeldPlansAfterDecision\(svc, userId, userId, "approve"\);/);
+  assert.match(approve, /await settleHeldPlansAfterDecision\(svc, userId, userId, "approve", false\);/);
+  // l18 review: fulfilment's late release has no admin either — no refund under the buyer's id
+  assert.match(wrapper, /activateHeldPlans: \(userId\) => settleHeldPlansAfterDecision\(admin, userId, userId, "approve", false\),/);
+  const server = readFileSync(join(ROOT, "src", "lib", "payments", "heldPlanActivationServer.ts"), "utf8");
+  assert.match(server, /if \(!autoRefund\) \{\s+return Promise\.resolve\(\{ status: 409,/);
   const billing = readFileSync(join(ROOT, "src", "app", "dashboard", "billing", "page.tsx"), "utf8");
   assert.match(billing, /supabase\.rpc\("my_licence_held_orders"\)/);
 });

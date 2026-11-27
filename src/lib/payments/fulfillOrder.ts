@@ -67,7 +67,8 @@ async function serverDeps(): Promise<FulfilDeps> {
     // l18 (owner ٢٣٩): a professional plan paid before the licence approval is held until it
     licenceHold: (userId, item) => licenceHoldFor(admin, userId, item),
     // l18 review: an approval that landed while the order was being held — the approval's own release
-    activateHeldPlans: (userId) => settleHeldPlansAfterDecision(admin, userId, userId, "approve"),
+    // (no admin acted here: a lower held plan is left to the admin's refund review, never refunded under the buyer's id)
+    activateHeldPlans: (userId) => settleHeldPlansAfterDecision(admin, userId, userId, "approve", false),
     // l7-analytics: GA4 Measurement Protocol; "off" unless NEXT_PUBLIC_GA4_ID
     // AND GA4_API_SECRET are set, "skipped" unless the buyer consented.
     reportPurchase: (p) =>

@@ -21,12 +21,17 @@ type Svc = Awaited<ReturnType<typeof createServiceClient>>;
  * After the admin approved or rejected a LAWYER's or a FIRM's verification:
  * activates the professional plans the account paid for while pending (their
  * period starts now), or refunds them in full. Never throws.
+ *
+ * `autoRefund` false (l18 review — fulfilment's late release, where no admin
+ * acted): no refund runs under the buyer's id; a lower held plan is left in
+ * the admin's refund review with an alert instead.
  */
 export async function settleHeldPlansAfterDecision(
   admin: Svc,
   actorId: string,
   userId: string,
   decision: "approve" | "reject",
+  autoRefund = true,
 ): Promise<HeldPlanResult> {
   return settleHeldPlansOnVerification(
     {
@@ -38,8 +43,11 @@ export async function settleHeldPlansAfterDecision(
         const { error } = await admin.rpc("library_monitor_notify_admins", { p_title: n.title, p_body: n.body, p_href: n.href });
         if (error) throw new Error(`library_monitor_notify_admins ${error.code ?? "error"}`);
       },
-      refund: (orderId) =>
-        refundOrderWith(
+      refund: (orderId) => {
+        if (!autoRefund) {
+          return Promise.resolve({ status: 409, body: { error: "اعتُمد التوثيق أثناء معالجة الدفع، فيُجرى الاسترداد من صفحة المدفوعات" } });
+        }
+        return refundOrderWith(
           {
             admin,
             gateway: async () => {
@@ -55,7 +63,8 @@ export async function settleHeldPlansAfterDecision(
           orderId,
           actorId,
           true,
-        ),
+        );
+      },
     },
     userId,
     decision,
