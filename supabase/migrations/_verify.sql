@@ -9279,3 +9279,17 @@ select 'l19 grant top-up follows: trigger library_grant_topup_lot_follow on libr
                              where tg.tgrelid = to_regclass('public.library_access_grants')
                                and tg.tgname = 'library_grant_topup_lot_follow' and tg.tgenabled <> 'D'), false) as ok;
 -- <<< verify:l19_grant_topup_follow
+-- >>> verify:l19_office_insert_guard — supabase/tests/rls/l19_office_insert_guard.test.sql
+-- l19 review (access S5): a free-side session cannot insert «إدارة المكتب» rows straight through PostgREST.
+-- 20261209_91 runs before or after the deploy; before it runs the check answers ok = false.
+select 'l19 office insert guard: office_plan_insert_guard() asks office_features_locked, SECURITY DEFINER with an empty search_path, no session grant, and guards time_entries / lawyer_expenses / client_trust_ledger / contracts (run 20261209_91)' as check,
+       coalesce((select p.prosecdef
+                        and p.proconfig @> array['search_path=""']
+                        and position('office_features_locked(v_uid)' in pg_catalog.pg_get_functiondef(p.oid)) > 0
+                        and not has_function_privilege('authenticated', p.oid, 'EXECUTE')
+                   from pg_catalog.pg_proc p where p.oid = to_regprocedure('public.office_plan_insert_guard()')), false)
+       and coalesce((select count(*) = 4 from pg_catalog.pg_trigger tg
+                      where tg.tgname = 'trg_office_plan_insert_guard' and tg.tgenabled <> 'D'
+                        and tg.tgrelid in (to_regclass('public.time_entries'), to_regclass('public.lawyer_expenses'),
+                                           to_regclass('public.client_trust_ledger'), to_regclass('public.contracts'))), false) as ok;
+-- <<< verify:l19_office_insert_guard
