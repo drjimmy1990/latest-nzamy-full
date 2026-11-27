@@ -5,6 +5,8 @@ import { grantEntitlement, type GrantAction } from "@/lib/entitlements";
 import { libraryEndsAtAr } from "@/lib/libraryAccess";
 import { parseLibraryGrantBody } from "@/lib/libraryAccessAdmin";
 import { grantLibraryAccess } from "@/lib/libraryAccessServer";
+import { grantPointsTopupAudit, grantPointsTopupNoticeAr } from "@/lib/library/grantPointsTopup";
+import { topUpLibraryGrantPoints } from "@/lib/library/grantPointsTopupServer";
 import { recordNotification } from "@/lib/notify";
 
 /**
@@ -39,6 +41,12 @@ import { recordNotification } from "@/lib/notify";
  * Today it is whoever holds entitlements.grant. It is not handled by
  * grantEntitlement (src/lib/entitlements.ts) on purpose: that function writes
  * `subscriptions`.
+ *
+ * LIVE-10 (owner 27 Nov, batch l19): after the grant, the member's points are
+ * topped up to the library's minimum (50) when below — one library-assistant
+ * lot expiring with the grant, once per grant (library_grant_points_topup,
+ * 20261209_50). A failed or not-yet-installed top-up never fails the grant;
+ * its outcome is in the audit row and the answer.
  */
 export async function POST(request: NextRequest) {
   const gate = await requireStaff("entitlements.grant");
@@ -132,6 +140,9 @@ async function grantLibrary(body: Record<string, unknown>, adminId: string) {
     return NextResponse.json({ error }, { status: needsSql ? 503 : 400 });
   }
 
+  // LIVE-10: top the member up to the 50-point minimum (never fails the grant).
+  const topup = await topUpLibraryGrantPoints(grant.grantId);
+
   await logAdminAction({
     actorId: adminId,
     action: "library_grant_created",
@@ -143,15 +154,18 @@ async function grantLibrary(body: Record<string, unknown>, adminId: string) {
       days: input.days,
       starts_at: grant.startsAt ?? null,
       ends_at: grant.endsAt,
+      points_topup: grantPointsTopupAudit(topup),
     },
     metadata: { source: "admin", reason: input.reason, notes: input.notes },
   });
 
   const untilAr = libraryEndsAtAr(grant.endsAt);
+  const grantedAr = untilAr ? `اشتراك المكتبة القانونية ساري حتى ${untilAr}.` : "تم تفعيل اشتراك المكتبة القانونية.";
+  const pointsAr = grantPointsTopupNoticeAr(topup);
   await recordNotification({
     userId: input.userId,
     title: "تم تفعيل اشتراك المكتبة القانونية",
-    body: untilAr ? `اشتراك المكتبة القانونية ساري حتى ${untilAr}.` : "تم تفعيل اشتراك المكتبة القانونية.",
+    body: pointsAr ? `${grantedAr} ${pointsAr}` : grantedAr,
     href: "/laws",
   });
 
@@ -166,6 +180,7 @@ async function grantLibrary(body: Record<string, unknown>, adminId: string) {
         startsAt: grant.startsAt ?? null,
         endsAt: grant.endsAt,
       },
+      pointsTopup: grantPointsTopupAudit(topup),
     },
   });
 }

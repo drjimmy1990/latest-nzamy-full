@@ -6,8 +6,9 @@ import { Crown, Lock, X, ArrowLeft } from "@phosphor-icons/react";
 import { bookPriceText } from "@/lib/pricing/priceBook";
 import { VatNoticeText } from "@/components/pricing/VatNoticeText";
 import { activeCampaign, campaignFromApi, type Campaign } from "@/lib/pricing/campaigns";
-import { useLibraryAccountLocked } from "@/lib/library/useLibraryFullAccess";
+import { useLibraryAccountLocked, useLibraryLockNoteState } from "@/lib/library/useLibraryFullAccess";
 import { LIBRARY_ACCOUNT_LOCKED_AR } from "@/lib/library/accountAccess";
+import LibraryPointsLockBanner from "@/components/library/LibraryPointsLockBanner";
 
 /**
  * The subscribe card a non-subscriber sees on locked library content (owner
@@ -114,11 +115,25 @@ export function LibrarySubscribeCard({ title, onClose, className = "" }: { title
 /**
  * The note on a locked item (replaces the old static amber <span>): its own
  * message plus a real button that opens the subscribe card in a dialog.
+ *
+ * LIVE-10 (owner 27 Nov, batch l19): a SUBSCRIBER whose points fell below the
+ * minimum (50) is not offered the subscription again — he sees the owner's
+ * sentence «رصيدك أقل من ٥٠ نقطة؛ اشحن لتستمر في المكتبة» with the top-up
+ * button, as PaywallModal shows it on the laws reader. One access read per
+ * page for every note (useLibraryLockNoteState); the account-type lock still
+ * comes first.
  */
 export function LibraryLockedNote({ message, className = "" }: { message: string; className?: string }) {
   const [open, setOpen] = useState(false);
-  const { locked } = useLibraryAccountLocked();
-  if (locked) return <AccountLockedLine className={className} />;
+  const { accountLocked, pointsLock } = useLibraryLockNoteState();
+  if (accountLocked) return <AccountLockedLine className={className} />;
+  if (pointsLock) {
+    return (
+      <div className={className} data-library-locked-note-points>
+        <LibraryPointsLockBanner lock={pointsLock} />
+      </div>
+    );
+  }
   return (
     <>
       <div

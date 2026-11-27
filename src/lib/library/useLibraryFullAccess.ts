@@ -15,7 +15,13 @@
  */
 
 import { useEffect, useState } from "react";
-import { LIBRARY_ACCESS_ENDPOINT, parseLibraryAccessResponse, parseLibraryAccountLocked } from "./libraryFullAccess";
+import {
+  LIBRARY_ACCESS_ENDPOINT,
+  parseLibraryAccessResponse,
+  parseLibraryAccountLocked,
+  parseLibraryPointsLock,
+  type LibraryAccessPointsLock,
+} from "./libraryFullAccess";
 
 export interface LibraryFullAccessState {
   hasFullAccess: boolean;
@@ -59,5 +65,47 @@ export function useLibraryAccountLocked(enabled = true): { locked: boolean; load
       });
     return () => { alive = false; };
   }, [enabled]);
+  return state;
+}
+
+// ─── LIVE-10 (batch l19): the locked-item note's one read per page ───────────
+// A book or a precedent draws a LibraryLockedNote under EVERY locked block, so
+// the note must not ask the access route once per block. One request per page
+// view, shared by every note mounted within NOTE_READ_TTL_MS of it (a later
+// mount — the reader scrolled on after a top-up — asks again).
+
+export interface LibraryLockNoteState {
+  /** The library is locked for this account's type (owner item 9). */
+  accountLocked: boolean;
+  /** A subscriber below the points minimum: the top-up notice replaces the subscribe button. */
+  pointsLock: LibraryAccessPointsLock | null;
+  loading: boolean;
+}
+
+const NOTE_READ_TTL_MS = 30_000;
+let noteRead: { at: number; promise: Promise<Omit<LibraryLockNoteState, "loading">> } | null = null;
+
+function readLockNoteState(): Promise<Omit<LibraryLockNoteState, "loading">> {
+  const now = Date.now();
+  if (noteRead && now - noteRead.at < NOTE_READ_TTL_MS) return noteRead.promise;
+  const promise = fetch(LIBRARY_ACCESS_ENDPOINT, { headers: { Accept: "application/json" }, cache: "no-store" })
+    .then(async (res) => {
+      const body = await res.json().catch(() => null);
+      return { accountLocked: parseLibraryAccountLocked(res.ok, body), pointsLock: parseLibraryPointsLock(res.ok, body) };
+    })
+    .catch(() => ({ accountLocked: false, pointsLock: null }));
+  noteRead = { at: now, promise };
+  return promise;
+}
+
+export function useLibraryLockNoteState(): LibraryLockNoteState {
+  const [state, setState] = useState<LibraryLockNoteState>({ accountLocked: false, pointsLock: null, loading: true });
+  useEffect(() => {
+    let alive = true;
+    readLockNoteState().then((answer) => {
+      if (alive) setState({ ...answer, loading: false });
+    });
+    return () => { alive = false; };
+  }, []);
   return state;
 }
