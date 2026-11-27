@@ -92,8 +92,12 @@ test("l19 POST-L18-06: recoveryChannel — the typed value decides the one butto
 test("l19 POST-L18-06: /forgot-password has ONE submit button; Enter and the button take the same path", () => {
   const forgot = read("../../app/forgot-password/page.tsx");
   const form = forgot.slice(forgot.indexOf('key="request"'), forgot.lastIndexOf("</motion.form>"));
-  assert.equal((form.match(/<button\b/g) ?? []).length, 1, "one button in the request form");
-  assert.match(form, /<button\s+type="submit"/);
+  assert.equal((form.match(/<button\s+type="submit"/g) ?? []).length, 1, "one submit button in the request form");
+  // l19 review S3: the one other button — a secondary «أرسل رمزًا إلى واتساب بدلًا من ذلك», only for a typed e-mail while WhatsApp is on.
+  assert.equal((form.match(/<button\b/g) ?? []).length, 2, "the submit button and the secondary WhatsApp one");
+  assert.match(form, /\{waOn && channel\.ok && channel\.via === "email" && \(\s*<button\s+type="button"/);
+  assert.match(form, /void handleWhatsAppStart\(\{ email: channel\.email \}\)/, "the l17 route with the typed e-mail");
+  assert.match(forgot, /waInstead: "أرسل رمزًا إلى واتساب بدلًا من ذلك",/);
   assert.match(form, /onSubmit=\{\(e\) => \{ e\.preventDefault\(\); if \(!sending && !waSending\) handleRequest\(\); \}\}/);
   assert.doesNotMatch(forgot, /onClick=\{\(\) => \{ if \(!waSending && !sending\) void handleWhatsAppStart\(\); \}\}/, "no second WhatsApp button");
   const handle = forgot.slice(forgot.indexOf("function handleRequest()"), forgot.indexOf("async function handleSubmit("));

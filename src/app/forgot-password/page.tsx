@@ -82,8 +82,10 @@ const TEXT = {
     submit: "إرسال رابط الاستعادة",
     sending: "جارٍ الإرسال…",
     sentTitle: "تحقق من بريدك",
-    sent: "إن كان البريد مسجلاً فستصلك رسالة فيها رابط لتعيين كلمة مرور جديدة.",
-    sentHint: "افتح الرابط في هذا المتصفح نفسه. إن لم تصلك الرسالة خلال دقائق فتفقّد مجلد الرسائل غير المرغوب فيها، أو أعد الطلب بعد دقيقة.",
+    sent: "إن كان البريد مسجّلًا لدينا فستصلك رسالة من «نظامي»",
+    sentMissing: "إن لم تصلك خلال دقائق فراجع الرسائل غير المرغوب فيها",
+    sentOrWhatsApp: "، أو استعمل رقم جوالك المؤكَّد لاستلام رمز عبر واتساب",
+    sentHint: "في الرسالة رابط لتعيين كلمة مرور جديدة؛ افتحه في هذا المتصفح نفسه.",
     again: "إرسال الطلب مرة أخرى",
     invalidEmail: "أدخل بريداً إلكترونياً صحيحاً.",
     network: "تعذّر الاتصال بالخادم. تحقق من اتصالك وحاول مرة أخرى.",
@@ -100,8 +102,8 @@ const TEXT = {
     submitEmail: "أرسل رابطًا إلى بريدي",
     submitWhatsApp: "أرسل رمزًا إلى واتساب",
     submitNext: "متابعة",
-    sentFromBrand: "ستصلك رسالة من «نظامي»",
     sentFromDomain: "من عنوان ينتهي بـ",
+    waInstead: "أرسل رمزًا إلى واتساب بدلًا من ذلك",
     waTitle: "أدخل الرمز وكلمة المرور الجديدة",
     waSent: WHATSAPP_START_SENT_AR,
     waFor: "الحساب:",
@@ -128,8 +130,10 @@ const TEXT = {
     submit: "Send reset link",
     sending: "Sending…",
     sentTitle: "Check your email",
-    sent: "If this email is registered, you will receive a message with a link to set a new password.",
-    sentHint: "Open the link in this same browser. If nothing arrives within a few minutes, check your spam folder or request again after a minute.",
+    sent: "If this email is registered with us, you will receive a message from «Nezamy»",
+    sentMissing: "If it does not arrive within a few minutes, check your spam folder",
+    sentOrWhatsApp: ", or use your confirmed mobile to get a code on WhatsApp",
+    sentHint: "The message holds a link to set a new password; open it in this same browser.",
     again: "Send the request again",
     invalidEmail: "Enter a valid email address.",
     network: "Could not reach the server. Check your connection and try again.",
@@ -146,8 +150,8 @@ const TEXT = {
     submitEmail: "Send a link to my email",
     submitWhatsApp: "Send a code to WhatsApp",
     submitNext: "Continue",
-    sentFromBrand: "The message comes from «Nezamy»",
     sentFromDomain: "from an address ending in",
+    waInstead: "Send a code to WhatsApp instead",
     waTitle: "Enter the code and your new password",
     waSent: WHATSAPP_START_SENT_EN,
     waFor: "Account:",
@@ -459,16 +463,17 @@ export default function ForgotPasswordPage() {
                     <EnvelopeSimple size={38} weight="duotone" className="text-white" />
                   </div>
                   <h1 className="font-brand text-2xl font-bold text-ink">{t.sentTitle}</h1>
-                  <p className="mt-3 text-sm text-ink dark:text-gray-300" role="status">{t.sent}</p>
-                  <p className="mt-2 text-xs text-ink-muted dark:text-gray-400">
-                    {t.sentFromBrand}
+                  {/* l19 review S2: a promise only for a registered address; the sender's domain when the site address names one; the WhatsApp way only while it is on. */}
+                  <p className="mt-3 text-sm text-ink dark:text-gray-300" role="status">
+                    {t.sent}
                     {SENDER_DOMAIN ? (
                       <>
                         {" "}
                         {t.sentFromDomain} <bdi dir="ltr" className="font-medium">@{SENDER_DOMAIN}</bdi>
                       </>
                     ) : null}
-                    .
+                    . {t.sentMissing}
+                    {waOn ? t.sentOrWhatsApp : null}.
                   </p>
                   <p className="mt-2 text-xs text-ink-muted dark:text-gray-400">{t.sentHint}</p>
                   <Link
@@ -660,6 +665,19 @@ export default function ForgotPasswordPage() {
                       {sending || waSending ? t.sending : submitLabel}
                     </span>
                   </button>
+
+                  {/* l19 review S3: an e-mail typed while WhatsApp is on — the link stays the main way; the l17 code to the account's confirmed mobile is offered beside it. */}
+                  {waOn && channel.ok && channel.via === "email" && (
+                    <button
+                      type="button"
+                      disabled={sending || waSending || !realBackend}
+                      onClick={() => { if (!sending && !waSending) void handleWhatsAppStart({ email: channel.email }); }}
+                      className="mt-3 inline-flex w-full items-center justify-center gap-2 text-sm font-semibold text-royal hover:underline disabled:opacity-40 dark:text-gold"
+                    >
+                      <WhatsappLogo size={16} weight="duotone" />
+                      {t.waInstead}
+                    </button>
+                  )}
 
                   <Link
                     href="/login"

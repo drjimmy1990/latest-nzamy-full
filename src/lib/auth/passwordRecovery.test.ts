@@ -26,8 +26,13 @@ test("l19: «تحقق من بريدك» names the sender domain from the site ad
   }
   const page = readFileSync(new URL("../../app/forgot-password/page.tsx", import.meta.url), "utf8").replace(/\r\n/g, "\n");
   assert.match(page, /const SENDER_DOMAIN = recoverySenderDomain\(process\.env\.NEXT_PUBLIC_SITE_URL\);/);
-  assert.match(page, /sentFromBrand: "ستصلك رسالة من «نظامي»"/);
+  // l19 review S2: no promise of delivery — «إن كان البريد مسجّلًا لدينا فستصلك …», the spam folder, and the WhatsApp way only while it is on.
+  assert.match(page, /sent: "إن كان البريد مسجّلًا لدينا فستصلك رسالة من «نظامي»",/);
   assert.match(page, /sentFromDomain: "من عنوان ينتهي بـ"/);
+  assert.match(page, /sentMissing: "إن لم تصلك خلال دقائق فراجع الرسائل غير المرغوب فيها",/);
+  assert.match(page, /sentOrWhatsApp: "، أو استعمل رقم جوالك المؤكَّد لاستلام رمز عبر واتساب",/);
+  assert.match(page, /\{waOn \? t\.sentOrWhatsApp : null\}\./);
+  assert.doesNotMatch(page, /sentFromBrand|"ستصلك رسالة من «نظامي»"/, "no unconditional «ستصلك»");
   assert.match(page, /\{SENDER_DOMAIN \? \(/, "no domain → the clause is left out");
   assert.doesNotMatch(page, /[a-z0-9._-]+@nezamy\.sa|noreply@|no-reply@/i, "no mailbox written in the page");
 });
