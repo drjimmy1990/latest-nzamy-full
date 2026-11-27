@@ -30,6 +30,9 @@
 --
 -- NEGATIVE CONTROL (must FAIL): the same chain without the two 20261209_50
 -- files and the verify block → "T0 FAIL: library_grant_points_topup does not exist".
+-- NEGATIVE CONTROL 2 (l19 review S1): a copy of 20261209_50 whose two
+-- «> v_from» reads are put back to «> now()» (the self-check's text too)
+-- → "T14 FAIL: the renewal was not topped up".
 --
 -- Actors (…c0NN): A1 lawyer 0 points; A2 lawyer 30 points (+ an expired 500);
 -- A3 lawyer 60 points; A4 lawyer paid pass; A5 lawyer ended grant; A6
@@ -214,6 +217,39 @@ begin
   exception when sqlstate '22023' then null;
   end;
   raise notice 'T11 PASS: unknown / null grant refused';
+end $$;
+
+-- T14 l19 review (access S1): a renewal stacked after the running grant is
+--    topped up — the running grant's lot ends when the renewal starts, so it
+--    does not count; a lot that outlives the renewal's start still does.
+insert into auth.users values ('00000000-0000-0000-0000-0000000c0011'), ('00000000-0000-0000-0000-0000000c0012');
+insert into public.profiles (id, user_type, display_name) values
+  ('00000000-0000-0000-0000-0000000c0011', 'lawyer', 'A11'),
+  ('00000000-0000-0000-0000-0000000c0012', 'lawyer', 'A12');
+insert into public.library_access_grants (id, user_id, plan_ref, source, starts_at, ends_at) values
+  ('00000000-0000-0000-0000-0000000d0011', '00000000-0000-0000-0000-0000000c0011', 'lib-admin', 'admin', now(), now() + interval '90 days'),
+  ('00000000-0000-0000-0000-0000000d0111', '00000000-0000-0000-0000-0000000c0011', 'lib-admin', 'admin', now() + interval '90 days', now() + interval '180 days'),
+  ('00000000-0000-0000-0000-0000000d0112', '00000000-0000-0000-0000-0000000c0012', 'lib-admin', 'admin', now() + interval '90 days', now() + interval '180 days');
+insert into public.points_lots (user_id, source, points_total, points_left, expires_at, wallet_scope) values
+  ('00000000-0000-0000-0000-0000000c0012', 'purchase', 60, 60, now() + interval '400 days', 'general');
+do $$
+declare r jsonb;
+begin
+  r := public.library_grant_points_topup('00000000-0000-0000-0000-0000000d0011');
+  if r->>'status' <> 'credited' or (r->>'points')::int <> 50 then raise exception 'T14 FAIL: the running grant: %', r; end if;
+  r := public.library_grant_points_topup('00000000-0000-0000-0000-0000000d0111');
+  if r->>'status' <> 'credited' or (r->>'points')::int <> 50 or (r->>'balance_before')::int <> 0 then
+    raise exception 'T14 FAIL: the renewal was not topped up: %', r;
+  end if;
+  if (select expires_at from public.points_lots where id = (r->>'lot_id')::uuid)
+     <> (select ends_at from public.library_access_grants where id = '00000000-0000-0000-0000-0000000d0111') then
+    raise exception 'T14 FAIL: the renewal''s lot does not end with the renewal';
+  end if;
+  r := public.library_grant_points_topup('00000000-0000-0000-0000-0000000d0112');
+  if r->>'status' <> 'not_needed' or (r->>'balance_before')::int <> 60 then
+    raise exception 'T14 FAIL: a lot that outlives the renewal''s start must count: %', r;
+  end if;
+  raise notice 'T14 PASS: a stacked renewal is topped up; a lot that outlives its start counts';
 end $$;
 
 -- T12 anon / authenticated may not call it nor read the marker

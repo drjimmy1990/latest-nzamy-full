@@ -9207,6 +9207,7 @@ select 'l19 grant top-up: library_grant_points_topup(uuid) is SECURITY DEFINER w
                         and position('for update' in lower(pg_catalog.pg_get_functiondef(p.oid))) > 0
                         and position('credit_wallet_points' in pg_catalog.pg_get_functiondef(p.oid)) > 0
                         and position('library_grant_points_topups' in pg_catalog.pg_get_functiondef(p.oid)) > 0
+                        and position('pl.expires_at > v_from' in pg_catalog.pg_get_functiondef(p.oid)) > 0
                         and not has_function_privilege('anon', p.oid, 'EXECUTE')
                         and not has_function_privilege('authenticated', p.oid, 'EXECUTE')
                    from pg_catalog.pg_proc p where p.oid = to_regprocedure('public.library_grant_points_topup(uuid)')), false) as ok;

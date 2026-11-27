@@ -116,12 +116,13 @@ declare
   v_need    int;
   v_lot     uuid;
   v_done    record;
+  v_from    timestamptz;
 begin
   if p_grant is null then
     raise exception 'library_grant_points_topup: p_grant is required' using errcode = '22023';
   end if;
 
-  select g.id, g.user_id, g.source, g.ends_at
+  select g.id, g.user_id, g.source, g.starts_at, g.ends_at
     into v_grant
     from public.library_access_grants g
    where g.id = p_grant
@@ -170,14 +171,20 @@ begin
     order by pl.expires_at, pl.created_at, pl.id
       for update;
 
+  -- l19 review (access S1): only what is still spendable when THIS grant
+  -- starts counts. A renewal is stacked after the running grant
+  -- (library_grant_access starts it at the latest active end), and the
+  -- running grant's own top-up lot expires exactly then — counting it would
+  -- answer «not_needed» and leave the renewal locked at 0 points.
+  v_from := greatest(now(), v_grant.starts_at);
   select coalesce(sum(pl.points_left), 0) into v_bal
     from public.points_lots pl
-   where pl.user_id = v_grant.user_id and pl.expires_at > now();
+   where pl.user_id = v_grant.user_id and pl.expires_at > v_from;
   if to_regclass('public.membership_credits') is not null then
     select coalesce(sum(mc.remaining), 0) * 5 into v_credits
       from public.membership_credits mc
      where mc.user_id = v_grant.user_id and mc.kind = 'library_question'
-       and mc.remaining > 0 and mc.ends_at > now();
+       and mc.remaining > 0 and mc.ends_at > v_from;
   end if;
   v_bal := v_bal + coalesce(v_credits, 0);
 
@@ -232,6 +239,9 @@ begin
        or position('credit_wallet_points' in pg_get_functiondef(to_regprocedure(fn))) = 0
        or position('library_grant_points_topups' in pg_get_functiondef(to_regprocedure(fn))) = 0 then
       missing := missing || ' library_grant_points_topup lost its row lock, its credit call or its once-per-grant marker;';
+    end if;
+    if position('pl.expires_at > v_from' in pg_get_functiondef(to_regprocedure(fn))) = 0 then
+      missing := missing || ' library_grant_points_topup counts lots that end before the grant starts (l19 review S1);';
     end if;
   end if;
   if missing <> '' then
