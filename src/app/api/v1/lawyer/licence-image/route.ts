@@ -142,8 +142,9 @@ export async function POST(request: NextRequest) {
       if ((own as { verification_status?: unknown } | null)?.verification_status === "verified") {
         const { error: notifyError } = await service.rpc("library_monitor_notify_admins", {
           p_title: "محامٍ موثَّق رفع صورة رخصة جديدة",
-          p_body: "رفع محامٍ موثَّق صورة جديدة لرخصته، وقد تكون تجديدًا. راجعها، وحدّث تاريخ انتهاء الرخصة في ملفه إن تغيّر.",
-          p_href: `/dashboard/admin/users/${user.id}`,
+          p_body: "رفع محامٍ موثَّق صورة جديدة لرخصته، وقد تكون تجديدًا. راجعها، ثم حدّث تاريخ انتهاء الرخصة من بطاقته في صفحة «تحقق المزودين» إن تغيّر.",
+          // l19 review (pay S1): the verification screen, filtered to this lawyer, where the date is set
+          p_href: `/dashboard/admin/provider-verification?user=${user.id}`,
         });
         if (notifyError) console.warn("[lawyer/licence-image POST] admin notice failed:", notifyError.code);
       }

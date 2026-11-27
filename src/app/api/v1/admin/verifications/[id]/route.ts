@@ -12,12 +12,25 @@ import {
   verifiedPhoneTakenFor,
   VERIFIED_PHONE_APPROVAL_REFUSAL_AR,
 } from "@/lib/lawyerSignup/verifiedPhone";
+import {
+  LICENCE_EXPIRY_ACTION,
+  LICENCE_EXPIRY_AUDIT_ACTION,
+  LICENCE_EXPIRY_CLEARED_AR,
+  LICENCE_EXPIRY_SAVED_AR,
+  LICENCE_EXPIRY_TABLE,
+  parseLicenceExpiryPatch,
+} from "@/lib/licence/adminLicenceExpiry";
 
 /**
  * PATCH /api/v1/admin/verifications/[id] — Approve or reject a verification
  *
  * URL param: id = the user_id of the provider/lawyer/firm owner
  * Body: { action: 'approve' | 'reject', reason?: string }
+ *    or (l19 review, pay S1): { action: 'set_licence_expiry', holder: 'lawyer' | 'firm',
+ *        licenseExpiry: 'YYYY-MM-DD' | null } — sets or clears the licence
+ *        expiry date on the lawyer's file (lawyer_profiles) or the firm's
+ *        (firm_profiles, by its owner). Nothing else changes: no status, no
+ *        notice, no plan. Audited (licence_expiry_set, before → after).
  *
  * Requires: a staff role with verifications.decide; audited once (owner ٢١٠)
  */
@@ -37,6 +50,11 @@ export async function PATCH(
     body = await request.json();
   } catch {
     return NextResponse.json({ error: "بيانات غير صالحة" }, { status: 400 });
+  }
+
+  // ── l19 review (pay S1): the licence expiry date, set by an admin ────────────
+  if ((body as { action?: unknown } | null)?.action === LICENCE_EXPIRY_ACTION) {
+    return setLicenceExpiry(body, userId, gate.userId);
   }
 
   const { action, reason } = body;
@@ -252,5 +270,47 @@ export async function PATCH(
     ...(memberHeldPlans && (memberHeldPlans.members.length > 0 || memberHeldPlans.skipped.length > 0 || memberHeldPlans.readFailed)
       ? { memberHeldPlans }
       : {}),
+  });
+}
+
+/**
+ * l19 review (pay S1): an admin sets or clears the licence expiry date of a
+ * lawyer or a firm (its owner's id in the URL). The row must exist; the
+ * write and the audit row name the old and the new date.
+ */
+async function setLicenceExpiry(body: unknown, userId: string, actorId: string): Promise<NextResponse> {
+  const parsed = parseLicenceExpiryPatch(body);
+  if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: 400 });
+  const { table, key } = LICENCE_EXPIRY_TABLE[parsed.holder];
+  const adminClient = await createServiceClient();
+  const { data: row, error: readError } = await adminClient.from(table).select("license_expiry").eq(key, userId).maybeSingle();
+  if (readError) {
+    console.error("[admin/verifications] licence expiry read failed:", readError.code ?? "no-code");
+    return NextResponse.json({ error: "تعذّر حفظ التاريخ الآن. حاول بعد قليل." }, { status: 500 });
+  }
+  if (!row) {
+    return NextResponse.json({ error: "لم يُعثر على ملف ترخيص لهذا الحساب." }, { status: 404 });
+  }
+  const before = (row as { license_expiry?: string | null }).license_expiry ?? null;
+  const { error: writeError } = await adminClient
+    .from(table)
+    .update({ license_expiry: parsed.date, updated_at: new Date().toISOString() })
+    .eq(key, userId);
+  if (writeError) {
+    console.error("[admin/verifications] licence expiry write failed:", writeError.code ?? "no-code");
+    return NextResponse.json({ error: "تعذّر حفظ التاريخ الآن. حاول بعد قليل." }, { status: 500 });
+  }
+  await logAdminAction({
+    actorId,
+    action: LICENCE_EXPIRY_AUDIT_ACTION,
+    targetType: parsed.holder,
+    targetId: userId,
+    before: { license_expiry: before },
+    after: { license_expiry: parsed.date },
+  });
+  return NextResponse.json({
+    success: true,
+    message: parsed.date ? LICENCE_EXPIRY_SAVED_AR : LICENCE_EXPIRY_CLEARED_AR,
+    licenseExpiry: parsed.date,
   });
 }

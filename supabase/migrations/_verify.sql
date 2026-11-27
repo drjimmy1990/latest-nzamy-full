@@ -9147,11 +9147,12 @@ select 'l18 review: exactly one index on the confirmed mobiles — the plain one
 -- >>> verify:l19_corr — supabase/tests/rls/l19_licence_expiry.test.sql
 -- Batch l19 corr (owner ٢٤١): the licence expiry alerts. 20261209_10 runs any time (before or after
 -- the deploy). Before it runs, both checks answer ok = false («run 20261209_10»).
-select 'l19 corr: licence_expiry_alerts(uuid[], integer) is a stable SECURITY DEFINER with an empty search_path, service role only, verified accounts only (run 20261209_10)' as check,
+select 'l19 corr: licence_expiry_alerts(uuid[], integer) is a stable SECURITY DEFINER with an empty search_path, service role only, verified accounts only, the later of the registry and the lawyer''s own date (run 20261209_10)' as check,
        coalesce((select p.prosecdef
                         and p.provolatile = 's'
                         and p.proconfig @> array['search_path=""']
                         and position('verification_status = ''verified''' in pg_catalog.pg_get_functiondef(p.oid)) > 0
+                        and position('greatest(r.expiry_date, lp.license_expiry)' in pg_catalog.pg_get_functiondef(p.oid)) > 0
                         and not has_function_privilege('anon', p.oid, 'EXECUTE')
                         and not has_function_privilege('authenticated', p.oid, 'EXECUTE')
                         and has_function_privilege('service_role', p.oid, 'EXECUTE')

@@ -21,11 +21,15 @@
 --        subject_id  the licence's row: the user id (lawyer / provider), the
 --                    firm id (firm)
 --        expiry      the date used:
---                    lawyer   — the lawyers' registry expiry when the
---                               licence number is found there (not archived),
---                               else lawyer_profiles.license_expiry (the rule
---                               of 20261127_60's «مكتب موثّق»); without the
---                               registry table, the column only;
+--                    lawyer   — the LATER of the lawyers' registry expiry
+--                               (licence number found there, not archived)
+--                               and lawyer_profiles.license_expiry — either
+--                               one alone when the other is NULL (greatest()
+--                               ignores NULLs). l19 review S1: a renewed
+--                               lawyer whose date an admin corrected on the
+--                               verification screen is not told «انتهت» from
+--                               a stale registry row. Without the registry
+--                               table, the column only;
 --                    firm     — firm_profiles.license_expiry;
 --                    provider — provider_profiles.license_expiry, else the
 --                               date the provider typed in Settings
@@ -135,9 +139,11 @@ begin
   end if;
   v_until := v_today + p_horizon_days;
 
-  -- lawyers and legal consultants: the registry decides when it knows the
-  -- licence, else the expiry on the lawyer's own file. Two statements, so a
-  -- database without the registry never plans a query that names it.
+  -- lawyers and legal consultants: the later of the registry's date (when it
+  -- knows the licence) and the expiry on the lawyer's own file (l19 review
+  -- S1: greatest() ignores a NULL, so either one alone still counts). Two
+  -- statements, so a database without the registry never plans a query that
+  -- names it.
   if v_registry then
     return query
       select lp.user_id, 'lawyer'::text, lp.user_id::text, e.d
@@ -146,7 +152,7 @@ begin
           on lp.license_number is not null
          and r.licence_no = public.lawyer_registry_norm_licence(lp.license_number)
          and not r.archived
-        cross join lateral (select coalesce(r.expiry_date, lp.license_expiry) as d) e
+        cross join lateral (select greatest(r.expiry_date, lp.license_expiry) as d) e
        where lp.verification_status = 'verified'
          and (p_user_ids is null or lp.user_id = any (p_user_ids))
          and e.d is not null
@@ -200,7 +206,7 @@ end;
 $$;
 
 comment on function public.licence_expiry_alerts(uuid[], integer) is
-  'Owner ٢٤١ (20261209_10, batch l19): the licences of VERIFIED accounts whose expiry date is on or before today (Riyadh) + p_horizon_days (0..366), past ones included — user_id, holder (lawyer | firm = its owner | provider), subject_id (user id, or the firm id), expiry (lawyer: the registry expiry when the licence is found there, else lawyer_profiles.license_expiry; firm: firm_profiles.license_expiry; provider: provider_profiles.license_expiry, else a real YYYY-MM-DD in metadata.settings.licenseExpiry). p_user_ids NULL = all (the cron), else at most 200 ids (the banner). Read only. Service role only.';
+  'Owner ٢٤١ (20261209_10, batch l19): the licences of VERIFIED accounts whose expiry date is on or before today (Riyadh) + p_horizon_days (0..366), past ones included — user_id, holder (lawyer | firm = its owner | provider), subject_id (user id, or the firm id), expiry (lawyer: the later of the registry expiry, when the licence is found there, and lawyer_profiles.license_expiry — NULL-safe; firm: firm_profiles.license_expiry; provider: provider_profiles.license_expiry, else a real YYYY-MM-DD in metadata.settings.licenseExpiry). p_user_ids NULL = all (the cron), else at most 200 ids (the banner). Read only. Service role only.';
 
 do $gr$
 declare r text;
@@ -261,6 +267,9 @@ begin
     end if;
     if position('verification_status = ''verified''' in pg_catalog.pg_get_functiondef(fn)) = 0 then
       missing := missing || ' licence_expiry_alerts does not keep to verified accounts;';
+    end if;
+    if position('greatest(r.expiry_date, lp.license_expiry)' in pg_catalog.pg_get_functiondef(fn)) = 0 then
+      missing := missing || ' licence_expiry_alerts does not take the later of the registry and the lawyer''s own date;';
     end if;
   end if;
   foreach r in array array['anon', 'authenticated'] loop

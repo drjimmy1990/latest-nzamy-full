@@ -153,6 +153,8 @@ export async function GET(request: NextRequest) {
         practiceKind: toPracticeKind(lp.practice_kind),
         registryMatch: registryMatches.get(p.id) ?? null,
         signupVerification: signupViews.get(p.id) ?? null,
+        // l19 review (pay S1): the date the admin may correct on this screen
+        license_expiry: (lp.license_expiry as string | null) ?? null,
       };
     }),
     // Provider profiles (notary, arbitrator, bailiff)
@@ -189,6 +191,8 @@ export async function GET(request: NextRequest) {
         email: p?.email ?? null,
         phone: p?.phone ?? null,
         licenceImageUrl: null,
+        // l19 review (pay S1): the date the admin may correct on this screen
+        license_expiry: (fp.license_expiry as string | null) ?? null,
       };
     }),
   ];

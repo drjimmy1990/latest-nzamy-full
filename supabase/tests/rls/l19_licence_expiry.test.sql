@@ -1,8 +1,9 @@
 -- l19_licence_expiry.test.sql — proves 20261209_10 (batch l19, owner ٢٤١):
 -- licence_expiry_alerts() lists the licences of VERIFIED lawyers, firm owners
 -- and providers whose expiry is within the horizon or already past (the
--- registry's date beating the lawyer's own column when the licence is found
--- there and not archived; a provider's typed date only when it is a real
+-- LATER of the registry's date (licence found there, not archived) and the
+-- lawyer's own column — l19 review S1: L19 renewed, his own date newer than
+-- the stale registry row, is not listed; a provider's typed date only when it is a real
 -- date), is service role only, and email_reminder_log accepts the three new
 -- once-only kinds while keeping the older ones.
 --
@@ -19,6 +20,10 @@
 --     $M/20261125_20_email_reminder_log.sql $M/20261201_45_task_payment_invite_reminders.sql \
 --     $M/20261209_10_l19_licence_expiry_alerts.sql $R/l19_licence_expiry.test.sql
 -- NEGATIVE CONTROL (must FAIL at T0): RUN B without 20261209_10.
+-- NEGATIVE CONTROL 2 (l19 review S1, must FAIL at T1 in RUN A): 20261209_10
+--   with every «greatest(r.expiry_date, lp.license_expiry)» put back to
+--   «coalesce(r.expiry_date, lp.license_expiry)» (the self-check's text too)
+--   → «T1 FAIL … 19|lawyer|1919|-5».
 --
 -- Every row is SYNTHETIC (99/7… licences, invented names). Every assertion
 -- RAISES on failure.
@@ -52,7 +57,8 @@ begin
     ('00000000-0000-0000-0000-000000001906', '99/7002', 'verified', t + 10),   -- L6 registry renewed it
     ('00000000-0000-0000-0000-000000001907', '99/7003', 'verified', t + 6),    -- L7 registry row archived
     ('00000000-0000-0000-0000-000000001908', null,      'verified', t),        -- L8 ends today → listed
-    ('00000000-0000-0000-0000-000000001909', null,      'rejected', t - 1);    -- L9 not verified
+    ('00000000-0000-0000-0000-000000001909', null,      'rejected', t - 1),    -- L9 not verified
+    ('00000000-0000-0000-0000-000000001919', '99/7004', 'verified', t + 300);  -- L19 renewed: own date newer than the registry
   insert into public.firm_profiles (id, owner_user_id, name_ar, verification_status, license_expiry) values
     ('00000000-0000-0000-0000-00000000f191', '00000000-0000-0000-0000-000000001910', 'مكتب اختبار ١', 'verified', t + 7),
     ('00000000-0000-0000-0000-00000000f192', '00000000-0000-0000-0000-000000001911', 'مكتب اختبار ٢', 'pending',  t),
@@ -68,7 +74,8 @@ begin
     insert into public.lawyer_registry (licence_raw, full_name, expiry_date, registry_note) values
       ('99/7001', 'مختبر الأول', t + 3, null),
       ('99/7002', 'مختبر الثاني', t + 200, null),
-      ('99/7003', 'مختبر الثالث', t + 300, 'محفوظ من القاعدة السابقة (اختبار)');
+      ('99/7003', 'مختبر الثالث', t + 300, 'محفوظ من القاعدة السابقة (اختبار)'),
+      ('99/7004', 'مختبر الرابع', t - 5, null);
   end if;
 end $$;
 
