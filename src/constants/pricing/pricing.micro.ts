@@ -32,12 +32,19 @@ export const plansMicro: { ar: Plan[]; en: Plan[] } = {
       // ── درع المنشأة: الضامن القانوني السنوي ──
       // المنطق: ٢,٤٩٩ ÷ ١٢ = ~٢٠٨ ر.س/شهر
       // مقارنة: محامٍ ساعة = ٥٠٠+ ر.س. نحن: سنة كاملة = ٢,٤٩٩
-      id: "micro-shield", name: "درع المنشأة", badge: "~٢٠٨ ر.س / شهر",
+      // Owner ق٢٦-٧ + ق٢٦-١ (batch l19): HIDDEN. It is no product in the price
+      // book (no checkout, no grant), and nothing tracks what it promises (2
+      // consultations a month, 2 cases a year, litigation after 60 days) —
+      // an unbuilt offer is hidden, not sold. Its comparison column goes with
+      // the card (the table's columns are the cards on screen); a `?plan=`
+      // naming it resolves to nothing. The button names sales in case it is
+      // ever shown again.
+      id: "micro-shield", isBetaHidden: true, name: "درع المنشأة", badge: "~٢٠٨ ر.س / شهر",
       priceMonthly: "٢,٤٩٩", priceYearly: "٢,٤٩٩",
       periodMonthly: "ر.س / سنة", periodYearly: "ر.س / سنة",
       desc: "ضامنك القانوني طول العام — للموظفين، العقود، المخالفات، والمنافسات",
-      target: "منشآت صغيرة", cta: "احمِ منشأتك الآن",
-      ctaHref: "/register/client?type=micro&plan=micro-shield",
+      target: "منشآت صغيرة", cta: "تواصل مع المبيعات",
+      ctaHref: "/contact",
       highlighted: true, color: "border-royal/20",
       features: {
         ai: [
@@ -72,12 +79,13 @@ export const plansMicro: { ar: Plan[]; en: Plan[] } = {
     {
       // Logic: 2,499 ÷ 12 = ~208 SAR/month
       // Compare: one lawyer hour = 500+ SAR. We offer: a full year = 2,499
-      id: "micro-shield", name: "Business Shield", badge: "~208 SAR / month",
+      // ق٢٦-٧ (l19): hidden like the Arabic card above.
+      id: "micro-shield", isBetaHidden: true, name: "Business Shield", badge: "~208 SAR / month",
       priceMonthly: "2,499", priceYearly: "2,499",
       periodMonthly: "SAR / year", periodYearly: "SAR / year",
       desc: "Your legal guardian all year — for employees, contracts, fines & disputes",
-      target: "Small Business", cta: "Protect Your Business",
-      ctaHref: "/register/client?type=micro&plan=micro-shield",
+      target: "Small Business", cta: "Contact Sales",
+      ctaHref: "/contact",
       highlighted: true, color: "border-royal/20",
       features: {
         ai: [

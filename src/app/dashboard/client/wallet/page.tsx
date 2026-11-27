@@ -19,6 +19,7 @@ import {
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { apiGet, isSupabaseMode } from "@/lib/services/api";
+import IndividualTopupCard from "@/components/payments/IndividualTopupCard";
 
 // ─── Types & Data ─────────────────────────────────────────────────────────────
 // These are the shapes /api/v1/wallet sends. `descEn` is optional: the DB
@@ -426,7 +427,8 @@ export default function WalletPage() {
             )}
 
             <p className="text-xs text-white/60 leading-relaxed border-t border-white/10 pt-4">
-              الرصيد محفوظ على حسابك، ولا يمكن استخدامه بعد — بوابة الدفع في المنصة غير مفعَّلة حالياً.
+              {/* l19: the gateway is live (Moyasar); what is still true is that this balance is not spent at checkout. */}
+              الرصيد محفوظ على حسابك، ولا يُخصم منه بعد في صفحة الدفع. أمّا نقاط أدوات الذكاء الاصطناعي فتُشحن من «شحن رصيد النقاط» أدناه.
             </p>
           </div>
         </motion.div>
@@ -455,10 +457,9 @@ export default function WalletPage() {
               the second. They are stated separately now.
             */}
             <p>
-              <strong>متى أستطيع استخدام الرصيد؟</strong> لا توجد حتى الآن صفحة دفع في المنصة يُخصم منها
-              الرصيد، ولم تُفعَّل بوابة الدفع. رصيدك يبقى مسجّلاً على حسابك وسيُتاح استخدامه فور تفعيل
-              البوابة، أمّا الكوبونات فهي عروض عامة على المنصة وليست مخصّصة لحسابك. طلباتك القانونية حتى
-              ذلك الحين تُنسَّق مع فريق نظامي مباشرة.
+              <strong>متى أستطيع استخدام الرصيد؟</strong> لا تخصم صفحة الدفع في المنصة من هذا الرصيد بعد؛
+              رصيدك يبقى مسجّلاً على حسابك وسيُتاح استخدامه فور ربطه بالدفع، أمّا الكوبونات فهي عروض عامة
+              على المنصة وليست مخصّصة لحسابك. طلباتك القانونية حتى ذلك الحين تُنسَّق مع فريق نظامي مباشرة.
             </p>
             <Link
               href="/dashboard/client/services"
@@ -471,6 +472,9 @@ export default function WalletPage() {
             </Link>
           </div>
         </motion.div>
+
+        {/* ── ق٢٦-٦ (l19): the individual's point packs (100 / 250) ── */}
+        <IndividualTopupCard isDark={isDark} />
 
         {/* ── Tabs ── */}
         <div className="flex gap-1 rounded-2xl border border-zinc-200/40 bg-white p-1.5 dark:border-white/10 dark:bg-zinc-900 flex-wrap">

@@ -22,8 +22,8 @@ export const plansNgo: { ar: Plan[]; en: Plan[] } = {
     {
       id: "ngo-impact", name: "الأثر المستدام", badge: "~١٩٩ ر.س / شهر",
       priceMonthly: "٢,٣٨٨", priceYearly: "٢,٣٨٨", periodMonthly: "ر.س / سنة", periodYearly: "ر.س / سنة",
-      desc: "أدوات الذكاء الاصطناعي لرفع كفاءة الحوكمة والتشغيل", target: "جمعيات متوسطة", cta: "ارتقِ بالجمعية",
-      ctaHref: "/register/client?type=ngo&plan=ngo-impact", highlighted: true, color: "border-emerald-200/60 dark:border-emerald-500/20",
+      desc: "أدوات الذكاء الاصطناعي لرفع كفاءة الحوكمة والتشغيل", target: "جمعيات متوسطة", cta: "تواصل مع المبيعات",
+      ctaHref: "/contact", highlighted: true, color: "border-emerald-200/60 dark:border-emerald-500/20",
       features: {
         ai: ["أدوات الذكاء الاصطناعي: قريباً", null, null, null],
         platform: ["إدارة المتطوعين (حتى ٥٠٠)", "تصدير التقارير الربعية (مسودة)", "رادار الامتثال التفاعلي", "خصم ١٥٪ على استشارات المحامين"],
@@ -33,8 +33,8 @@ export const plansNgo: { ar: Plan[]; en: Plan[] } = {
     {
       id: "ngo-institutional", name: "التميز المؤسسي", badge: "~٤٩٩ ر.س / شهر ⭐",
       priceMonthly: "٥,٩٨٨", priceYearly: "٥,٩٨٨", periodMonthly: "ر.س / سنة", periodYearly: "ر.س / سنة",
-      desc: "حوكمة كاملة وتقارير تلقائية للمراكز الرقابية", target: "مؤسسات كبرى", cta: "تواصل للمؤسسات",
-      ctaHref: "/register/client?type=ngo&plan=ngo-institutional", highlighted: false, color: "border-royal/20",
+      desc: "حوكمة كاملة وتقارير تلقائية للمراكز الرقابية", target: "مؤسسات كبرى", cta: "تواصل مع المبيعات",
+      ctaHref: "/contact", highlighted: false, color: "border-royal/20",
       features: {
         ai: ["أدوات الذكاء الاصطناعي: قريباً", "مدقق الحوكمة الذكي (المركز الوطني)", "مراجعة عقود الشراكات", null],
         platform: ["لوحة تحكم إدارية متقدمة", "ربط مباشر مع مكاتب المحاماة", "إعداد تلقائي لتقرير الشفافية", null],
@@ -57,8 +57,8 @@ export const plansNgo: { ar: Plan[]; en: Plan[] } = {
     {
       id: "ngo-impact", name: "Sustainable Impact", badge: "~199 SAR/mo",
       priceMonthly: "2,388", priceYearly: "2,388", periodMonthly: "SAR / year", periodYearly: "SAR / year",
-      desc: "AI tools to elevate governance and operations", target: "Mid-size NGOs", cta: "Upgrade NGO",
-      ctaHref: "/register/client?type=ngo&plan=ngo-impact", highlighted: true, color: "border-emerald-200/60 dark:border-emerald-500/20",
+      desc: "AI tools to elevate governance and operations", target: "Mid-size NGOs", cta: "Contact Sales",
+      ctaHref: "/contact", highlighted: true, color: "border-emerald-200/60 dark:border-emerald-500/20",
       features: {
         ai: ["AI tools: coming soon", null, null, null],
         platform: ["Up to 500 volunteers", "Quarterly reports export", "Interactive compliance radar", "15% discount on lawyer consults"],
@@ -68,8 +68,8 @@ export const plansNgo: { ar: Plan[]; en: Plan[] } = {
     {
       id: "ngo-institutional", name: "Institutional Excellence", badge: "~499 SAR/mo ⭐",
       priceMonthly: "5,988", priceYearly: "5,988", periodMonthly: "SAR / year", periodYearly: "SAR / year",
-      desc: "Full governance and automated regulatory reports", target: "Large Institutions", cta: "Contact Us",
-      ctaHref: "/register/client?type=ngo&plan=ngo-institutional", highlighted: false, color: "border-royal/20",
+      desc: "Full governance and automated regulatory reports", target: "Large Institutions", cta: "Contact Sales",
+      ctaHref: "/contact", highlighted: false, color: "border-royal/20",
       features: {
         ai: ["AI tools: coming soon", "Smart Governance Checker (NCNP)", "Partnership Contract Review", null],
         platform: ["Advanced admin dashboard", "Direct connection to law firms", "Auto Transparency Report prep", null],
