@@ -49,7 +49,7 @@ test("the lawyer's and the firm's menus carry their market page", () => {
 
 // l18 review: node cannot resolve "@/lib/betaConfig", so the switch read false
 // here and the beta-on menus were never drawn. Production runs with it ON.
-test("with the beta switch ON (as in production) every role keeps a working market entry, and no menu links a redirected page", () => {
+test("with the beta switch ON (as in production) the served roles keep a working market entry, and no menu links a redirected page", () => {
   setBetaMonopolyModeForTests(true);
   try {
     const entry: Record<string, string> = {
@@ -65,7 +65,7 @@ test("with the beta switch ON (as in production) every role keeps a working mark
       assert.ok(isRouteAllowedFor(href, type), `${type} may open ${href}`);
     }
     assert.ok(hrefs(getSidebarByUserType("micro" as never)).includes("/dashboard/client/requests"), "micro follows its requests");
-    // No role is left a dead end: nothing the switch redirects, and every row opens for that role.
+    // No menu links a page the switch redirects (the other rows are not checked here).
     // (Not served yet, and said so in the report: government and ngo — the shared intake
     // is closed to them; the independent consultant — a client of /marketplace, which the
     // switch redirects; the provider — /dashboard/provider/requests is «قريباً».)
