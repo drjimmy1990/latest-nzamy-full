@@ -25,6 +25,8 @@ import { TurnstileWidget } from "@/components/auth/TurnstileWidget";
 import { canSubmitWithCaptcha, captchaSubmitError } from "@/lib/auth/captcha";
 import { createClient } from "@/lib/supabase/client";
 import { PHONE_SEND_FAILED_AR } from "@/lib/phoneOtp/phoneOtpRules";
+import { PHONE_TAKEN_CODE } from "@/lib/phoneOtp/confirmedPhone";
+import { PhoneTakenNotice } from "@/components/auth/PhoneTakenNotice";
 import { sanitizePhoneDigits } from "@/lib/services/saudiMobile";
 
 type Status = {
@@ -65,7 +67,9 @@ export function PhoneOtpPanel({
   const [code, setCode] = useState("");
   const [sent, setSent] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
+  // `taken` (owner ٢٣٥, batch l19): the number is used on another account —
+  // shown as PhoneTakenNotice (the owner's sentence and its three links).
+  const [message, setMessage] = useState<{ ok: boolean; text: string; taken?: boolean } | null>(null);
   const [resendAt, setResendAt] = useState<number>(0);
   const [now, setNow] = useState<number>(() => Date.now());
   const [changing, setChanging] = useState(false);
@@ -154,10 +158,15 @@ export function PhoneOtpPanel({
         setNow(Date.now());
       }
       // Owner ٢٣٥: the number is confirmed on another account — open the
-      // number field so another one can be typed straight away.
-      if (body?.reason === "phone_taken") setChanging(true);
+      // number field so another one can be typed straight away, and say why
+      // (batch l19: the owner's sentence with its three links).
+      if (body?.reason === PHONE_TAKEN_CODE) {
+        setChanging(true);
+        setMessage({ ok: false, text: "", taken: true });
+        return;
+      }
       const fallback = isAr ? PHONE_SEND_FAILED_AR : "We could not send the code right now. Try again shortly.";
-      setMessage({ ok: false, text: isAr ? body?.error || fallback : body?.reason === "phone_taken" ? "This number cannot be used. Use another number or contact us." : fallback });
+      setMessage({ ok: false, text: isAr ? body?.error || fallback : fallback });
     } catch {
       if (needsCaptcha) captcha.spend();
       setMessage({ ok: false, text: isAr ? PHONE_SEND_FAILED_AR : "We could not send the code right now. Try again shortly." });
@@ -184,9 +193,11 @@ export function PhoneOtpPanel({
       });
       const body = (await res.json().catch(() => null)) as { ok?: boolean; home?: string; error?: string; code?: string; reason?: string } | null;
       if (res.status === 409 && body?.code === "phone_otp_not_required") return void (await refresh());
-      if (body?.reason === "phone_taken") {
+      if (body?.reason === PHONE_TAKEN_CODE) {
         setChanging(true);
         setSent(false);
+        setMessage({ ok: false, text: "", taken: true });
+        return;
       }
       if (res.ok && body?.ok) {
         setDone(true);
@@ -340,7 +351,9 @@ export function PhoneOtpPanel({
               </div>
             )}
 
-            {message && (
+            {message?.taken && <PhoneTakenNotice isAr={isAr} />}
+
+            {message && !message.taken && (
               <p
                 role="status"
                 className={`flex items-center gap-2 text-xs font-semibold ${message.ok ? "text-emerald-700 dark:text-emerald-400" : "text-rose-700 dark:text-rose-300"}`}

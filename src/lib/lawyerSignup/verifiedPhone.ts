@@ -20,12 +20,14 @@ export const VERIFIED_PHONE_APPROVAL_REFUSAL_AR =
   "لا يمكن الاعتماد: رقم الجوال نفسه مسجّل لحساب آخر موثّق. راجع الحسابين قبل الاعتماد.";
 
 /**
- * Owner answer ٢٣٥ (batch l18): the user-facing refusal of a taken number is
- * one neutral sentence that says nothing about the other account — the same
- * words as src/lib/phoneOtp/confirmedPhone.ts PHONE_UNUSABLE_AR. (The admin
- * approval text above stays: an admin may know.)
+ * Owner answer ٢٣٥: the user-facing refusal of a taken number — since batch
+ * l19 the owner's own sentence that names the reason (the same words as
+ * src/lib/phoneOtp/confirmedPhone.ts PHONE_TAKEN_AR; kept as text here, this
+ * file has type-only imports). It never says what kind the other account is.
+ * (The admin approval text above stays: an admin may know.)
  */
-export const VERIFIED_PHONE_PROFILE_REFUSAL_AR = "تعذّر استعمال هذا الرقم، استعمل رقمًا آخر أو تواصل معنا";
+export const VERIFIED_PHONE_PROFILE_REFUSAL_AR =
+  "هذا الرقم مستخدم من قبل في حساب آخر. يمكنك تسجيل الدخول به بدلاً من ذلك، أو استعادة كلمة المرور، أو التواصل معنا إذا واجهتك مشكلة.";
 
 /** The database trigger's refusal (20261201_10). */
 export function isVerifiedPhoneDbError(error: { code?: string; message?: string } | null | undefined): boolean {

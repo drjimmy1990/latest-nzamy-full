@@ -25,7 +25,9 @@ const reset = read("../reset-password/page.tsx");
 const callback = read("../auth/callback/route.ts");
 
 test("forgot-password calls resetPasswordForEmail with the callback redirect and the captcha token", () => {
-  assert.match(forgot, /supabase\.auth\.resetPasswordForEmail\(email\.trim\(\), \{/);
+  // l19: the address is the field's value as recoveryChannel read it (trimmed, lower-cased).
+  assert.match(forgot, /supabase\.auth\.resetPasswordForEmail\(address, \{/);
+  assert.match(forgot, /else void handleSubmit\(choice\.email\);/);
   assert.match(forgot, /redirectTo: recoveryRedirectTo\(window\.location\.origin\)/);
   assert.match(forgot, /\.\.\.\(captchaToken \? \{ captchaToken \} : \{\}\)/);
   assert.match(forgot, /useTurnstile\(\{ isAr, theme, action: "password_reset" \}\)/);

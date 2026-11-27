@@ -31,7 +31,7 @@ import { dashboardPathFor } from "@/lib/auth/userTypes";
 import { rateLimit } from "@/lib/rateLimit";
 import { readZernioConfig, sendWhatsAppCode } from "./zernioWhatsApp";
 import { isFormSignup, maskSaudiMobile, PHONE_SEND_FAILED_AR } from "./phoneOtpRules";
-import { confirmedPhoneTakenElsewhere, isConfirmedPhoneDbError, PHONE_UNUSABLE_AR } from "./confirmedPhone";
+import { confirmedPhoneTakenElsewhere, isConfirmedPhoneDbError, PHONE_TAKEN_AR } from "./confirmedPhone";
 
 type Svc = Awaited<ReturnType<typeof createServiceClient>>;
 
@@ -171,14 +171,14 @@ export async function startPhoneOtp(svc: Svc, user: User, opts: { newPhone?: str
       // every other refusal of a taken number (the route's per-user limit,
       // 8 per 10 minutes, bounds how many numbers one account can try).
       if ((await confirmedPhoneTakenElsewhere(svc, user.id, parsed.e164)) === true) {
-        return { ok: false, reason: "phone_taken", error: PHONE_UNUSABLE_AR };
+        return { ok: false, reason: "phone_taken", error: PHONE_TAKEN_AR };
       }
       const { error } = await svc.from("profiles").update({ phone: parsed.e164 }).eq("id", user.id);
       if (error) {
         // R6 (20261201_10, a verified lawyer's number) or any other unique
         // refusal: the same neutral answer (owner ٢٣٥).
         if (error.code === "23505") {
-          return { ok: false, reason: "phone_taken", error: PHONE_UNUSABLE_AR };
+          return { ok: false, reason: "phone_taken", error: PHONE_TAKEN_AR };
         }
         if (error.code === "23514") return { ok: false, reason: "bad_phone", error: "رقم الجوال غير صالح." };
         throw new Error(`profiles phone update failed: ${error.code}`);
@@ -196,7 +196,7 @@ export async function startPhoneOtp(svc: Svc, user: User, opts: { newPhone?: str
   // Owner ٢٣٥: no code for a number another account has already confirmed
   // (the sign-up form's number included) — the code could never confirm it.
   if ((await confirmedPhoneTakenElsewhere(svc, user.id, phone.e164)) === true) {
-    return { ok: false, reason: "phone_taken", error: PHONE_UNUSABLE_AR };
+    return { ok: false, reason: "phone_taken", error: PHONE_TAKEN_AR };
   }
 
   const targetHash = hashOtpTarget(pepper, phone.e164);
@@ -277,7 +277,7 @@ export async function verifyPhoneOtp(svc: Svc, user: User, code: string): Promis
   // Owner ٢٣٥: confirmed on another account meanwhile → refused, the code is
   // not spent (the database guard, 20261208_50, refuses it too — below).
   if ((await confirmedPhoneTakenElsewhere(svc, user.id, phone.e164)) === true) {
-    return { ok: false, reason: "phone_taken", error: PHONE_UNUSABLE_AR };
+    return { ok: false, reason: "phone_taken", error: PHONE_TAKEN_AR };
   }
 
   const { data, error } = await svc.rpc("phone_otp_verify", {
@@ -288,7 +288,7 @@ export async function verifyPhoneOtp(svc: Svc, user: User, code: string): Promis
   });
   if (error) {
     if (MISSING.has(error.code ?? "")) throw new PhoneOtpUnavailable("schema");
-    if (isConfirmedPhoneDbError(error)) return { ok: false, reason: "phone_taken", error: PHONE_UNUSABLE_AR };
+    if (isConfirmedPhoneDbError(error)) return { ok: false, reason: "phone_taken", error: PHONE_TAKEN_AR };
     console.error("[phone-otp] verify failed:", error.code);
     return { ok: false, reason: "unavailable", error: "تعذّر التحقق الآن، حاول بعد قليل." };
   }
