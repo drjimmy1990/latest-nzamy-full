@@ -10,6 +10,8 @@ export interface LibraryDeviceRow {
   label: string;
   lastSeen: string | null;
   current?: boolean;
+  /** Owner ٢٣٣ (20261209_40): the slot the device holds. */
+  kind?: "mobile" | "desktop" | null;
 }
 
 /**
@@ -22,9 +24,12 @@ export default function LibraryDeviceList({
   devices,
   onRevoked,
   revokeLabel = "تسجيل خروج هذا الجهاز",
+  readOnly = false,
 }: {
   devices: LibraryDeviceRow[];
   onRevoked: (id: string) => void;
+  /** Batch l19 (owner ٢٣٣): while the account limit is on, no removal button (switching goes through the administration). */
+  readOnly?: boolean;
   /** The button's wording; «مكتبتي» (/laws/my) says «إنهاء الجلسة». */
   revokeLabel?: string;
 }) {
@@ -62,7 +67,7 @@ export default function LibraryDeviceList({
   return (
     <div className="space-y-2" dir="rtl">
       {devices.map((d) => {
-        const phone = d.label.startsWith("جوال") || d.label.startsWith("جهاز لوحي");
+        const phone = d.kind ? d.kind === "mobile" : d.label.startsWith("جوال") || d.label.startsWith("جهاز لوحي");
         const Icon = phone ? DeviceMobile : Desktop;
         const seen = deviceLastSeenAr(d.lastSeen, now);
         return (
@@ -88,6 +93,7 @@ export default function LibraryDeviceList({
                 )}
               </div>
             </div>
+            {!readOnly && (
             <button
               type="button"
               onClick={() => revoke(d.id)}
@@ -101,6 +107,7 @@ export default function LibraryDeviceList({
               {busy === d.id ? <SpinnerGap size={13} className="animate-spin" /> : <SignOut size={13} />}
               {revokeLabel}
             </button>
+            )}
           </div>
         );
       })}

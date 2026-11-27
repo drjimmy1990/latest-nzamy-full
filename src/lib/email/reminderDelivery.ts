@@ -44,7 +44,10 @@ export type ReminderEmailKind =
   // reminder (notifyReminderOnce) — their own rows, so neither channel uses
   // the other's up.
   | "task_due_1d" | "contract_pay_due" | "contract_pay_overdue" | "firm_invite"
-  | "task_due_1d_app" | "contract_pay_due_app" | "contract_pay_overdue_app";
+  | "task_due_1d_app" | "contract_pay_due_app" | "contract_pay_overdue_app"
+  // 20261209_10 (batch l19, owner ٢٤١): the in-app licence expiry notices
+  // (POST /api/v1/cron/licence-expiry), keyed on the licence's expiry date
+  | "licence_expiry_30d_app" | "licence_expiry_7d_app" | "licence_expiry_0d_app";
 
 export const EMAIL_LOG_TABLE = "email_reminder_log";
 export const EMAIL_LOG_CONFLICT = "kind,subject_id,recipient_user_id,due_on";

@@ -108,6 +108,8 @@ export function getNotificationCategories(userType: string | null): NotifCategor
         { key: "ai_result",      label: "نتائج الذكاء الاصطناعي",    description: "اكتمل بحث أو مسودة",            defaultOn: true  },
         { key: "fee_approval",   label: "الأتعاب",                  description: "موافقة أو طلب تعديل أتعاب",      defaultOn: true  },
         { key: "perf_weekly",    label: "إحصائيات الأداء الأسبوعي",  description: "تقرير أسبوعي بالأداء والإنجازات", defaultOn: false },
+        // l19 (owner ٢٤١): the in-app licence expiry notice (/api/v1/cron/licence-expiry)
+        { key: "license_expiry", label: "تجديدات الترخيص",          description: "رخصتك المهنية تنتهي قريباً أو انتهت", defaultOn: true },
         ...shared,
       ];
 
@@ -176,6 +178,8 @@ export function getNotificationCategories(userType: string | null): NotifCategor
         { key: "new_request",    label: "طلب خدمة جديد",            description: "عميل طلب خدمتك",                 defaultOn: true  },
         { key: "appointment",    label: "المواعيد",                  description: "تم حجز موعد أو تعديله",          defaultOn: true  },
         { key: "rating",         label: "التقييمات",                 description: "تقييم جديد من عميل",             defaultOn: true  },
+        // l19 (owner ٢٤١): the in-app licence expiry notice (/api/v1/cron/licence-expiry)
+        { key: "license_expiry", label: "تجديدات الترخيص",          description: "رخصتك المهنية تنتهي قريباً أو انتهت", defaultOn: true },
         ...shared,
       ];
 

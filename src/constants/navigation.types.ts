@@ -69,7 +69,7 @@ export interface SidebarItem {
    * side — the row shows 🔒 and the plan, and its click opens the upgrade
    * dialog (/pricing) with a link to the page itself. Never written statically.
    */
-  officeLocked?: "lawyer" | "firm";
+  officeLocked?: "lawyer" | "firm" | "enterprise";
 }
 
 // ─── Dashboard href helper ────────────────────────────────────────────────────

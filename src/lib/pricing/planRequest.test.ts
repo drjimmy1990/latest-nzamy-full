@@ -99,8 +99,9 @@ test("every client-registration CTA carries its own plan id in ?plan=", () => {
   }
   // individuals: ind-ai + the 100 / 250 top-ups (owner ٣٠٢; l9's 50 retired
   // in l12) × 2 languages (ind-preventive and ind-litigation are retired,
-  // q329 — no card), micro 1 × 2, ngo 2 × 2
-  assert.equal(seen, 12);
+  // q329 — no card). Batch l19 (owner ق٢٦-٧): micro-shield (hidden) and the
+  // two paid NGO cards name no plan any more — they go to sales (/contact).
+  assert.equal(seen, 6);
 });
 
 // ── N5 (fix plan 2026-10-16): the library checkout path ─────────────────────

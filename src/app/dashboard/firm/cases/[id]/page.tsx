@@ -45,6 +45,8 @@ import {
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
+import { OfficePlanTeaser, useOfficeGateFor } from "@/components/dashboard/OfficePlanGuard";
+import { isMarketClaimedCase } from "@/lib/auth/officePages";
 import { orderReference } from "@/lib/services/orderReference";
 import { caseEventLabel } from "@/lib/services/caseEventLabels";
 import { countPhraseAr, type ArabicCountForms } from "@/lib/services/arabicCount";
@@ -325,6 +327,8 @@ export default function FirmCaseDetailsPage() {
   const params = useParams();
   const id = Array.isArray(params?.id) ? params.id[0] : (params?.id as string | undefined) ?? "";
   const user = useUser();
+  // Owner ق٢٦-٥: the firm's own cases are «مكتب المحاماة»; a market case stays open.
+  const officeGate = useOfficeGateFor("office");
   // N03-40: «إسناد» for the «توزيع القضايا» roles; the server re-checks.
   const canAssignCase = user.userType === "admin"
     || getFirmRouteDecision("/dashboard/firm/cases/assign", user.affiliation?.entityType === "firm" ? user.affiliation.role : undefined).allowed;
@@ -784,6 +788,11 @@ export default function FirmCaseDetailsPage() {
         </div>
       </div>
     );
+  }
+
+  if ((officeGate.locked || officeGate.pending) && !isMarketClaimedCase(caseData as { assigned_to?: unknown; requester_user_id?: unknown }, user.userId)) {
+    if (officeGate.locked) return <OfficePlanTeaser need="office" scope="firm" />;
+    return null;
   }
 
   const card = isDark

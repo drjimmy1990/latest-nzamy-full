@@ -162,6 +162,30 @@ export function classifyRecoverError(error: unknown): RecoverOutcome {
 }
 
 /** A cheap shape check before spending a captcha token; GoTrue has the last word. */
+/**
+ * Batch l19: the domain the recovery mail comes from, for «تحقق من بريدك»
+ * («ستصلك رسالة من «نظامي» من عنوان ينتهي بـ @…»). Read from the site's own
+ * address (NEXT_PUBLIC_SITE_URL), never a mailbox written here: its host
+ * without a leading «www.». null — and the clause is left out — when the
+ * address is missing, not http(s), or not a public domain name.
+ */
+export function recoverySenderDomain(siteUrl: string | undefined | null): string | null {
+  const raw = (siteUrl ?? "").trim();
+  if (!raw) return null;
+  let host: string;
+  try {
+    const url = new URL(raw);
+    if (url.protocol !== "https:" && url.protocol !== "http:") return null;
+    host = url.hostname.toLowerCase();
+  } catch {
+    return null;
+  }
+  if (host.startsWith("www.")) host = host.slice(4);
+  if (!/^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(host) || /^[0-9.]+$/.test(host)) return null;
+  if (host === "localhost" || host.endsWith(".localhost") || host.endsWith(".invalid") || host.endsWith(".test")) return null;
+  return host;
+}
+
 export function isPlausibleEmail(value: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 }

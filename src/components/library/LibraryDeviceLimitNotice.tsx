@@ -26,6 +26,8 @@ export function LibraryDeviceLimitNotice({ refusal }: { refusal: DeviceRefusal }
 
   // Owner ٤٠ (20261127_60): a new device waits for its e-mail code.
   if (refusal.mode === "code") return <DeviceCodeCard messageAr={refusal.messageAr} />;
+  // Batch l19 (owner ٢٣٣): the account's phone + computer are taken — contact.
+  if (refusal.mode === "account") return <AccountDeviceLimitCard messageAr={refusal.messageAr} />;
 
   return (
     <div className="flex min-h-[60vh] items-center justify-center px-4 py-16" dir="rtl">
@@ -56,6 +58,44 @@ export function LibraryDeviceLimitNotice({ refusal }: { refusal: DeviceRefusal }
             إدارة أجهزتي في «مكتبتي»
           </Link>
           <Link href="/laws" className="rounded-xl bg-[#0B3D2E] px-4 py-2 text-xs font-bold text-white transition hover:opacity-90">
+            العودة إلى المكتبة القانونية
+          </Link>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Owner ٢٣٣: «تم الوصول إلى الحد الأقصى للأجهزة المسموحة لهذا الحساب (جوال
+ * واحد وحاسوب واحد)…» with a direct contact button. No device list and no
+ * removal: switching devices goes through the administration.
+ */
+export function AccountDeviceLimitCard({ messageAr }: { messageAr: string }) {
+  const { isDark } = useTheme();
+  return (
+    <div className="flex min-h-[60vh] items-center justify-center px-4 py-16" dir="rtl">
+      <div
+        role="alertdialog"
+        aria-modal="false"
+        aria-labelledby="account-device-limit-title"
+        className={`w-full max-w-lg rounded-3xl border p-6 text-center shadow-xl ${
+          isDark ? "border-amber-500/20 bg-zinc-900 text-white" : "border-amber-200 bg-white text-zinc-900"
+        }`}
+      >
+        <Devices size={40} className={`mx-auto mb-3 ${isDark ? "text-amber-300" : "text-amber-700"}`} />
+        <h2 id="account-device-limit-title" className="mb-2 text-base font-bold">هذا الجهاز غير مسجّل لحسابك</h2>
+        <p className={`mb-5 text-sm leading-relaxed ${isDark ? "text-zinc-300" : "text-zinc-600"}`}>{messageAr}</p>
+        <div className="flex flex-wrap justify-center gap-2">
+          <Link href="/contact" className="rounded-xl bg-[#0B3D2E] px-4 py-2 text-xs font-bold text-white transition hover:opacity-90">
+            تواصل مع الإدارة
+          </Link>
+          <Link
+            href="/laws"
+            className={`rounded-xl border px-4 py-2 text-xs font-bold transition ${
+              isDark ? "border-white/10 text-zinc-200 hover:bg-white/5" : "border-zinc-200 text-zinc-700 hover:bg-zinc-50"
+            }`}
+          >
             العودة إلى المكتبة القانونية
           </Link>
         </div>

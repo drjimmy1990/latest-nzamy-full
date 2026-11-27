@@ -40,7 +40,7 @@ function jsonCalls(src: string): string[] {
   return out;
 }
 
-test("the routes that call enforceLibraryDevice are exactly these six", () => {
+test("the routes that call enforceLibraryDevice are exactly these (six library + three AI)", () => {
   const found: string[] = [];
   const walk = (dir: string) => {
     for (const name of fs.readdirSync(dir)) {
@@ -52,7 +52,7 @@ test("the routes that call enforceLibraryDevice are exactly these six", () => {
     }
   };
   walk(path.join(SRC, "app"));
-  assert.deepEqual(found.sort(), [...ROUTES, ...NO_STORE_ROUTES, ...EXPORT_ROUTES].sort());
+  assert.deepEqual(found.sort(), [...ROUTES, ...NO_STORE_ROUTES, ...EXPORT_ROUTES, ...AI_ROUTES].sort());
 });
 
 const ROUTES = [
@@ -75,6 +75,26 @@ const NO_STORE_ROUTES = ["app/api/v1/ai/source-preview/route.ts", "app/api/libra
  * refusals are private, no-store (draftExport.test.ts pins the order).
  */
 const EXPORT_ROUTES = ["app/api/library/draft-export/route.ts"] as const;
+
+/**
+ * l19 review B2 (owner ٢٣٣ «المساعد الذكي، أدوات AI»): the AI run route, the
+ * free-question status and the site assistant apply the account device rule,
+ * so they can mint the cookie too — every response of theirs that follows the
+ * check is private, no-store (the site assistant's public GET, which runs no
+ * check, keeps its one-minute cache).
+ */
+const AI_ROUTES = ["app/api/v1/ai/runs/route.ts", "app/api/v1/ai/free-question/route.ts", "app/api/v1/chatbot/route.ts"] as const;
+
+for (const rel of AI_ROUTES) {
+  test(`${rel}: every response after the device check is private, no-store`, () => {
+    const src = read(rel);
+    assert.match(src, /const NO_STORE = \{ "Cache-Control": "private, no-store" \};/);
+    const fromCheck = src.slice(src.indexOf("enforceLibraryDevice("));
+    const calls = jsonCalls(fromCheck);
+    assert.ok(calls.length >= 2, "the route's responses were found");
+    for (const call of calls) assert.match(call, /headers: (NO_STORE|\{ \.\.\.NO_STORE[^}]*\})/, `${rel}: ${call.slice(0, 120)}…`);
+  });
+}
 
 for (const rel of NO_STORE_ROUTES) {
   test(`${rel}: every response is private, no-store`, () => {

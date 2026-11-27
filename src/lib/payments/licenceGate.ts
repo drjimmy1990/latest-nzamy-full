@@ -27,15 +27,21 @@
  *   rejected   → refused with «أعد تقديم التوثيق أولاً» (a new submission goes
  *                back to pending, and the account can pay then);
  *   suspended  → refused with «وثّق رخصتك أولاً» (unchanged: the ruling does not
- *                name it, and no approval event follows a suspension);
- *   expired    → (verified, but the licence's recorded expiry date has passed)
- *                refused with «جدّد رخصتك أولاً»: a held order would never be
- *                released — no approval event follows for a verified account.
+ *                name it, and no approval event follows a suspension).
+ *
+ * Owner ٢٤١ (27 Nov, batch l19) reversed the l18 «جدّد رخصتك أولاً» rule:
+ *   «الاكتفاء بالتوثيق دون المنع بسبب تاريخ انتهاء الرخصة … يدفع ويشترك عادي
+ *    ثم يجدّد لاحقاً»
+ * so a VERIFIED account whose licence's recorded expiry date has passed is
+ * verified here like any other: it pays, subscribes and uses codes normally.
+ * This rule never reads the expiry date; the account is told to renew by the
+ * expiry alerts instead (src/lib/licence/licenceExpiry.ts — the in-app
+ * notices of /api/v1/cron/licence-expiry and the dashboard banner).
  *
  * A FREE activation (a 100 % code at checkout, a free-plan code in the box)
- * of a gated item needs a VERIFIED, unexpired licence: there is nothing paid
- * to hold, and activating it would put the plan to work before approval. The
- * code is refused before it is opened, so it is not used up.
+ * of a gated item needs a VERIFIED licence: there is nothing paid to hold,
+ * and activating it would put the plan to work before approval. The code is
+ * refused before it is opened, so it is not used up.
  *
  * Pure: relative imports only (type-only for Supabase), so `node --test` loads it.
  */
@@ -65,9 +71,6 @@ export const LICENCE_RESUBMIT_PURCHASE_AR =
   "أعد تقديم التوثيق أولاً: لم يُعتمد توثيق رخصتك، فارفعه من جديد، وبعدها يمكنك الدفع ويُحجز اشتراكك حتى الاعتماد.";
 export const LICENCE_RESUBMIT_FIRM_PURCHASE_AR =
   "أعد تقديم توثيق مكتبك أولاً: لم يُعتمد التوثيق، فتواصل مع فريق المنصة لإعادة تقديمه، وبعدها يمكنك الدفع ويُحجز اشتراكك حتى الاعتماد.";
-/** l18 review (٢٣٩ ruling): a verified account whose licence's recorded expiry date has passed. */
-export const LICENCE_EXPIRED_PURCHASE_AR =
-  "جدّد رخصتك أولاً: انتهت صلاحية الرخصة المسجّلة في حسابك. حدّث بيانات الرخصة بعد تجديدها أو تواصل معنا، ثم أكمل الاشتراك.";
 export const LICENCE_FREE_CODE_PENDING_AR =
   "هذا الكود يفعّل باقة مهنية، والباقات المهنية تُفعَّل بعد اعتماد توثيق رخصتك. فعّل الكود بعد الاعتماد.";
 export const LICENCE_CHECK_FAILED_AR = "تعذّر التحقق من توثيق رخصتك الآن، حاول مرة أخرى بعد قليل";
@@ -88,14 +91,11 @@ export function licenceGatedPurchase(item: Pick<PayableItem, "kind" | "buyers">,
  * The facts the licence rule reads: verifiedProvider's, plus (l18 review)
  *   licenceSubmitted  the lawyer's own licence image was uploaded
  *                     (lawyer_profiles.licence_image_path); undefined → not
- *                     read, taken as submitted;
- *   licenceExpiry     the recorded expiry date (YYYY-MM-DD) of the licence a
- *                     verified account stands on (its own lawyer row, or the
- *                     verified firm it owns); null / undefined → none recorded.
+ *                     read, taken as submitted.
+ * (l19, owner ٢٤١: the licence's expiry date is no longer one of them.)
  */
 export interface LicenceFacts extends VerifiedProviderFacts {
   licenceSubmitted?: boolean;
-  licenceExpiry?: string | null;
 }
 
 export type LicenceStanding = "verified" | "pending" | "unverified";
@@ -114,23 +114,16 @@ export function licenceStanding(facts: VerifiedProviderFacts | null): LicenceSta
   return "unverified";
 }
 
-export type LicenceDetail = "verified" | "expired" | "pending" | "none" | "rejected" | "suspended";
+export type LicenceDetail = "verified" | "pending" | "none" | "rejected" | "suspended";
 
-/** The day in Riyadh (UTC+3, no daylight saving), YYYY-MM-DD. */
-function riyadhDay(now: Date): string {
-  return new Date(now.getTime() + 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
-}
-
-/** A recorded expiry date before today (Riyadh). An unreadable value never counts as expired. */
-export function licenceExpired(expiry: string | null | undefined, now: Date): boolean {
-  if (typeof expiry !== "string" || !/^\d{4}-\d{2}-\d{2}/.test(expiry)) return false;
-  return expiry.slice(0, 10) < riyadhDay(now);
-}
-
-/** The l18 review's finer standing (see the header). Null when the facts could not be read. */
-export function licenceDetail(facts: LicenceFacts | null, now: Date = new Date()): LicenceDetail | null {
+/**
+ * The l18 review's finer standing (see the header). Null when the facts could
+ * not be read. l19 (owner ٢٤١): a verified account is "verified" whatever its
+ * licence's expiry date.
+ */
+export function licenceDetail(facts: LicenceFacts | null): LicenceDetail | null {
   if (!facts) return null;
-  if (verifiedProviderDecision(facts).ok) return licenceExpired(facts.licenceExpiry, now) ? "expired" : "verified";
+  if (verifiedProviderDecision(facts).ok) return "verified";
   if (facts.userType === "firm") {
     const owned = facts.ownedFirmStatuses;
     if (owned.includes("pending")) return "pending";
@@ -163,78 +156,53 @@ const resubmitRefusal = (userType: string): LicencePurchaseDecision =>
     ? { ok: false, status: 403, error: LICENCE_RESUBMIT_FIRM_PURCHASE_AR, code: LICENCE_PURCHASE_CODE, verifyHref: null }
     : { ok: false, status: 403, error: LICENCE_RESUBMIT_PURCHASE_AR, code: LICENCE_PURCHASE_CODE, verifyHref: LICENCE_VERIFY_HREF };
 
-const expiredRefusal = (): LicencePurchaseDecision => ({
-  ok: false, status: 403, error: LICENCE_EXPIRED_PURCHASE_AR, code: LICENCE_PURCHASE_CODE, verifyHref: null,
-});
-
 /**
- * A PAID purchase (٢٣٩, the l18 review ruling): verified → go; pending → go,
- * held until approval; none → a plan goes held (submitLicence: the copy asks
- * for the licence), the founder membership is refused; rejected → «أعد تقديم
- * التوثيق أولاً»; suspended → «وثّق رخصتك أولاً»; expired → «جدّد رخصتك
- * أولاً»; unread → 503.
+ * A PAID purchase (٢٣٩, the l18 review ruling): verified (l19 ٢٤١: whatever
+ * the licence's expiry date) → go; pending → go, held until approval; none →
+ * a plan goes held (submitLicence: the copy asks for the licence), the
+ * founder membership is refused; rejected → «أعد تقديم التوثيق أولاً»;
+ * suspended → «وثّق رخصتك أولاً»; unread → 503.
  */
 export function licenceCheckoutDecision(
   userType: string,
   facts: LicenceFacts | null,
-  opts: { itemKind?: string; now?: Date } = {},
+  opts: { itemKind?: string } = {},
 ): LicencePurchaseDecision {
-  const detail = licenceDetail(facts, opts.now ?? new Date());
+  const detail = licenceDetail(facts);
   if (detail === null) return { ok: false, status: 503, error: LICENCE_CHECK_FAILED_AR };
   if (detail === "verified") return { ok: true, held: false };
   if (detail === "pending") return { ok: true, held: true };
   if (detail === "none") return opts.itemKind === "membership" ? unverifiedRefusal(userType) : { ok: true, held: true, submitLicence: true };
   if (detail === "rejected") return resubmitRefusal(userType);
-  if (detail === "expired") return expiredRefusal();
   return unverifiedRefusal(userType);
 }
 
-/** A FREE activation of a gated item: only a verified, unexpired licence; pending → 403 (the code stays unused). */
-export function licenceFreeCodeDecision(userType: string, facts: LicenceFacts | null, now: Date = new Date()): LicencePurchaseDecision {
-  const detail = licenceDetail(facts, now);
+/** A FREE activation of a gated item: only a verified licence (l19 ٢٤١: expired or not); pending → 403 (the code stays unused). */
+export function licenceFreeCodeDecision(userType: string, facts: LicenceFacts | null): LicencePurchaseDecision {
+  const detail = licenceDetail(facts);
   if (detail === null) return { ok: false, status: 503, error: LICENCE_CHECK_FAILED_AR };
   if (detail === "verified") return { ok: true, held: false };
   if (detail === "pending") return { ok: false, status: 403, error: LICENCE_FREE_CODE_PENDING_AR, code: LICENCE_PURCHASE_CODE, verifyHref: null };
   if (detail === "rejected") return resubmitRefusal(userType);
-  if (detail === "expired") return expiredRefusal();
   return unverifiedRefusal(userType);
 }
 
 /**
  * The verification facts (service client, keyed on the session's user id),
- * with the licence's submission and expiry (l18 review); null on a failed read.
+ * with the lawyer's licence submission (l18 review); null on a failed read.
+ * l19 (owner ٢٤١): the expiry date is no longer read here.
  */
 export async function readLicenceFacts(admin: SupabaseClient, userId: string, userType: string): Promise<LicenceFacts | null> {
   const base = await readVerifiedProviderFacts(admin, userId, userType);
-  if (!base || userType === "admin") return base;
+  if (!base || userType !== "lawyer") return base;
   try {
-    if (userType === "lawyer") {
-      const { data, error } = await admin.from("lawyer_profiles").select("licence_image_path, license_expiry").eq("user_id", userId).maybeSingle();
-      if (error) {
-        console.error("[licenceGate] reading the licence failed:", error.code ?? "no-code");
-        return null;
-      }
-      const row = data as { licence_image_path?: unknown; license_expiry?: unknown } | null;
-      return {
-        ...base,
-        licenceSubmitted: typeof row?.licence_image_path === "string" && row.licence_image_path !== "",
-        licenceExpiry: base.lawyerStatus === "verified" && typeof row?.license_expiry === "string" ? row.license_expiry : null,
-      };
+    const { data, error } = await admin.from("lawyer_profiles").select("licence_image_path").eq("user_id", userId).maybeSingle();
+    if (error) {
+      console.error("[licenceGate] reading the licence failed:", error.code ?? "no-code");
+      return null;
     }
-    if (userType === "firm") {
-      const { data, error } = await admin.from("firm_profiles").select("verification_status, license_expiry").eq("owner_user_id", userId);
-      if (error) {
-        console.error("[licenceGate] reading the firm licence failed:", error.code ?? "no-code");
-        return null;
-      }
-      // the latest recorded expiry among the verified firms the account owns
-      const expiries = ((data ?? []) as Array<{ verification_status?: unknown; license_expiry?: unknown }>)
-        .filter((f) => f.verification_status === "verified" && typeof f.license_expiry === "string")
-        .map((f) => String(f.license_expiry))
-        .sort();
-      return { ...base, licenceExpiry: expiries.length > 0 ? expiries[expiries.length - 1] : null };
-    }
-    return base;
+    const row = data as { licence_image_path?: unknown } | null;
+    return { ...base, licenceSubmitted: typeof row?.licence_image_path === "string" && row.licence_image_path !== "" };
   } catch (err) {
     console.error("[licenceGate] the licence read threw:", err instanceof Error ? err.name : "error");
     return null;

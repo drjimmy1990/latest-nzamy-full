@@ -245,9 +245,10 @@ test("§14 the cache: bounded, expires, refreshes on a hit; the key carries the 
 
 test("§14 route contract: the guard runs before the cache; errors and «available: false» are never kept; masked on every request", () => {
   const route = readFileSync(new URL("./route.ts", import.meta.url), "utf8").replace(/\r\n/g, "\n");
-  const gate = route.indexOf("const gate = await libraryGate();");
+  // l19 (POST-L18-01): the guard is awaited within its budget (_bounded.ts), still first
+  const gate = route.indexOf("const gateRun = await withinBudget(libraryGate(), GATE_BUDGET_MS);");
   assert.ok(gate > 0 && gate < route.indexOf("bulkCache.get(key)") && gate < route.indexOf("articleCache.get(key)"));
-  assert.match(route, /if \(shapedLaw\.found && lawTitle\) bulkCache\.set\(key, shapedLaw\);/);
+  assert.match(route, /if \(shaped\.found && lawTitle\) bulkCache\.set\(key, shaped\);/);
   assert.match(route, /if \(lawTitle\) articleCache\.set\(key, out\);/);
   assert.match(route, /'Server-Timing': timing/);
   assert.match(route, /cleanLawLinks\(shapeLawLinks\(data, slug, types, safeArticleStatus, lawStatusForDetail, autoTagOn\), slug, lawTitle\)/);

@@ -12,14 +12,6 @@ interface DevicesAnswer {
   available: boolean;
 }
 
-/** «جهاز واحد», «جهازين», «3 أجهزة», «11 جهازاً». */
-function devicesCountAr(n: number): string {
-  if (n === 1) return "جهاز واحد";
-  if (n === 2) return "جهازين";
-  if (n >= 3 && n <= 10) return `${n} أجهزة`;
-  return `${n} جهازاً`;
-}
-
 /**
  * «أجهزتي» in Settings → الأمان (owner ٤٢٧): the devices this account opened
  * the subscriber library on, with «تسجيل خروج هذا الجهاز» on each.
@@ -57,8 +49,9 @@ export function LibraryDevicesPanel() {
       <SectionTitle>أجهزتي</SectionTitle>
       <div className="rounded-2xl border border-gray-200 dark:border-white/[0.08] p-4 space-y-3">
         <p className="text-xs leading-6 text-gray-600 dark:text-gray-300">
+          {/* Batch l19 (owner ٢٣٣): enabled = the whole account's 1 phone + 1 computer; switching goes through the administration. */}
           {data?.enabled
-            ? `يمكن فتح المكتبة القانونية بحسابك على ${devicesCountAr(data.limit)} مصرّحة. سجّل الخروج من جهاز لا تستخدمه ليتاح مكانه لجهاز آخر.`
+            ? "حسابك مفعّل على جوال واحد وحاسوب واحد في المنصة كلها. لتبديل جهاز أو إزالته تواصل مع إدارة نظامي."
             : "الأجهزة التي فتحت عليها المكتبة القانونية بحسابك. تسجيل الخروج من المنصة يحرّر مكان الجهاز تلقائياً."}
         </p>
         {failed && <p className="text-xs text-red-600 dark:text-red-300">تعذّر تحميل أجهزتك.</p>}
@@ -66,6 +59,7 @@ export function LibraryDevicesPanel() {
         {data && (
           <LibraryDeviceList
             devices={data.devices}
+            readOnly={data.enabled}
             onRevoked={(id) => setData((d) => (d ? { ...d, devices: d.devices.filter((x) => x.id !== id) } : d))}
           />
         )}

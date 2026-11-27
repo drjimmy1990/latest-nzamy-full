@@ -16,6 +16,8 @@ import {
   deviceGateDecision,
   hashDeviceCode,
   parseDeviceCheckRow,
+  RETIRED_DEVICE_CODE,
+  RETIRED_DEVICE_CODE_AR,
 } from "./deviceLimit.ts";
 import { readerRefusalFrom } from "./readerRefusal.ts";
 
@@ -87,11 +89,14 @@ test("verify answers in Arabic, with the attempts left", () => {
   assert.match(deviceCodeVerifyMessageAr("too_many", null) ?? "", /المحاولات/);
 });
 
-test("server: the gate first, the old check until 20261127_60 runs; nothing suspends or freezes the account (owner ٦٣)", () => {
+// Batch l19 (owner ٢٣٣): the library reads go through the whole-account gate (one mobile + one
+// computer, registered silently — no e-mail code); library_device_gate / library_device_check
+// are no longer called by a read. The pins on what must NEVER happen stay.
+test("server: the account gate, no e-mail code on a read; nothing suspends or freezes the account (owner ٦٣)", () => {
   const src = read("lib/library/deviceLimitServer.ts");
-  assert.ok(src.includes('.rpc("library_device_gate", {'));
-  assert.ok(src.includes("p_code_required: deviceCodesAvailable(),"), "no e-mail → no lock-out");
-  assert.ok(src.includes('.rpc("library_device_check", { p_user: userId, p_device_hash: hash, p_label: label })'));
+  assert.ok(src.includes("await accountDeviceOutcome({"));
+  assert.equal(src.includes('.rpc("library_device_gate"'), false);
+  assert.equal(src.includes("p_code_required"), false, "a new device is never held for an e-mail code");
   for (const gone of ["suspendForThirdDevice", "suspendAccountWith", "freezeEntitlementsWith", "user_suspended_device_limit", "logAdminAction"]) {
     assert.equal(src.includes(gone), false, `no ${gone} in the device gate`);
   }
@@ -102,14 +107,15 @@ test("server: the gate first, the old check until 20261127_60 runs; nothing susp
   assert.equal(admin.includes("توقف الحساب"), false, "the admin text no longer promises a suspension");
 });
 
-test("routes: the code is sent on request only (never by a read) and checked with the session", () => {
-  const send = read("app/api/v1/library/devices/code/route.ts");
-  assert.ok(send.includes('rpc("library_device_code_issue"'));
-  assert.ok(send.includes("supabase.auth.getUser()"));
-  assert.equal(send.includes("request.json("), false, "nothing from the body");
-  const verify = read("app/api/v1/library/devices/verify/route.ts");
-  assert.ok(verify.includes('rpc("library_device_code_verify"'));
-  assert.ok(verify.includes("p_session: await currentSessionId()"));
+test("l19 review B3: the retired code routes answer 410 with an honest line and call nothing", () => {
+  for (const f of ["app/api/v1/library/devices/code/route.ts", "app/api/v1/library/devices/verify/route.ts"]) {
+    const src = read(f);
+    assert.match(src, /\{ error: RETIRED_DEVICE_CODE_AR, code: RETIRED_DEVICE_CODE \},\s*\{ status: 410,/, f);
+    assert.doesNotMatch(src, /\.rpc\(|createServiceClient|createClient|request\.json\(|library_device_code_(issue|verify)|sendEmail/, `${f}: no database call, no body, no mail`);
+  }
+  assert.equal(RETIRED_DEVICE_CODE, "device_code_retired");
+  assert.match(RETIRED_DEVICE_CODE_AR, /تواصل مع الإدارة/);
+  assert.doesNotMatch(RETIRED_DEVICE_CODE_AR, /[A-Za-z]/, "no technical words");
   const server = read("lib/library/deviceLimitServer.ts");
   assert.equal(server.includes("library_device_code_issue"), false, "a read never sends a code");
 });

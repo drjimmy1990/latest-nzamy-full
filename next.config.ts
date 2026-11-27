@@ -201,6 +201,16 @@ const nextConfig: NextConfig = {
   // so a page opened at http://127.0.0.1:3000 was refused. Loopback only —
   // never a LAN or public host. No effect on `next build` / `next start`.
   allowedDevOrigins: ["127.0.0.1"],
+  // ── nodemailer stays a plain Node package (batch l19, LIVE-18) ─────────────
+  // The SMTP sender (src/lib/email/sendEmail.ts) loads nodemailer on the first
+  // send. It is not on Next's built-in list of server packages left
+  // unbundled, so the build used to compile its own copy into the server
+  // chunks. Listing it here makes `next start` require the real package from
+  // node_modules at run time, the way nodemailer is written to run (it opens
+  // sockets and TLS through Node's own modules). deploy.sh does not run
+  // `npm ci`: the server's node_modules must hold the version package-lock.json
+  // names — the admin's «اختبار إرسال بريد» says so if it does not.
+  serverExternalPackages: ["nodemailer"],
   // ── One HTML for every visitor (owner 18 Nov, items 2.7 + 4) ───────────────
   // By default Next "streams" generateMetadata for any user agent outside its
   // HTML-limited-bot list: the <title>, description, canonical and robots tags

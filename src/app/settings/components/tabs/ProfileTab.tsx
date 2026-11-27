@@ -25,6 +25,8 @@ import { normalizeSaudiMobile, saudiMobileMessage } from "@/lib/services/saudiMo
 import { LocalActionStatus, SectionTitle } from "./_shared";
 import DisabledReason from "@/components/ui/DisabledReason";
 import DensityToggle from "@/components/DensityToggle";
+import { PhoneTakenNotice } from "@/components/auth/PhoneTakenNotice";
+import { isPhoneTakenText } from "@/lib/phoneOtp/confirmedPhone";
 
 // ── The server envelope (GET/PATCH /api/v1/profile) — only the fields this tab reads ──
 interface ProfileServerRow {
@@ -553,7 +555,9 @@ export function ProfileTab() {
       )}
 
       {/* Server errors, action alerts and the Save button */}
-      {error && (
+      {/* Owner ٢٣٥ (batch l19): a number used on another account — his sentence and its three links. */}
+      {error && isPhoneTakenText(error) && <PhoneTakenNotice isAr={lang !== "en"} signOutFirst={false} />}
+      {error && !isPhoneTakenText(error) && (
         <div className="flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300">
           <WarningCircle size={15} weight="fill" />
           {error}

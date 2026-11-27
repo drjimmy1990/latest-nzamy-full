@@ -6,6 +6,7 @@ import {
   ChatCircleDots, CaretLeft, Sparkle, ArrowCounterClockwise,
 } from "@phosphor-icons/react";
 import Link from "next/link";
+import { PLAN_ALLOWANCE_COPY, PLAN_ALLOWANCE_TOPUP_HREF } from "@/lib/ai/planAllowance";
 import { useTheme } from "@/components/ThemeProvider";
 import AiResultActions from "@/components/AiResultActions";
 import { asCitations, CitedText, SourceList, stripCitationMarkers } from "@/components/ai/CitedAnswer";
@@ -131,7 +132,7 @@ function QuickAnswerTool() {
   const cites = asCitations(run.citations);
   const ungrounded = isUngroundedAnswer(run.output);
   // Owner ٤١٧: open to every account (general guidance), but the library's AI tier still gates it.
-  const libraryRefusal = run.phase === "error" ? libraryToolRefusal(run.code, "سؤال قانوني سريع", user.userType) : null;
+  const libraryRefusal = run.phase === "error" ? libraryToolRefusal(run.code, "سؤال قانوني سريع", user.userType, true) : null;
   // Art. 18: /ai/wargaming refuses a consultant, so it is not offered to him.
   // Owner ٤١٧ (8 Nov): «عصارة المرفقات» (/ai/analyze's lawyer half) and the simulator are
   // lawyer and firm tools, so another account is offered only the legal opinion.
@@ -244,6 +245,15 @@ function QuickAnswerTool() {
         {run.phase === "error" && run.error && !libraryRefusal && (
           <p role="alert" className={`text-[12px] leading-relaxed ${isDark ? "text-red-400" : "text-red-600"}`}>
             {quickAnswerRefusalText(run.code) ?? run.error}
+            {/* ق٢٦-٦ (l19): the plan's questions of this month are used and the points do not cover one. */}
+            {run.code === "plan_allowance_used" && (
+              <>
+                {" "}
+                <Link href={PLAN_ALLOWANCE_TOPUP_HREF} className="font-bold underline">
+                  {PLAN_ALLOWANCE_COPY.topupLink}
+                </Link>
+              </>
+            )}
           </p>
         )}
         <p className={`text-[11px] leading-relaxed ${muted}`}>

@@ -15,7 +15,15 @@
  */
 
 import { useEffect, useState } from "react";
-import { LIBRARY_ACCESS_ENDPOINT, parseLibraryAccessResponse, parseLibraryAccountLocked } from "./libraryFullAccess";
+import {
+  LIBRARY_ACCESS_ENDPOINT,
+  parseLibraryAccessResponse,
+  parseLibraryAccountLocked,
+  parseLibraryPointsLock,
+  type LibraryAccessPointsLock,
+} from "./libraryFullAccess";
+import { libraryTopupHref } from "./pointsGate";
+import { gatewayAllowsCheckout } from "@/lib/payments/checkoutView";
 
 export interface LibraryFullAccessState {
   hasFullAccess: boolean;
@@ -59,5 +67,65 @@ export function useLibraryAccountLocked(enabled = true): { locked: boolean; load
       });
     return () => { alive = false; };
   }, [enabled]);
+  return state;
+}
+
+// ─── LIVE-10 (batch l19): the locked-item note's one read per page ───────────
+// A book or a precedent draws a LibraryLockedNote under EVERY locked block, so
+// the note must not ask the access route once per block. One request per page
+// view, shared by every note mounted within NOTE_READ_TTL_MS of it (a later
+// mount — the reader scrolled on after a top-up — asks again). Only when a
+// points lock is answered, the payments switch is read once too, for the
+// top-up link (the checkout while payment is on, else the server's link).
+
+export interface LibraryLockNoteState {
+  /** The library is locked for this account's type (owner item 9). */
+  accountLocked: boolean;
+  /** A subscriber below the points minimum: the top-up notice replaces the subscribe button. */
+  pointsLock: LibraryAccessPointsLock | null;
+  /** Where «اشحن نقاطك» goes (set with pointsLock). */
+  topupHref: string | null;
+  loading: boolean;
+}
+
+const NOTE_READ_TTL_MS = 30_000;
+let noteRead: { at: number; promise: Promise<Omit<LibraryLockNoteState, "loading">> } | null = null;
+
+function readLockNoteState(): Promise<Omit<LibraryLockNoteState, "loading">> {
+  const now = Date.now();
+  if (noteRead && now - noteRead.at < NOTE_READ_TTL_MS) return noteRead.promise;
+  const promise = fetch(LIBRARY_ACCESS_ENDPOINT, { headers: { Accept: "application/json" }, cache: "no-store" })
+    .then(async (res) => {
+      const body = await res.json().catch(() => null);
+      const accountLocked = parseLibraryAccountLocked(res.ok, body);
+      const pointsLock = parseLibraryPointsLock(res.ok, body);
+      if (!pointsLock) return { accountLocked, pointsLock: null, topupHref: null };
+      const checkout = await fetch("/api/v1/payments/status", { cache: "no-store" })
+        .then(async (r) => {
+          if (!r.ok) return false;
+          const p = (await r.json().catch(() => null)) as { provider?: unknown; disabled?: unknown; status?: unknown } | null;
+          if (!p) return false;
+          return gatewayAllowsCheckout({
+            provider: typeof p.provider === "string" ? p.provider : null,
+            disabled: typeof p.disabled === "boolean" ? p.disabled : p.status === "disabled" || p.status === undefined,
+          });
+        })
+        .catch(() => false);
+      return { accountLocked, pointsLock, topupHref: checkout ? libraryTopupHref(true) : pointsLock.topupHref };
+    })
+    .catch(() => ({ accountLocked: false, pointsLock: null, topupHref: null }));
+  noteRead = { at: now, promise };
+  return promise;
+}
+
+export function useLibraryLockNoteState(): LibraryLockNoteState {
+  const [state, setState] = useState<LibraryLockNoteState>({ accountLocked: false, pointsLock: null, topupHref: null, loading: true });
+  useEffect(() => {
+    let alive = true;
+    readLockNoteState().then((answer) => {
+      if (alive) setState({ ...answer, loading: false });
+    });
+    return () => { alive = false; };
+  }, []);
   return state;
 }

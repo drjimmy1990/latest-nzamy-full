@@ -1,3 +1,4 @@
+import { officePlanRefusal } from "@/lib/auth/assertOfficePlan";
 import { NextResponse, type NextRequest } from "next/server";
 import { assertCaseWorker } from "@/lib/auth/assertCaseWorker";
 import { requireVerifiedProvider } from "@/lib/auth/verifiedProviderServer";
@@ -21,6 +22,9 @@ export async function POST(request: NextRequest) {
   try {
     const auth = await assertCaseWorker();
     if (!auth.ok) return auth.response;
+    // Owner ق٢٦-٤ / ق٢٦-٥: «reports» is «إدارة المكتب» — refused on the free side.
+    const officeLocked = await officePlanRefusal(auth.supabase, "reports", auth.userType);
+    if (officeLocked) return officeLocked;
     const { user, supabase } = auth;
     // R9b (l11): an unverified account creates no fee statement (403, Arabic).
     const unverified = await requireVerifiedProvider(user.id, auth.userType);

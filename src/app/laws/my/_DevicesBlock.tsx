@@ -5,7 +5,6 @@ import { Devices } from "@phosphor-icons/react";
 import { Shimmer } from "@/components/ui/Skeleton";
 import LibraryDeviceList, { type LibraryDeviceRow } from "@/components/library/LibraryDeviceList";
 import { BlockNote, BlockShell } from "./_BlockShell";
-import { devicesCountAr } from "./myLibraryView";
 
 interface DevicesAnswer {
   enabled: boolean;
@@ -63,13 +62,15 @@ export function DevicesBlock() {
       ) : (
         <div className="space-y-3">
           <BlockNote>
+            {/* Batch l19 (owner ٢٣٣): enabled = the whole account's 1 phone + 1 computer; switching goes through the administration. */}
             {data.enabled
-              ? `يمكن فتح المكتبة بحسابك على ${devicesCountAr(data.limit)}. أنهِ جلسة جهاز لا تستخدمه ليتاح مكانه لجهاز آخر.`
+              ? "حسابك مفعّل على جوال واحد وحاسوب واحد في المنصة كلها. لتبديل جهاز أو إزالته تواصل مع إدارة نظامي."
               : "إنهاء جلسة جهاز يزيله من هذه القائمة. تسجيل الخروج من المنصة يحرّر مكان الجهاز تلقائياً."}
           </BlockNote>
           <LibraryDeviceList
             devices={data.devices}
             revokeLabel="إنهاء الجلسة"
+            readOnly={data.enabled}
             onRevoked={(id) => setData((d) => (d ? { ...d, devices: d.devices.filter((x) => x.id !== id) } : d))}
           />
         </div>

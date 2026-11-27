@@ -339,11 +339,11 @@ test("the WhatsApp choice: on only with the switch, Zernio and the pepper; the p
   assert.match(forgot, /const \[waOn, setWaOn\] = useState\(false\)/, "off until the server says on");
   assert.match(forgot, /setWaOn\(whatsappFromStatus\(body\)\)/);
   assert.match(forgot, /if \(!cancelled\) setWaOn\(false\)/, "a failed status read keeps it off");
-  const button = forgot.indexOf(": t.submitWhatsApp}");
-  const guard = forgot.lastIndexOf("{waOn && (", button);
-  assert.ok(guard > 0 && button > guard, "the WhatsApp button renders only under waOn");
+  // l19 (POST-L18-06): one button; off → today's e-mail label, on → the label follows the typed value.
+  assert.match(forgot, /const submitLabel = !waOn \? t\.submit : channel\.ok \? \(channel\.via === "whatsapp" \? t\.submitWhatsApp : t\.submitEmail\) : t\.submitNext;/);
+  assert.match(forgot, /const channel = recoveryChannel\(email, waOn\);/, "off: recoveryChannel never answers whatsapp");
+  assert.match(forgot, /\{sending \|\| waSending \? t\.sending : submitLabel\}/);
   assert.match(forgot, /\{waOn \? t\.introChoice : t\.intro\}/, "off: today's intro");
-  assert.match(forgot, /\{sending \? t\.sending : waOn \? t\.submitEmail : t\.submit\}/, "off: today's button");
   assert.doesNotMatch(forgot, /\d{3}[\s-]?\d{4}|masked/, "the page never shows a number");
 });
 

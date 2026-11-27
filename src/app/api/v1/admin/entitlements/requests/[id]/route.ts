@@ -6,6 +6,8 @@ import { logAdminAction } from "@/lib/auth/adminAudit";
 import { grantEntitlement, type GrantAction } from "@/lib/entitlements";
 import { libraryEndsAtAr, resolveLibraryRequestGrant } from "@/lib/libraryAccess";
 import { grantLibraryAccess } from "@/lib/libraryAccessServer";
+import { grantPointsTopupAudit, grantPointsTopupNoticeAr } from "@/lib/library/grantPointsTopup";
+import { topUpLibraryGrantPoints } from "@/lib/library/grantPointsTopupServer";
 import { libraryPurchaseEligibility } from "@/lib/library/libraryPurchaseEligibility";
 import { libraryRequestApprovalDecision, requestGrantApprovalDecision } from "@/lib/library/libraryRequestApproval";
 import type { StaffRole } from "@/lib/auth/staffRoles";
@@ -332,23 +334,36 @@ async function approveLibraryRequest(input: {
     );
   }
 
+  // LIVE-10 (owner 27 Nov, batch l19): top the requester up to the library's
+  // 50-point minimum, once per grant (library_grant_points_topup, 20261209_50).
+  // Never fails the approval: the outcome is audited and answered.
+  const topup = await topUpLibraryGrantPoints(grant.grantId);
+
   await logAdminAction({
     actorId: adminId,
     action: "entitlement_request_approved",
     targetType: "entitlement_request",
     targetId: id,
     before: { status: "pending" },
-    after: { status: "approved", planRef: plan.planRef, days: plan.days, endsAt: grant.endsAt },
+    after: {
+      status: "approved",
+      planRef: plan.planRef,
+      days: plan.days,
+      endsAt: grant.endsAt,
+      pointsTopup: grantPointsTopupAudit(topup),
+    },
     metadata: { kind: "library", user_id: requesterId },
   });
 
   const untilAr = libraryEndsAtAr(grant.endsAt);
+  const grantedAr = untilAr
+    ? `تم تفعيل اشتراك المكتبة القانونية حتى ${untilAr}.`
+    : "تم تفعيل اشتراك المكتبة القانونية.";
+  const pointsAr = grantPointsTopupNoticeAr(topup);
   await recordNotification({
     userId: requesterId,
     title: "تمت الموافقة على طلبك",
-    body: untilAr
-      ? `تم تفعيل اشتراك المكتبة القانونية حتى ${untilAr}.`
-      : "تم تفعيل اشتراك المكتبة القانونية.",
+    body: pointsAr ? `${grantedAr} ${pointsAr}` : grantedAr,
     href: "/laws",
   });
 
@@ -358,6 +373,7 @@ async function approveLibraryRequest(input: {
       status: "approved",
       alreadyEntitled: false,
       grant: { planRef: plan.planRef, days: plan.days, endsAt: grant.endsAt },
+      pointsTopup: grantPointsTopupAudit(topup),
     },
   });
 }

@@ -1,3 +1,4 @@
+import { officePlanRefusal } from "@/lib/auth/assertOfficePlan";
 import { NextResponse, type NextRequest } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { assertCaseWorker } from "@/lib/auth/assertCaseWorker";
@@ -76,9 +77,9 @@ async function authorGate(id: string) {
   }
   const service = await createServiceClient();
   if (!isContractAuthor(contract as { owner_user_id: string | null }, user.id)) {
-    return { refused: true, service, uid: user.id } as const;
+    return { refused: true, service, uid: user.id, supabase, userType: auth.userType } as const;
   }
-  return { refused: false, service, uid: user.id } as const;
+  return { refused: false, service, uid: user.id, supabase, userType: auth.userType } as const;
 }
 
 function forbidden() {
@@ -137,6 +138,9 @@ export async function PUT(request: NextRequest, context: { params: Promise<{ id:
     const gate = await authorGate(id);
     if ("response" in gate) return gate.response;
     if (gate.refused) return forbidden();
+    // Owner ق٢٦-٤: «contracts» is «إدارة المكتب» — refused on the free side.
+    const officeLocked = await officePlanRefusal(gate.supabase, "contracts", gate.userType);
+    if (officeLocked) return officeLocked;
 
     const parsed = parsePartyNationalId(await request.json().catch(() => null));
     if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: 400, headers: NO_STORE });

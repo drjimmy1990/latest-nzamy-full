@@ -1,3 +1,4 @@
+import { officePlanRefusal } from "@/lib/auth/assertOfficePlan";
 import { NextResponse, type NextRequest } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { assertRole } from "@/lib/auth/assertRole";
@@ -47,6 +48,9 @@ export async function POST(_request: NextRequest, { params }: { params: Promise<
   try {
     const auth = await assertRole(["lawyer", "firm"]);
     if (!auth.ok) return auth.response;
+    // Owner ق٢٦-٤ / ق٢٦-٥: «invoices» is «إدارة المكتب» — refused on the free side.
+    const officeLocked = await officePlanRefusal(auth.supabase, "invoices", auth.userType);
+    if (officeLocked) return officeLocked;
     const { user, supabase } = auth;
     const { id } = await params;
     if (!id || id.length > 100) return NextResponse.json({ error: "paymentId required" }, { status: 400 });

@@ -9144,3 +9144,152 @@ select 'l18 review: the owner of a verified firm reads the open requests, with e
 select 'l18 review: exactly one index on the confirmed mobiles — the plain one of 20261208_20 until 20261208_50''s unique index exists, then only the unique one (run 20261208_20, then 20261208_50)' as check,
        (to_regclass('public.profiles_confirmed_phone_idx') is not null) <> (to_regclass('public.profiles_confirmed_phone_unique') is not null) as ok;
 -- <<< verify:l18_review
+-- >>> verify:l19_corr — supabase/tests/rls/l19_licence_expiry.test.sql
+-- Batch l19 corr (owner ٢٤١): the licence expiry alerts. 20261209_10 runs any time (before or after
+-- the deploy). Before it runs, both checks answer ok = false («run 20261209_10»).
+select 'l19 corr: licence_expiry_alerts(uuid[], integer) is a stable SECURITY DEFINER with an empty search_path, service role only, verified accounts only, the later of the registry and the lawyer''s own date (run 20261209_10)' as check,
+       coalesce((select p.prosecdef
+                        and p.provolatile = 's'
+                        and p.proconfig @> array['search_path=""']
+                        and position('verification_status = ''verified''' in pg_catalog.pg_get_functiondef(p.oid)) > 0
+                        and position('greatest(r.expiry_date, lp.license_expiry)' in pg_catalog.pg_get_functiondef(p.oid)) > 0
+                        and not has_function_privilege('anon', p.oid, 'EXECUTE')
+                        and not has_function_privilege('authenticated', p.oid, 'EXECUTE')
+                        and has_function_privilege('service_role', p.oid, 'EXECUTE')
+                   from pg_catalog.pg_proc p where p.oid = to_regprocedure('public.licence_expiry_alerts(uuid[], integer)')), false) as ok;
+select 'l19 corr: email_reminder_log accepts licence_expiry_30d_app, licence_expiry_7d_app and licence_expiry_0d_app, and still the 20261201_45 kinds (run 20261209_10)' as check,
+       coalesce((select bool_and(position(quote_literal(k) in d.def) > 0)
+                   from (select string_agg(pg_catalog.pg_get_constraintdef(con.oid), ' ') as def
+                           from pg_catalog.pg_constraint con
+                          where con.conrelid = to_regclass('public.email_reminder_log') and con.contype = 'c'
+                            and pg_catalog.pg_get_constraintdef(con.oid) ~ '\mkind\M') d,
+                        unnest(array['licence_expiry_30d_app', 'licence_expiry_7d_app', 'licence_expiry_0d_app',
+                                     'task_due_1d_app', 'contract_pay_due_app', 'firm_invite']) as k), false) as ok;
+-- <<< verify:l19_corr
+
+-- >>> verify:l19_lawyer_otp_failed_delivery — supabase/tests/rls/l19_lawyer_otp_failed_delivery.test.sql
+-- Batch l19-email (LIVE-18). 20261209_30 runs any time; before it runs this reads f («run 20261209_30»).
+select 'l19 email: a lawyer code whose e-mail send failed burns no 60 s cooldown and no hourly code; the 24 h per-target limit and service_role-only stay (run 20261209_30)' as check,
+       coalesce(pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.lawyer_otp_issue(uuid, text, text, text, text, text, text)')),
+                                  'delivery <> ''failed''') > 0
+                and pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.lawyer_otp_issue(uuid, text, text, text, text, text, text)')),
+                                      'target_limit') > 0
+                and not has_function_privilege('authenticated', to_regprocedure('public.lawyer_otp_issue(uuid, text, text, text, text, text, text)'), 'EXECUTE')
+                and has_function_privilege('service_role', to_regprocedure('public.lawyer_otp_issue(uuid, text, text, text, text, text, text)'), 'EXECUTE'), false) as ok;
+-- <<< verify:l19_lawyer_otp_failed_delivery
+-- >>> verify:l19_devices — supabase/tests/rls/l19_account_device_gate.test.sql
+-- Batch l19 devices (owner ٢٣٣ / LIVE-17): one mobile + one computer per account. 20261209_40 runs
+-- BEFORE the deploy. Before it runs each check answers ok = false («run 20261209_40»).
+select 'l19 devices: account_device_gate(uuid,text,text,text) is SECURITY DEFINER with an empty search_path, reads the account switch, exempts admins and platform_staff, service_role only (run 20261209_40)' as check,
+       coalesce((select p.prosecdef
+                        and p.proconfig @> array['search_path=""']
+                        and position('account_device_limit_enabled' in pg_catalog.pg_get_functiondef(p.oid)) > 0
+                        and position('platform_staff' in pg_catalog.pg_get_functiondef(p.oid)) > 0
+                        and position('''exempt''' in pg_catalog.pg_get_functiondef(p.oid)) > 0
+                        and position('d.kind = v_kind' in pg_catalog.pg_get_functiondef(p.oid)) > 0
+                        and position('v_recent >= 5' in pg_catalog.pg_get_functiondef(p.oid)) > 0
+                        and not has_function_privilege('anon', p.oid, 'EXECUTE')
+                        and not has_function_privilege('authenticated', p.oid, 'EXECUTE')
+                   from pg_catalog.pg_proc p where p.oid = to_regprocedure('public.account_device_gate(uuid,text,text,text)')), false) as ok;
+select 'l19 devices: library_monitor_settings.account_device_limit_enabled and user_devices.kind (mobile/desktop) exist (run 20261209_40)' as check,
+       coalesce(exists (select 1 from pg_catalog.pg_attribute
+                         where attrelid = to_regclass('public.library_monitor_settings')
+                           and attname = 'account_device_limit_enabled' and not attisdropped)
+                and exists (select 1 from pg_catalog.pg_constraint
+                             where conrelid = to_regclass('public.user_devices') and conname = 'user_devices_kind_check'), false) as ok;
+-- <<< verify:l19_devices
+-- >>> verify:l19_grant_topup — supabase/tests/rls/l19_library_grant_topup.test.sql
+-- Batch l19 (LIVE-10): an admin / request library grant tops the grantee up to 50 points, once per grant.
+-- 20261209_50 runs before or after the deploy; before it runs both checks answer ok = false.
+select 'l19 grant top-up: library_grant_points_topup(uuid) is SECURITY DEFINER with an empty search_path, locks the grant, credits through credit_wallet_points once per grant, service role only (run 20261209_50)' as check,
+       coalesce((select p.prosecdef
+                        and p.proconfig @> array['search_path=""']
+                        and position('for update' in lower(pg_catalog.pg_get_functiondef(p.oid))) > 0
+                        and position('credit_wallet_points' in pg_catalog.pg_get_functiondef(p.oid)) > 0
+                        and position('library_grant_points_topups' in pg_catalog.pg_get_functiondef(p.oid)) > 0
+                        and position('pl.expires_at > v_from' in pg_catalog.pg_get_functiondef(p.oid)) > 0
+                        and not has_function_privilege('anon', p.oid, 'EXECUTE')
+                        and not has_function_privilege('authenticated', p.oid, 'EXECUTE')
+                   from pg_catalog.pg_proc p where p.oid = to_regprocedure('public.library_grant_points_topup(uuid)')), false) as ok;
+select 'l19 grant top-up: library_grant_points_topups has RLS on and no anon / authenticated read (run 20261209_50)' as check,
+       coalesce((select c.relrowsecurity
+                        and not has_table_privilege('anon', c.oid, 'SELECT')
+                        and not has_table_privilege('authenticated', c.oid, 'SELECT')
+                   from pg_catalog.pg_class c where c.oid = to_regclass('public.library_grant_points_topups')), false) as ok;
+-- <<< verify:l19_grant_topup
+-- >>> verify:l19_office — supabase/tests/rls/l19_office_plan_level.test.sql
+-- Batch l19 «office» (owner ق٢٦-٥): the office step of an account (none / office / enterprise) for the
+-- sidebar and the page guard. 20261209_60 runs any time (before or after the deploy). Before it runs,
+-- the check answers ok = false («run …»).
+select 'l19 office: office_plan_level(uuid) answers ''none'' through office_features_locked and is SECURITY DEFINER with an empty search_path, service role only; my_office_plan_level() is for authenticated only (run 20261209_60)' as check,
+       coalesce((select p.prosecdef
+                        and p.proconfig @> array['search_path=""']
+                        and position('office_features_locked(p_user)' in pg_catalog.pg_get_functiondef(p.oid)) > 0
+                        and position('office_enterprise_plan_ids()' in pg_catalog.pg_get_functiondef(p.oid)) > 0
+                        and not has_function_privilege('anon', p.oid, 'EXECUTE')
+                        and not has_function_privilege('authenticated', p.oid, 'EXECUTE')
+                   from pg_catalog.pg_proc p where p.oid = to_regprocedure('public.office_plan_level(uuid)')), false)
+       and coalesce((select p.prosecdef
+                        and p.proconfig @> array['search_path=""']
+                        and position('auth.uid()' in pg_catalog.pg_get_functiondef(p.oid)) > 0
+                        and not has_function_privilege('anon', p.oid, 'EXECUTE')
+                        and has_function_privilege('authenticated', p.oid, 'EXECUTE')
+                   from pg_catalog.pg_proc p where p.oid = to_regprocedure('public.my_office_plan_level()')), false) as ok;
+-- <<< verify:l19_office
+-- >>> verify:l19_ind_ai_fair_use — supabase/tests/rls/l19_ind_ai_fair_use.test.sql
+-- Batch l19 «plans» (owner ق٢٦-٦): the ind-ai fair use — 30 questions + 2 works a Riyadh month, counted on
+-- the server. 20261209_70 runs BEFORE the deploy. Before it runs, every check answers ok = false («run …»).
+select 'l19 plans: the ind-ai fair-use functions are SECURITY DEFINER with an empty search_path and service_role only (run 20261209_70)' as check,
+       coalesce((select count(*) = 3
+                        and bool_and(p.prosecdef
+                                     and p.proconfig @> array['search_path=""']
+                                     and not has_function_privilege('anon', p.oid, 'EXECUTE')
+                                     and not has_function_privilege('authenticated', p.oid, 'EXECUTE')
+                                     and has_function_privilege('service_role', p.oid, 'EXECUTE'))
+                   from pg_catalog.pg_proc p
+                  where p.oid in (to_regprocedure('public.ind_ai_plan_active(uuid)'),
+                                  to_regprocedure('public.ai_plan_allowance_status(uuid)'),
+                                  to_regprocedure('public.ai_start_plan_allowance_run(uuid,text,text,text,int,int,text,timestamptz,boolean,jsonb,text[],int,uuid,jsonb)'))), false) as ok;
+select 'l19 plans: the allowance matches plan id ind-ai and counts the Riyadh month, failed runs excluded, the setting clamped to 0..1000 (run 20261209_70)' as check,
+       coalesce(position('s.plan_id = ''ind-ai''' in pg_catalog.pg_get_functiondef(to_regprocedure('public.ind_ai_plan_active(uuid)'))) > 0
+                and position('Asia/Riyadh' in pg_catalog.pg_get_functiondef(to_regprocedure('public.ai_plan_allowance_status(uuid)'))) > 0
+                and position('r.status <> ''failed''' in pg_catalog.pg_get_functiondef(to_regprocedure('public.ai_plan_allowance_status(uuid)'))) > 0
+                and position('least(1000, greatest(0,' in pg_catalog.pg_get_functiondef(to_regprocedure('public.ai_plan_allowance_status(uuid)'))) > 0, false) as ok;
+select 'l19 plans: ai_plan_allowance_uses has RLS on, run_id as its key and no session access; the ind_ai_fair_use setting exists (run 20261209_70)' as check,
+       coalesce((select c.relrowsecurity from pg_catalog.pg_class c where c.oid = to_regclass('public.ai_plan_allowance_uses')), false)
+       and coalesce(exists (select 1 from pg_catalog.pg_constraint k
+                             where k.conrelid = to_regclass('public.ai_plan_allowance_uses') and k.contype = 'p'
+                               and k.conname = 'ai_plan_allowance_uses_pkey'), false)
+       and case when to_regclass('public.ai_plan_allowance_uses') is null then false
+                else not has_table_privilege('authenticated', 'public.ai_plan_allowance_uses', 'SELECT')
+                     and not has_table_privilege('anon', 'public.ai_plan_allowance_uses', 'SELECT') end
+       and coalesce(exists (select 1 from public.platform_settings where key = 'ind_ai_fair_use'), false) as ok;
+-- <<< verify:l19_ind_ai_fair_use
+
+-- >>> verify:l19_grant_topup_follow — supabase/tests/rls/l19_grant_topup_follow.test.sql
+-- l19 review (access S4): a library grant's top-up lot follows the grant's end (revoke / adjust).
+-- 20261209_90 runs after 20261209_50 (before or after the deploy); before it runs the check answers ok = false.
+select 'l19 grant top-up follows: trigger library_grant_topup_lot_follow on library_access_grants, its function SECURITY DEFINER with an empty search_path and no session grant (run 20261209_90)' as check,
+       coalesce((select p.prosecdef
+                        and p.proconfig @> array['search_path=""']
+                        and position('library_grant_points_topups' in pg_catalog.pg_get_functiondef(p.oid)) > 0
+                        and not has_function_privilege('authenticated', p.oid, 'EXECUTE')
+                   from pg_catalog.pg_proc p where p.oid = to_regprocedure('public.library_grant_topup_lot_follow()')), false)
+       and coalesce(exists (select 1 from pg_catalog.pg_trigger tg
+                             where tg.tgrelid = to_regclass('public.library_access_grants')
+                               and tg.tgname = 'library_grant_topup_lot_follow' and tg.tgenabled <> 'D'), false) as ok;
+-- <<< verify:l19_grant_topup_follow
+-- >>> verify:l19_office_insert_guard — supabase/tests/rls/l19_office_insert_guard.test.sql
+-- l19 review (access S5): a free-side session cannot insert «إدارة المكتب» rows straight through PostgREST.
+-- 20261209_91 runs before or after the deploy; before it runs the check answers ok = false.
+select 'l19 office insert guard: office_plan_insert_guard() asks office_features_locked, SECURITY DEFINER with an empty search_path, no session grant, and guards time_entries / lawyer_expenses / client_trust_ledger / contracts (run 20261209_91)' as check,
+       coalesce((select p.prosecdef
+                        and p.proconfig @> array['search_path=""']
+                        and position('office_features_locked(v_uid)' in pg_catalog.pg_get_functiondef(p.oid)) > 0
+                        and not has_function_privilege('authenticated', p.oid, 'EXECUTE')
+                   from pg_catalog.pg_proc p where p.oid = to_regprocedure('public.office_plan_insert_guard()')), false)
+       and coalesce((select count(*) = 4 from pg_catalog.pg_trigger tg
+                      where tg.tgname = 'trg_office_plan_insert_guard' and tg.tgenabled <> 'D'
+                        and tg.tgrelid in (to_regclass('public.time_entries'), to_regclass('public.lawyer_expenses'),
+                                           to_regclass('public.client_trust_ledger'), to_regclass('public.contracts'))), false) as ok;
+-- <<< verify:l19_office_insert_guard

@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { assertCaseWorker } from "@/lib/auth/assertCaseWorker";
+import { officePlanRefusal } from "@/lib/auth/assertOfficePlan";
 import { createServiceClient } from "@/lib/supabase/server";
 import { FIRM_ROLE_LABEL } from "@/constants/firmProfileReadiness";
 import type { FirmRole } from "@/types/firmBackendReady";
@@ -106,6 +107,10 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
   try {
     const auth = await assertCaseWorker();
     if (!auth.ok) return auth.response;
+    // l19 review (access N9): the case team and «قضية مقيّدة» belong to the paid
+    // team («أعضاء الفريق وصلاحياتهم» — the firm plans; ق٢٦-٤ / ق٢٦-٥).
+    const officeLocked = await officePlanRefusal(auth.supabase, "team", auth.userType);
+    if (officeLocked) return officeLocked;
     const { user, supabase } = auth;
     const { id } = await context.params;
 

@@ -1,3 +1,4 @@
+import { officePlanRefusal } from "@/lib/auth/assertOfficePlan";
 import { NextResponse, NextRequest } from "next/server";
 import { DB_ERROR_AR } from "@/lib/api/dbError";
 import { assertCaseWorker } from "@/lib/auth/assertCaseWorker";
@@ -123,6 +124,9 @@ export async function PUT(
     // admits a corporate user to rows they wrote themselves.
     const auth = await assertCaseWorker(["corporate"]);
     if (!auth.ok) return auth.response;
+    // Owner ق٢٦-٤ / ق٢٦-٥: «cases» is «إدارة المكتب» — refused on the free side.
+    const officeLocked = await officePlanRefusal(auth.supabase, "cases", auth.userType);
+    if (officeLocked) return officeLocked;
     const { user, supabase } = auth;
     const { caseId } = await context.params;
 

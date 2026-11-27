@@ -29,7 +29,7 @@ import { useTheme } from "@/components/ThemeProvider";
 import { useSubscription, tierLabelAr } from "@/hooks/useSubscription";
 import { type SidebarGroup, type SidebarItem } from "@/constants/navigation";
 import { toArabicDigits } from "@/lib/services/arabicCount";
-import { OFFICE_LOCK_BADGE_AR, type OfficeLockAudience } from "@/constants/navigation.officeLock";
+import { OFFICE_LOCK_BADGE_AR, officeLockContinue, type OfficeLockAudience } from "@/constants/navigation.officeLock";
 
 /**
  * What a locked row hands the upgrade dialog besides its name: for an office
@@ -38,6 +38,8 @@ import { OFFICE_LOCK_BADGE_AR, type OfficeLockAudience } from "@/constants/navig
  */
 export interface LockedClickOptions {
   continueHref?: string;
+  /** The words of that second link (l19: «قضايا السوق المسندة إليك», «الورق المروّس»). */
+  continueLabel?: string;
   officeAudience?: OfficeLockAudience;
 }
 
@@ -160,8 +162,8 @@ export function SidebarLink({
   const { isDark } = useTheme();
   const { can, requiredTier } = useSubscription();
   // Owner ق٢٦-١: a paid office row while the database says this account is on
-  // the free side (navigation.officeLock.ts). Its link stays real (the page is
-  // readable); the click opens the upgrade dialog instead.
+  // the free side (navigation.officeLock.ts). Its click opens the upgrade
+  // dialog instead; the page itself shows the lock teaser (OfficePlanGuard).
   const officeLock = item.officeLocked ?? null;
 
   // Tier gating — if item has a gateKey, check subscription.
@@ -219,7 +221,14 @@ export function SidebarLink({
           }
           if (!isLocked && officeLock && onLockedClick) {
             e.preventDefault();
-            onLockedClick(isAr ? item.label : item.labelEn, { continueHref: item.href, officeAudience: officeLock });
+            // l19: the page itself is guarded now — the dialog links only the
+            // part the free side may still open (market cases, the letterhead).
+            const cont = officeLockContinue(item.href);
+            onLockedClick(isAr ? item.label : item.labelEn, {
+              continueHref: cont?.href,
+              continueLabel: cont?.label,
+              officeAudience: officeLock,
+            });
             return;
           }
           if (isLocked) {

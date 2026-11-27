@@ -34,7 +34,7 @@ import { normalizeCrNumber, isLegalRepCapacity } from "@/app/register/client/com
 import { isAuthUnavailable, authUnavailableResponse, frozenAccountResponse } from "@/lib/auth/apiAuth";
 import { profilePhoneDecision } from "./_phone";
 import { isVerifiedPhoneDbError, VERIFIED_PHONE_PROFILE_REFUSAL_AR } from "@/lib/lawyerSignup/verifiedPhone";
-import { confirmedPhoneTakenElsewhere, PHONE_UNUSABLE_AR, PROFILE_PHONE_CHANGE_LIMIT } from "@/lib/phoneOtp/confirmedPhone";
+import { confirmedPhoneTakenElsewhere, PHONE_TAKEN_AR, PHONE_TAKEN_CODE, PROFILE_PHONE_CHANGE_LIMIT } from "@/lib/phoneOtp/confirmedPhone";
 import { rateLimit } from "@/lib/rateLimit";
 import { licenceFormatIssue, normaliseLicence } from "@/lib/lawyerSignup/licenceFormat";
 import {
@@ -596,7 +596,7 @@ export async function PATCH(request: Request) {
       }
     }
     if (ownPhone !== phoneDecision.e164 && (await confirmedPhoneTakenElsewhere(svc, user.id, phoneDecision.e164)) === true) {
-      return NextResponse.json({ error: PHONE_UNUSABLE_AR, field: "phone" }, { status: 409 });
+      return NextResponse.json({ error: PHONE_TAKEN_AR, field: "phone", code: PHONE_TAKEN_CODE }, { status: 409 });
     }
   }
 
@@ -910,7 +910,7 @@ export async function PATCH(request: Request) {
       // R6 (20261201_10): a verified lawyer/provider moving onto a mobile
       // another verified account holds.
       if (isVerifiedPhoneDbError(error)) {
-        return NextResponse.json({ error: VERIFIED_PHONE_PROFILE_REFUSAL_AR, field: "phone" }, { status: 409 });
+        return NextResponse.json({ error: VERIFIED_PHONE_PROFILE_REFUSAL_AR, field: "phone", code: PHONE_TAKEN_CODE }, { status: 409 });
       }
       console.error("[api/v1/profile] profiles update failed:", error.message);
       return NextResponse.json({ error: AR.saveFailed }, { status: 500 });

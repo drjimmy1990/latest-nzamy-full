@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { requireApiUser } from "@/lib/auth/apiAuth";
 import { isPointsAvailableTool, isPointsStandingTool, standingFrom, toolPointsWith } from "@/lib/ai/pointsStanding";
+import { planAllowanceKindFor, planAllowanceStateWith } from "@/lib/ai/planAllowance";
 
 /**
  * GET /api/v1/ai/points-standing?tool=<id> — the signed-in user's points for
@@ -44,7 +45,33 @@ export async function GET(request: NextRequest) {
     const points = await toolPointsWith(supabase, admin, auth.user.id, tool);
     // The shortfall banner only for the tools it knows (no founder credit).
     const standing = isPointsStandingTool(tool) ? standingFrom(points, tool) : { short: false };
-    return NextResponse.json(points ? { ...standing, charged: points.charged, available: points.available } : standing, { headers: NO_STORE });
+    // Owner ق٢٦-٦ (batch l19): an individual ind-ai subscriber's fair use of
+    // this month on a counted tool (quick-answer / simple-contract), so the
+    // screen says «بقي لك X من Y» instead of a points shortfall. Only what the
+    // counter answered (left / used); nothing on a degraded read.
+    const kind = points?.charged ? planAllowanceKindFor(tool) : null;
+    let planAllowance: { kind: string; left: number; limit: number } | undefined;
+    if (kind) {
+      const { data: profile } = await supabase.from("profiles").select("user_type").eq("id", auth.user.id).maybeSingle();
+      if (profile?.user_type === "individual") {
+        const state = await planAllowanceStateWith(admin, auth.user.id, kind);
+        if (state.state === "left") planAllowance = { kind, left: state.left, limit: state.limit };
+        if (state.state === "used") planAllowance = { kind, left: 0, limit: state.limit };
+      }
+    }
+    return NextResponse.json(
+      points
+        ? {
+            ...standing,
+            // a run inside the allowance charges nothing: never a shortfall
+            ...(planAllowance && planAllowance.left > 0 ? { short: false } : {}),
+            charged: points.charged,
+            available: points.available,
+            ...(planAllowance ? { planAllowance } : {}),
+          }
+        : standing,
+      { headers: NO_STORE },
+    );
   } catch (err) {
     console.error("[ai/points-standing] GET failed:", err);
     // No banner rather than a wrong one.

@@ -13,6 +13,7 @@ import {
   getVerificationRequests,
   approveVerification,
   rejectVerification,
+  setLicenceExpiry,
 } from "@/lib/services/adminService";
 import type { VerificationRequest } from "@/lib/services/adminService";
 import { describeRegistryMatch, type RegistryMatch, type Tone } from "@/lib/registry/registryMatch";
@@ -146,6 +147,70 @@ function ScoreBadge({ score }:{ score:number }) {
  * standing between the lawyer directory and having anybody in it. So the three
  * outcomes are kept apart here down to the last KPI digit.
  */
+/* ── Licence expiry date (l19 review, pay S1) ────────────────────────────────── */
+
+/**
+ * The licence expiry date on a lawyer's or a firm's file, set or corrected by
+ * the admin (a renewed licence, a wrong import). The expiry alerts take the
+ * later of this date and the lawyers' registry's, so a correction here ends a
+ * stale «انتهت». Saved through PATCH /api/v1/admin/verifications/[id], audited.
+ */
+function LicenceExpiryField({
+  userId,
+  holder,
+  value,
+  isDark,
+  onSaved,
+  onMessage,
+}: {
+  userId: string;
+  holder: "lawyer" | "firm";
+  value: string | null;
+  isDark: boolean;
+  onSaved: (date: string | null) => void;
+  onMessage: (text: string) => void;
+}) {
+  const [date, setDate] = useState(value ?? "");
+  const [saving, setSaving] = useState(false);
+  const changed = date !== (value ?? "");
+  const save = async () => {
+    if (saving || !changed) return;
+    setSaving(true);
+    try {
+      const next = date === "" ? null : date;
+      const result = await setLicenceExpiry(userId, holder, next);
+      onSaved(next);
+      onMessage(result.message);
+    } catch (err) {
+      onMessage(err instanceof Error ? err.message : "تعذّر حفظ التاريخ الآن.");
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <div className={`mt-2 flex flex-wrap items-center gap-2 text-[10px] ${isDark ? "text-zinc-400" : "text-slate-500"}`}>
+      <label htmlFor={`licence-expiry-${holder}-${userId}`}>تاريخ انتهاء الرخصة في الملف:</label>
+      <input
+        id={`licence-expiry-${holder}-${userId}`}
+        type="date"
+        dir="ltr"
+        value={date}
+        onChange={(e) => setDate(e.target.value)}
+        className={`rounded-lg border px-2 py-1 text-[10px] ${isDark ? "border-white/10 bg-zinc-900 text-zinc-200" : "border-slate-200 bg-white text-slate-700"}`}
+      />
+      <button
+        type="button"
+        disabled={saving || !changed}
+        onClick={() => void save()}
+        className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-2 py-1 font-bold text-emerald-500 transition-colors hover:bg-emerald-500/20 disabled:opacity-40"
+      >
+        {saving ? "جارٍ الحفظ…" : "حفظ التاريخ"}
+      </button>
+      {holder === "lawyer" && <span>تُعتمد في التنبيهات أحدثُ القيمتين: هذا التاريخ أو تاريخ سجل المحامين.</span>}
+    </div>
+  );
+}
+
 export default function ProviderVerificationPage() {
   const { isDark } = useTheme();
   const [filter, setFilter] = useState("all");
@@ -156,6 +221,20 @@ export default function ProviderVerificationPage() {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   // When the current list (and so its signed licence links) was read.
   const readAt = useRef(0);
+  // l19 review (pay S1): the bell of a renewed licence opens this page as ?user=<id> — that
+  // account only, asked from the server (not filtered out of the newest 50). undefined = the
+  // address is not read yet (the list waits for it).
+  const [onlyUser, setOnlyUser] = useState<string | null | undefined>(undefined);
+  useEffect(() => {
+    let id: string | null = null;
+    try {
+      const raw = new URLSearchParams(window.location.search).get("user");
+      if (raw && /^[0-9a-f-]{36}$/i.test(raw)) id = raw;
+    } catch {
+      // no filter
+    }
+    setOnlyUser(id);
+  }, []);
 
   const card = isDark
     ? "rounded-2xl border border-white/[0.06] bg-zinc-900/60"
@@ -163,20 +242,21 @@ export default function ProviderVerificationPage() {
 
   // ── Fetch data ─────────────────────────────────────────────────────────────
   const fetchData = useCallback(async () => {
+    if (onlyUser === undefined) return;
     setLoading(true);
     // getVerificationRequests no longer rejects — it answers `ok: false`, so
     // the `catch { setError(…) }` that used to be the only failure branch here
     // could never fire again. The try/catch stays as a floor for an unexpected
     // throw, but the real failure signal is now the value itself.
     try {
-      setRead(await getVerificationRequests());
+      setRead(await getVerificationRequests(onlyUser ? { userId: onlyUser } : undefined));
       readAt.current = Date.now();
     } catch {
       setRead(listFailed<VerificationRequest>());
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [onlyUser]);
 
   useEffect(() => {
     fetchData();
@@ -232,7 +312,8 @@ export default function ProviderVerificationPage() {
 
   const filtered = requests.filter(r =>
     (filter==="all" || r.status===filter) &&
-    (r.name.includes(search) || r.id.includes(search))
+    (r.name.includes(search) || r.id.includes(search)) &&
+    (!onlyUser || r.user_id === onlyUser)
   );
 
   const stats = {
@@ -430,6 +511,15 @@ export default function ProviderVerificationPage() {
               filter===v?"bg-[#C8A762] text-black":isDark?"bg-white/[0.04] text-zinc-500 hover:text-zinc-300":"bg-slate-100 text-slate-500 hover:text-slate-700"
             }`}>{l}</button>
         ))}
+        {onlyUser && (
+          <button
+            type="button"
+            onClick={() => setOnlyUser(null)}
+            className={`px-3 py-1.5 rounded-lg text-[11px] font-semibold ${isDark ? "bg-white/[0.04] text-zinc-300" : "bg-slate-100 text-slate-600"}`}
+          >
+            حساب واحد من تنبيه — عرض الكل
+          </button>
+        )}
       </div>
 
       {/* Loading state */}
@@ -516,6 +606,23 @@ export default function ProviderVerificationPage() {
                   {/* Launch batch R2/R3/R5: the lawyers' register on this
                       licence — a hint for the decision, not a proof. */}
                   {r.type === "lawyer" && r.registryMatch && <RegistryLine match={r.registryMatch} isDark={isDark} />}
+                  {(r.type === "lawyer" || r.type === "firm") && (
+                    <LicenceExpiryField
+                      key={`${r.id}:${r.license_expiry ?? ""}`}
+                      userId={r.user_id}
+                      holder={r.type}
+                      value={r.license_expiry ?? null}
+                      isDark={isDark}
+                      onMessage={setToast}
+                      onSaved={(date) =>
+                        setRead((prev) =>
+                          prev && prev.ok
+                            ? listOk(prev.items.map((req) => (req.id === r.id ? { ...req, license_expiry: date } : req)), prev.total)
+                            : prev,
+                        )
+                      }
+                    />
+                  )}
                   {r.type === "lawyer" && r.signupVerification && (
                     <SignupLine
                       view={r.signupVerification}

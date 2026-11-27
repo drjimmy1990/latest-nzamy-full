@@ -12,6 +12,7 @@ import { readAiToolsSetting } from "@/lib/ai/runCore";
 import { resolveToolRuntime, toolAvailability } from "@/lib/ai/aiToolsConfig";
 import { AI_TOOLS } from "@/lib/ai/tools";
 import { readLibraryAccountAccess } from "@/lib/library/accountAccessServer";
+import { enforceLibraryDevice } from "@/lib/library/deviceLimitServer";
 
 /**
  * GET /api/v1/ai/free-question — owner ٣٠ (18 Nov 2026, batch l7): the signed-in
@@ -44,6 +45,10 @@ import { readLibraryAccountAccess } from "@/lib/library/accountAccessServer";
  * the run would really go through: the tool is open for users (ai_tools mode)
  * and points_enforcement is on (off, the runs route does not let the free
  * questions open the library's tier rule, and no use is counted).
+ *
+ * l19 review (B2, owner ٢٣٣): device-checked like a run (the account rule;
+ * switch off = no effect, fail-open). A refused device gets the 403 refusal,
+ * which every caller reads as «no free questions».
  */
 
 export const dynamic = "force-dynamic";
@@ -69,6 +74,8 @@ export async function GET(request: Request) {
     const supabase = await createClient();
     const auth = await requireApiUser(supabase, { error: "سجّل الدخول لاستخدام أدوات الذكاء الاصطناعي" });
     if (auth instanceof NextResponse) return auth;
+    const deviceRefusal = await enforceLibraryDevice(auth.user.id, true);
+    if (deviceRefusal) return deviceRefusal;
     if (!auth.user.email_confirmed_at) return NextResponse.json(NONE, { headers: NO_STORE });
     const asked = parseFreeQuestionTool(new URL(request.url).searchParams.get("tool") ?? FREE_QUESTION_TOOL);
     if (!asked) return NextResponse.json(NONE, { headers: NO_STORE });

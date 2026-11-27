@@ -51,6 +51,8 @@ export interface VerificationRequest {
    * e-mail code, «رقمي تغيّر», decision + reasons. null before the migration.
    */
   signupVerification?: SignupVerificationView | null;
+  /** Lawyer and firm rows (l19 review, pay S1): the licence expiry date on the file, YYYY-MM-DD, or null. */
+  license_expiry?: string | null;
 }
 
 interface VerificationListResponse {
@@ -68,6 +70,8 @@ export interface VerificationFilters {
   status?: string;
   search?: string;
   type?: ProviderType;
+  /** l19 review (pay S1): one account's rows only (the renewed-licence bell). */
+  userId?: string;
 }
 
 // ─── Mock data (matches existing page.tsx) ────────────────────────────────────
@@ -143,6 +147,7 @@ export async function getVerificationRequests(
         status: filters?.status,
         search: filters?.search,
         type: filters?.type,
+        user: filters?.userId,
       },
     );
     // This route's envelope is `{ verifications, total }`, not `{ data }`, so
@@ -181,6 +186,33 @@ export async function approveVerification(
     throw new Error(
       error instanceof Error ? error.message : "فشل في اعتماد الطلب",
     );
+  }
+}
+
+/**
+ * l19 review (pay S1): sets (YYYY-MM-DD) or clears (null) the licence expiry
+ * date of a lawyer's or a firm's file — the expiry alerts take the later of
+ * this date and the registry's. Audited on the server.
+ */
+export async function setLicenceExpiry(
+  userId: string,
+  holder: "lawyer" | "firm",
+  licenseExpiry: string | null,
+): Promise<{ success: boolean; message: string }> {
+  if (!isSupabaseMode) {
+    const req = MOCK_REQUESTS.find((r) => r.user_id === userId || r.id === userId);
+    if (req) req.license_expiry = licenseExpiry;
+    return { success: true, message: "حُفظ تاريخ انتهاء الرخصة." };
+  }
+  try {
+    const response = await apiMutate<VerificationActionResponse>(
+      `/api/v1/admin/verifications/${userId}`,
+      "PATCH",
+      { action: "set_licence_expiry", holder, licenseExpiry },
+    );
+    return { success: response.success, message: response.message };
+  } catch (error) {
+    throw new Error(error instanceof Error ? error.message : "تعذّر حفظ التاريخ الآن.");
   }
 }
 

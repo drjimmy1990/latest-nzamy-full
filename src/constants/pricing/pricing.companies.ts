@@ -18,8 +18,8 @@ export const plansCompanies: { ar: Plan[]; en: Plan[] } = {
     // ── شركة صغيرة (٦-٤٩) ─────────────────────────────
     { id: "biz-sm-basic", name: "أساسية", badge: "~٨٣٣ ر.س/شهر",
       priceMonthly: "٩,٩٨٨", priceYearly: "٩,٩٨٨", periodMonthly: "ر.س / سنة", periodYearly: "ر.س / سنة",
-      desc: "طلبات قانونية — قريباً: تنبيهات العقود · بدون ترافع أو استشارات · المكتبة باشتراك مستقل", target: "شركات صغيرة", cta: "اشترك سنوياً",
-      ctaHref: "/register/client?type=company", highlighted: false, color: "border-slate-200/50",
+      desc: "طلبات قانونية — قريباً: تنبيهات العقود · بدون ترافع أو استشارات · المكتبة باشتراك مستقل", target: "شركات صغيرة", cta: "تواصل مع المبيعات",
+      ctaHref: "/contact", highlighted: false, color: "border-slate-200/50",
       companySize: "small", forLegalDept: false, someFeaturesSoon: true,
       features: {
         ai: [
@@ -42,8 +42,8 @@ export const plansCompanies: { ar: Plan[]; en: Plan[] } = {
     },
     { id: "biz-sm-pro", name: "احترافية", badge: null,
       priceMonthly: "٢٤,٩٨٨", priceYearly: "٢٤,٩٨٨", periodMonthly: "ر.س / سنة", periodYearly: "ر.س / سنة",
-      desc: "قريباً: استشارات شهرية + ترافع بسقف + مراجعة عقود + Kanban", target: "شركات صغيرة", cta: "اشترك سنوياً",
-      ctaHref: "/register/client?type=company", highlighted: true, color: "border-royal/20",
+      desc: "قريباً: استشارات شهرية + ترافع بسقف + مراجعة عقود + Kanban", target: "شركات صغيرة", cta: "تواصل مع المبيعات",
+      ctaHref: "/contact", highlighted: true, color: "border-royal/20",
       companySize: "small", forLegalDept: false, someFeaturesSoon: true,
       features: {
         ai: [
@@ -66,8 +66,8 @@ export const plansCompanies: { ar: Plan[]; en: Plan[] } = {
     },
     { id: "biz-sm-full", name: "متكاملة", badge: "~٣,٧٤٩ ر.س/شهر",
       priceMonthly: "٤٤,٩٨٨", priceYearly: "٤٤,٩٨٨", periodMonthly: "ر.س / سنة", periodYearly: "ر.س / سنة",
-      desc: "فريق قانوني كامل عن بُعد — قريباً: استشارات + ترافع + مراجعة عقود + حوكمة", target: "شركات صغيرة", cta: "اشترك سنوياً",
-      ctaHref: "/register/client?type=company", highlighted: false, color: "border-emerald-200/50 dark:border-emerald-500/20",
+      desc: "فريق قانوني كامل عن بُعد — قريباً: استشارات + ترافع + مراجعة عقود + حوكمة", target: "شركات صغيرة", cta: "تواصل مع المبيعات",
+      ctaHref: "/contact", highlighted: false, color: "border-emerald-200/50 dark:border-emerald-500/20",
       companySize: "small", forLegalDept: false, someFeaturesSoon: true,
       features: {
         ai: [
@@ -91,8 +91,8 @@ export const plansCompanies: { ar: Plan[]; en: Plan[] } = {
     // ── شركة متوسطة (٥٠-٢٤٩) ──────────────────────────
     { id: "biz-md-basic", name: "أساسية", badge: "~٢,٤٩٩ ر.س/شهر",
       priceMonthly: "٢٩,٩٨٨", priceYearly: "٢٩,٩٨٨", periodMonthly: "ر.س / سنة", periodYearly: "ر.س / سنة",
-      desc: "قريباً: استشارات أساسية + HR · بدون ترافع مشمول · المكتبة باشتراك مستقل", target: "شركات متوسطة", cta: "اشترك سنوياً",
-      ctaHref: "/register/client?type=company", highlighted: false, color: "border-slate-200/50",
+      desc: "قريباً: استشارات أساسية + HR · بدون ترافع مشمول · المكتبة باشتراك مستقل", target: "شركات متوسطة", cta: "تواصل مع المبيعات",
+      ctaHref: "/contact", highlighted: false, color: "border-slate-200/50",
       companySize: "medium", forLegalDept: false, someFeaturesSoon: true,
       features: {
         ai: [
@@ -115,8 +115,8 @@ export const plansCompanies: { ar: Plan[]; en: Plan[] } = {
     },
     { id: "biz-md-pro", name: "احترافية", badge: null,
       priceMonthly: "٥٩,٩٨٨", priceYearly: "٥٩,٩٨٨", periodMonthly: "ر.س / سنة", periodYearly: "ر.س / سنة",
-      desc: "قريباً: ترافع بسقف + استشارات مكثفة + حوكمة + مراجعة عقود", target: "شركات متوسطة", cta: "اشترك سنوياً",
-      ctaHref: "/register/client?type=company", highlighted: true, color: "border-royal/20",
+      desc: "قريباً: ترافع بسقف + استشارات مكثفة + حوكمة + مراجعة عقود", target: "شركات متوسطة", cta: "تواصل مع المبيعات",
+      ctaHref: "/contact", highlighted: true, color: "border-royal/20",
       companySize: "medium", forLegalDept: false, someFeaturesSoon: true,
       features: {
         ai: [
@@ -239,8 +239,8 @@ export const plansCompanies: { ar: Plan[]; en: Plan[] } = {
     // ── Small (6-49) EN ─────────────────────────────────
     { id: "biz-sm-basic", name: "Basic", badge: "~833 SAR/mo",
       priceMonthly: "9,988", priceYearly: "9,988", periodMonthly: "SAR / year", periodYearly: "SAR / year",
-      desc: "Legal requests — coming soon: contract alerts · no litigation or consultations · library by separate subscription", target: "Small Companies", cta: "Subscribe Yearly",
-      ctaHref: "/register/client?type=company", highlighted: false, color: "border-slate-200/50",
+      desc: "Legal requests — coming soon: contract alerts · no litigation or consultations · library by separate subscription", target: "Small Companies", cta: "Contact Sales",
+      ctaHref: "/contact", highlighted: false, color: "border-slate-200/50",
       companySize: "small", forLegalDept: false, someFeaturesSoon: true,
       features: {
         ai: ["AI tools: coming soon", "Legal library by separate subscription", "Contract expiry alerts: coming soon", null],
@@ -250,8 +250,8 @@ export const plansCompanies: { ar: Plan[]; en: Plan[] } = {
     },
     { id: "biz-sm-pro", name: "Professional", badge: null,
       priceMonthly: "24,988", priceYearly: "24,988", periodMonthly: "SAR / year", periodYearly: "SAR / year",
-      desc: "Coming soon: monthly consultations + capped litigation + contract review + Kanban", target: "Small Companies", cta: "Subscribe Yearly",
-      ctaHref: "/register/client?type=company", highlighted: true, color: "border-royal/20",
+      desc: "Coming soon: monthly consultations + capped litigation + contract review + Kanban", target: "Small Companies", cta: "Contact Sales",
+      ctaHref: "/contact", highlighted: true, color: "border-royal/20",
       companySize: "small", forLegalDept: false, someFeaturesSoon: true,
       features: {
         ai: ["AI tools: coming soon", "Lawyer contract review: 2/mo — coming soon", null, null],
@@ -261,8 +261,8 @@ export const plansCompanies: { ar: Plan[]; en: Plan[] } = {
     },
     { id: "biz-sm-full", name: "Full Service", badge: "~3,749 SAR/mo",
       priceMonthly: "44,988", priceYearly: "44,988", periodMonthly: "SAR / year", periodYearly: "SAR / year",
-      desc: "Complete remote legal team — coming soon: consultations + capped litigation + contract review", target: "Small Companies", cta: "Subscribe Yearly",
-      ctaHref: "/register/client?type=company", highlighted: false, color: "border-emerald-200/50 dark:border-emerald-500/20",
+      desc: "Complete remote legal team — coming soon: consultations + capped litigation + contract review", target: "Small Companies", cta: "Contact Sales",
+      ctaHref: "/contact", highlighted: false, color: "border-emerald-200/50 dark:border-emerald-500/20",
       companySize: "small", forLegalDept: false, someFeaturesSoon: true,
       features: {
         ai: ["AI tools: coming soon", "Lawyer contract review: 5/mo — coming soon", null, null],
@@ -273,8 +273,8 @@ export const plansCompanies: { ar: Plan[]; en: Plan[] } = {
     // ── Medium (50-249) EN ───────────────────────────────
     { id: "biz-md-basic", name: "Basic", badge: "~2,499 SAR/mo",
       priceMonthly: "29,988", priceYearly: "29,988", periodMonthly: "SAR / year", periodYearly: "SAR / year",
-      desc: "Coming soon: core consultations + HR · no included litigation · library by separate subscription", target: "Medium Companies", cta: "Subscribe Yearly",
-      ctaHref: "/register/client?type=company", highlighted: false, color: "border-slate-200/50",
+      desc: "Coming soon: core consultations + HR · no included litigation · library by separate subscription", target: "Medium Companies", cta: "Contact Sales",
+      ctaHref: "/contact", highlighted: false, color: "border-slate-200/50",
       companySize: "medium", forLegalDept: false, someFeaturesSoon: true,
       features: {
         ai: ["AI tools: coming soon", "Legal library by separate subscription", null, null],
@@ -284,8 +284,8 @@ export const plansCompanies: { ar: Plan[]; en: Plan[] } = {
     },
     { id: "biz-md-pro", name: "Professional", badge: null,
       priceMonthly: "59,988", priceYearly: "59,988", periodMonthly: "SAR / year", periodYearly: "SAR / year",
-      desc: "Coming soon: capped litigation + governance + intensive consultations + contract review", target: "Medium Companies", cta: "Subscribe Yearly",
-      ctaHref: "/register/client?type=company", highlighted: true, color: "border-royal/20",
+      desc: "Coming soon: capped litigation + governance + intensive consultations + contract review", target: "Medium Companies", cta: "Contact Sales",
+      ctaHref: "/contact", highlighted: true, color: "border-royal/20",
       companySize: "medium", forLegalDept: false, someFeaturesSoon: true,
       features: {
         ai: ["AI tools: coming soon", "Lawyer contract review: 5/mo — coming soon", null, null],

@@ -6,15 +6,12 @@ import { useUser } from "@/hooks/useUser";
 import { staffMaySee } from "@/lib/auth/adminNavAccess";
 
 /**
- * «أجهزة المكتبة» — owner ٤٢٧: the device limit on the subscriber library.
- * The switch and the number are two columns of the library settings row
- * (library_monitor_settings.device_limit_enabled / device_limit, 20261108_20),
- * read and written through /api/v1/admin/library-monitor/devices.
- * Saving is settings.write (super admin); every admin may read. Ships OFF.
- * Batch l14 (owner ٢٠٧ / 00 §٢-٣): the number is one device or two — a
- * choice, not a free number (deviceLimit.DEVICE_LIMIT_CHOICES, the server and
- * 20261204_60's CHECK refuse anything else). The switch stays as the admin
- * left it (OFF by default).
+ * «حد الأجهزة» — batch l19, owner ٢٣٣ (LIVE-17): one mobile + one computer for
+ * the WHOLE account (it was the library's only: owner ٤٢٧ / ٤٠ / ٦٣, retired
+ * with the e-mail code of a new device). One switch, the number is fixed:
+ * library_monitor_settings.account_device_limit_enabled (20261209_40), read
+ * and written through /api/v1/admin/library-monitor/devices. Saving is
+ * settings.write (super admin); every admin may read. Ships OFF.
  * A user's devices are reset from his page (المستخدمون ← الأمان).
  */
 type Props = { isDark: boolean; card: string };
@@ -23,9 +20,7 @@ export default function LibraryDevicesPanel({ isDark, card }: Props) {
   const { staffRole } = useUser();
   const canWrite = staffMaySee(staffRole, "settings.write");
   const [enabled, setEnabled] = useState(false);
-  const [limit, setLimit] = useState(2);
   const [available, setAvailable] = useState(true);
-  const [codesAvailable, setCodesAvailable] = useState<boolean | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState<{ ok: boolean; msg: string } | null>(null);
@@ -41,9 +36,7 @@ export default function LibraryDevicesPanel({ isDark, card }: Props) {
           setNotice({ ok: false, msg: (body && typeof body.error === "string" && body.error) || "تعذّر تحميل الإعداد." });
         } else {
           setEnabled(body.enabled === true);
-          setLimit(typeof body.limit === "number" ? body.limit : 2);
           setAvailable(body.available !== false);
-          setCodesAvailable(typeof body.codesAvailable === "boolean" ? body.codesAvailable : null);
         }
       } catch {
         if (!cancelled) setNotice({ ok: false, msg: "تعذّر الاتصال." });
@@ -63,7 +56,7 @@ export default function LibraryDevicesPanel({ isDark, card }: Props) {
       const res = await fetch("/api/v1/admin/library-monitor/devices", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ enabled, limit }),
+        body: JSON.stringify({ enabled }),
       });
       const body = await res.json().catch(() => null);
       if (!res.ok) {
@@ -71,8 +64,7 @@ export default function LibraryDevicesPanel({ isDark, card }: Props) {
         return;
       }
       setEnabled(body.enabled === true);
-      setLimit(typeof body.limit === "number" ? body.limit : limit);
-      setNotice({ ok: true, msg: "حُفظ الإعداد. يسري على القراءات الجديدة خلال دقيقة." });
+      setNotice({ ok: true, msg: "حُفظ الإعداد. يسري خلال نصف دقيقة." });
     } catch {
       setNotice({ ok: false, msg: "تعذّر الاتصال." });
     } finally {
@@ -87,27 +79,28 @@ export default function LibraryDevicesPanel({ isDark, card }: Props) {
     <div className={`${card} p-5 space-y-4`} dir="rtl">
       <div className="flex items-center gap-2">
         <Devices size={18} className={isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"} />
-        <p className={`text-[13px] font-bold ${tp}`}>حد الأجهزة في المكتبة (المشتركون)</p>
+        <p className={`text-[13px] font-bold ${tp}`}>حد الأجهزة للحساب كله (جوال واحد + حاسوب واحد)</p>
       </div>
-      <p className={`text-[11px] leading-6 ${ts}`}>
-        عند التفعيل (قرارات المالك ٤٠ و٦٣ وسجل ١٤ بند ٩): كل جهاز جديد يحتاج رمز تحقق يُرسل إلى بريد الحساب، والقاعدة للمكتبة وحدها —
-        لا يُسجَّل خروج الحساب من أي جهاز ولا من بقية المنصة. الجهاز الجديد بعد بلوغ العدد المحدد يُرفض ولا يُوقف الحساب: تظهر له قائمة
-        أجهزته ليزيل أحدها (أو يزيله من صفحة «مكتبتي»)، ثم يؤكد الجهاز الجديد برمز البريد. الجهاز الذي سجّل خروجه يعود دون رمز إن بقي مكان.
-        يشمل نص المكتبة الكامل للمشترك فقط (الأنظمة، القرارات، المبادئ، الكتب، والبحث داخل الوثيقة)؛ الزائر وغير المشترك لا يُفحص جهازه،
-        وحسابات المسؤولين مستثناة. إعادة تعيين أجهزة مستخدم من صفحته: المستخدمون ← الأمان.
-      </p>
-
-      {!loading && available && codesAvailable === false && (
-        <p className={`text-[11px] leading-6 ${isDark ? "text-amber-300" : "text-amber-700"}`}>
-          رمز البريد غير مفعّل على هذا الخادم (ينقصه مزوّد البريد أو مفتاح حماية الرموز، ويتولّى ذلك الفريق التقني).
-          ما دام كذلك يُسجَّل الجهاز الجديد دون رمز إن بقي مكان، وتبقى بقية القواعد سارية.
+      <div className={`text-[11px] leading-6 ${ts} space-y-1`}>
+        <p>
+          عند التفعيل يُفتح كل حساب على جوال واحد وحاسوب واحد في المنصة كلها — اللوحات والإعدادات وأدوات الذكاء
+          الاصطناعي والمكتبة القانونية. يُسجَّل أول جوال وأول حاسوب يدخل منهما الحساب تلقائياً دون أي رمز.
         </p>
-      )}
+        <p>
+          أي جهاز إضافي يُرفض وتظهر له رسالة تطلب التواصل مع الإدارة، ولا يُسجَّل خروج الجهازين المسجّلين. تسجيل الخروج لا يحرّر مكان
+          الجهاز، ولا يستطيع المستخدم إزالة أجهزته بنفسه: لتبديل جهاز أعِد تعيين أجهزة المستخدم من صفحته (المستخدمون ← الأمان).
+        </p>
+        <p>
+          حسابات الإدارة وفريق العمل مستثناة، ولكل عضو في مكتب أو شركة حدّه الخاص. إن تعذّر الفحص لعطل في الخادم يُسمح بالدخول مؤقتاً
+          ويصل تنبيه إلى المسؤولين، حتى لا يُحرم المشتركون من حساباتهم بسبب العطل.
+        </p>
+      </div>
+
       {loading ? (
         <p className={`text-[11px] ${ts}`}>جارٍ التحميل…</p>
       ) : !available ? (
         <p className={`text-[11px] ${isDark ? "text-amber-300" : "text-amber-700"}`}>
-          شغّل ملف الترحيل 20261108_20_library_device_limit.sql أولاً.
+          هذه الميزة لم تُفعَّل بعد على الخادم، ويتولّى ذلك الفريق التقني.
         </p>
       ) : (
         <div className="space-y-3">
@@ -118,25 +111,8 @@ export default function LibraryDevicesPanel({ isDark, card }: Props) {
               disabled={!canWrite || saving}
               onChange={(e) => setEnabled(e.target.checked)}
             />
-            تفعيل حد الأجهزة
+            تفعيل حد الأجهزة للحساب كله
           </label>
-          <label className={`flex items-center gap-2 text-[12px] ${tp}`}>
-            عدد الأجهزة المصرّحة لكل حساب
-            <select
-              value={limit === 1 ? 1 : 2}
-              disabled={!canWrite || saving}
-              onChange={(e) => setLimit(Number(e.target.value) === 1 ? 1 : 2)}
-              className={`rounded-lg border px-2 py-1 text-[12px] ${isDark ? "border-white/[0.08] bg-zinc-800 text-white" : "border-slate-200 bg-white text-slate-800"}`}
-            >
-              <option value={1}>جهاز واحد</option>
-              <option value={2}>جهازان</option>
-            </select>
-          </label>
-          {limit !== 1 && limit !== 2 && (
-            <p className={`text-[11px] leading-6 ${isDark ? "text-amber-300" : "text-amber-700"}`}>
-              العدد المحفوظ حاليًا {limit}، والمسموح جهاز واحد أو جهازان. اختر أحدهما ثم احفظ.
-            </p>
-          )}
           {canWrite && (
             <button
               type="button"

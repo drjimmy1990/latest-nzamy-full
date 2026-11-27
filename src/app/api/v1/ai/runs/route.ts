@@ -12,6 +12,7 @@ import { aiTextFilesConfig, pastedFileUrlFrom } from "@/lib/ai/textFilesConfig";
 import { startRunWith, type RouteReply, type RunActor } from "@/lib/ai/runCore";
 import { readConsultantStanding } from "@/lib/auth/consultantScopeServer";
 import { freeQuestionStatusWith, freeQuestionToolOf, previewOnlySources } from "@/lib/ai/freeQuestion";
+import { indAiPlanActiveWith, planAllowanceKindFor, planAllowanceStateWith } from "@/lib/ai/planAllowance";
 import { progressSink } from "@/lib/ai/progressEvents";
 import { runForViewer, viewerIsAdmin } from "@/lib/ai/runVisibility";
 import { libraryGate } from "@/lib/library-gate";
@@ -24,6 +25,7 @@ import { assistantGuardState } from "@/lib/ai/assistantGuard";
 import { loadAssistantCase, type CaseReader } from "@/lib/ai/assistantCase";
 import { verifiedProviderDecision } from "@/lib/auth/verifiedProvider";
 import { readVerifiedProviderFacts } from "@/lib/auth/verifiedProviderRead";
+import { enforceLibraryDevice } from "@/lib/library/deviceLimitServer";
 
 /**
  * /api/v1/ai/runs — the AI tools (docs/plans/2026-10-26-ai-services-n8n-plan.md
@@ -43,6 +45,12 @@ import { readVerifiedProviderFacts } from "@/lib/auth/verifiedProviderRead";
  * freeze check: both happen here. Nor does the proxy's library lock reach
  * this path (one path, every tool): a run of the library's own AI checks the
  * lock here, before the charge (libraryAccessFor).
+ *
+ * l19 review (B2, owner ٢٣٣ «أدوات AI»): a run is device-checked right after
+ * the user is known, before anything is read or charged — the account-wide
+ * rule of the library (enforceLibraryDevice → account_device_gate). Switch
+ * off = no effect; any failure lets the run through (fail-open as designed);
+ * a Bearer caller with no cookie jar is not checked (question ٢٠٧).
  */
 
 export const dynamic = "force-dynamic";
@@ -138,6 +146,8 @@ export async function POST(request: NextRequest) {
     const auth = await requireApiUser(supabase, SIGN_IN);
     if (auth instanceof NextResponse) return auth;
     const { user } = auth;
+    const deviceRefusal = await enforceLibraryDevice(user.id, true);
+    if (deviceRefusal) return deviceRefusal;
 
     let body: unknown;
     try {
@@ -201,6 +211,13 @@ export async function POST(request: NextRequest) {
         // ai_start_free_question starts a plain run and spends none of the
         // allowance, so the opener would never close.
         libraryAccess: libraryAccessFor(user.id, async (toolId) => {
+          // Owner ق٢٦-٦ (batch l19): an individual's ind-ai plan opens the
+          // quick answer for its whole term — its 30 questions a month first
+          // (planAllowance below), then points. A failed read: no (the Pro
+          // rule stands, as before this batch).
+          if (userType === "individual" && planAllowanceKindFor(toolId) === "question" && (await indAiPlanActiveWith(admin, user.id)) === true) {
+            return true;
+          }
           if (toolId !== freeTool) return false;
           if (!user.email_confirmed_at) return false;
           try {
@@ -223,6 +240,10 @@ export async function POST(request: NextRequest) {
         // too, with the library being open for the account's type).
         freeQuestions: async (userId) =>
           Boolean(user.email_confirmed_at) && (await freeQuestionStatusWith(admin, userId)).available,
+        // Owner ق٢٦-٦ (batch l19, 20261209_70): the ind-ai fair use of this
+        // Riyadh month (30 questions + 2 works); a counter that cannot answer
+        // fails open for a subscriber read directly (planAllowance.ts).
+        planAllowance: (userId, kind) => planAllowanceStateWith(admin, userId, kind),
         // GraphRAG only behind NZAMY_GRAPH_RAG=on (graphRagSwitch): off, the
         // run never embeds the question and never calls the graph.
         ...(graphOn ? { embedQuery: (text: string) => embedQueryWithin(text) } : {}),

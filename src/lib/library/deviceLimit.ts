@@ -58,38 +58,9 @@ export function hashDeviceId(id: string): string {
 
 // ── the label ───────────────────────────────────────────────────────────────
 
-/**
- * «كمبيوتر — Chrome / Windows», «جوال — Safari / iPhone»: what the user sees in
- * the list of his devices. Rough on purpose — it names the device for a
- * person, it identifies nothing.
- */
-export function deviceLabelFromUserAgent(ua: string | null | undefined): string {
-  const s = typeof ua === "string" ? ua.slice(0, 512) : "";
-  if (!s.trim()) return "جهاز غير معروف";
-
-  let os = "";
-  let kind: "phone" | "tablet" | "computer" = "computer";
-  if (/iPhone|iPod/.test(s)) { os = "iPhone"; kind = "phone"; }
-  else if (/iPad/.test(s)) { os = "iPad"; kind = "tablet"; }
-  else if (/Android/.test(s)) { os = "Android"; kind = /Mobile/.test(s) ? "phone" : "tablet"; }
-  else if (/Windows/.test(s)) os = "Windows";
-  else if (/CrOS/.test(s)) os = "ChromeOS";
-  else if (/Mac OS X|Macintosh/.test(s)) os = "macOS";
-  else if (/Linux/.test(s)) os = "Linux";
-  else if (/Mobi/.test(s)) kind = "phone";
-
-  let browser = "";
-  if (/Edg(e|A|iOS)?\//.test(s)) browser = "Edge";
-  else if (/OPR\/|Opera/.test(s)) browser = "Opera";
-  else if (/SamsungBrowser\//.test(s)) browser = "Samsung Internet";
-  else if (/Firefox\/|FxiOS\//.test(s)) browser = "Firefox";
-  else if (/Chrome\/|CriOS\//.test(s)) browser = "Chrome";
-  else if (/Safari\//.test(s)) browser = "Safari";
-
-  const kindAr = kind === "phone" ? "جوال" : kind === "tablet" ? "جهاز لوحي" : "كمبيوتر";
-  const detail = [browser, os].filter(Boolean).join(" / ");
-  return detail ? `${kindAr} — ${detail}` : kindAr;
-}
+// Batch l19 (owner ٢٣٣): moved to src/lib/devices/accountDevice.ts (no node:
+// imports, so the proxy can name a device too); re-exported here unchanged.
+export { deviceLabelFromUserAgent } from "../devices/accountDevice.ts";
 
 // ── the database's answer ───────────────────────────────────────────────────
 
@@ -219,6 +190,15 @@ export const DEVICE_CODE_REQUIRED_AR =
   "هذا جهاز جديد على حسابك. أرسلنا — أو نرسل عند طلبك — رمز تحقق إلى بريدك الإلكتروني المسجّل؛ أدخله لتفتح المكتبة من هذا الجهاز. " +
   "حد الأجهزة خاص بالمكتبة وحدها، ولا يُسجَّل خروجك من أي جهاز آخر.";
 
+/**
+ * l19 review B3: the e-mail code of a new device is retired (owner ٢٣٣ — one
+ * mobile and one computer, registered silently). /api/v1/library/devices/code
+ * and /verify answer 410 with this line and call nothing.
+ */
+export const RETIRED_DEVICE_CODE = "device_code_retired";
+export const RETIRED_DEVICE_CODE_AR =
+  "لم يعد تأكيد الجهاز برمز البريد مستخدمًا. يُسجَّل جوالك وحاسوبك تلقائيًا عند أول استعمال، وإن ظهر لك أن هذا الجهاز غير مسجّل لحسابك فتواصل مع الإدارة.";
+
 export interface DeviceLimitRefusalBody {
   error: string;
   code:
@@ -325,6 +305,8 @@ export interface DeviceListItem {
   firstSeen: string | null;
   lastSeen: string | null;
   current: boolean;
+  /** Owner ٢٣٣ (20261209_40): the slot the device holds; null before it is classified. */
+  kind: "mobile" | "desktop" | null;
 }
 
 /** user_devices rows (service read, hash included) → the list, the hash dropped. Newest first. */
@@ -342,6 +324,7 @@ export function toDeviceList(rows: unknown, currentHash: string | null): DeviceL
       firstSeen: str(r.first_seen),
       lastSeen: str(r.last_seen),
       current: currentHash !== null && r.device_hash === currentHash,
+      kind: r.kind === "mobile" || r.kind === "desktop" ? r.kind : null,
     });
   }
   return out.sort((a, b) => (b.lastSeen ?? "").localeCompare(a.lastSeen ?? ""));

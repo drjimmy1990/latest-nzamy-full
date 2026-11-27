@@ -9,6 +9,7 @@ import { VoiceInput } from "@/components/ui/VoiceInput";
 import { createLawyerTask, getTaskAssigneeOptions, type TaskAssigneeOption } from "@/lib/services/lawyerTasksService";
 import LimitRefusalLink from "@/components/limits/LimitRefusalLink";
 import { TASK_ASSIGNEE_LABEL_AR, assigneeOptionLabelAr } from "@/lib/services/item59Labels";
+import { useOfficeGateFor } from "@/components/dashboard/OfficePlanGuard";
 
 interface Props {
   onClose: () => void;
@@ -43,7 +44,12 @@ export default function AddTaskModal({ onClose, isDark }: Props) {
     })();
     return () => { cancelled = true; };
   }, []);
-  const showAssignee = (assigneeOptions?.length ?? 0) >= 1;
+  // Owner ق٢٦-٤: «مهامي (بلا قضايا)» is free; on the free side the case link
+  // and the colleague picker (both «إدارة المكتب») are not offered — the
+  // server refuses them there too (taskNeedsOfficePlan).
+  const officeGate = useOfficeGateFor("office");
+  const freeSide = officeGate.locked;
+  const showAssignee = !freeSide && (assigneeOptions?.length ?? 0) >= 1;
 
   const inputCls = `w-full rounded-xl border px-3 py-2.5 text-[13px] outline-none disabled:opacity-50 ${
     isDark
@@ -149,6 +155,7 @@ export default function AddTaskModal({ onClose, isDark }: Props) {
               </div>
             </div>
 
+            {!freeSide && (
             <div>
               <label className={`block text-[12px] font-semibold mb-1.5 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>ارتباط بقضية (اختياري)</label>
               <CasePicker
@@ -157,6 +164,7 @@ export default function AddTaskModal({ onClose, isDark }: Props) {
                 isDark={isDark}
               />
             </div>
+            )}
 
             {showAssignee && assigneeOptions && (
               <div>

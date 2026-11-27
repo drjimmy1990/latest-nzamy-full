@@ -10,15 +10,37 @@
  * (20261208_50: trg_phone_verified_unique refuses a second confirmation with
  * errcode 23505, message «confirmed_phone_taken…»).
  *
- * One neutral answer everywhere — the owner's words — whatever the other
- * account is (confirmed lawyer, client, staff): it says neither that the
- * number has an account nor what kind.
+ * Batch l19 (owner decision ٢٣٥, his exact words): on the sign-up and the
+ * mobile confirmation / change screens the answer names the reason, Gmail
+ * style, with three ways out — sign in with it, reset the password, contact
+ * us (src/components/auth/PhoneTakenNotice.tsx draws the links). The same
+ * sentence whatever the other account is (lawyer, client, staff): it never
+ * says what kind of account. /login and /forgot-password never use it; their
+ * answers stay neutral.
  *
  * Type-only imports: `node --test` loads it.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-export const PHONE_UNUSABLE_AR = "تعذّر استعمال هذا الرقم، استعمل رقمًا آخر أو تواصل معنا";
+export const PHONE_TAKEN_AR =
+  "هذا الرقم مستخدم من قبل في حساب آخر. يمكنك تسجيل الدخول به بدلاً من ذلك، أو استعادة كلمة المرور، أو التواصل معنا إذا واجهتك مشكلة.";
+export const PHONE_TAKEN_EN =
+  "This number is already used on another account. You can sign in with it instead, reset the password, or contact us if you run into a problem.";
+/** The `reason` / `code` the APIs answer with this sentence; the screens key the links on it. */
+export const PHONE_TAKEN_CODE = "phone_taken";
+/**
+ * The sentence as a screen receives it from a helper that keeps only the
+ * error text (apiMutate): exactly PHONE_TAKEN_AR.
+ */
+export function isPhoneTakenText(text: unknown): boolean {
+  return text === PHONE_TAKEN_AR;
+}
+/** The three ways out, in the owner's order. */
+export const PHONE_TAKEN_LINKS = Object.freeze([
+  Object.freeze({ href: "/login", ar: "تسجيل الدخول", en: "Sign in", signOutFirst: true }),
+  Object.freeze({ href: "/forgot-password", ar: "استعادة كلمة المرور", en: "Reset the password", signOutFirst: true }),
+  Object.freeze({ href: "/contact", ar: "تواصل معنا", en: "Contact us", signOutFirst: true }),
+]);
 
 /**
  * l18 review: how many number CHANGES one account may try on PATCH

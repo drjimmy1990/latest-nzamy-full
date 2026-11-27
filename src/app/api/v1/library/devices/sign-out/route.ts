@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { frozenAccountResponse } from "@/lib/auth/apiAuth";
-import { currentDeviceHash, revokeLibraryDevice } from "@/lib/library/deviceLimitServer";
+import { accountDeviceLimitOn, currentDeviceHash, revokeLibraryDevice } from "@/lib/library/deviceLimitServer";
 
 /**
  * POST /api/v1/library/devices/sign-out — called by logout()
@@ -13,6 +13,11 @@ import { currentDeviceHash, revokeLibraryDevice } from "@/lib/library/deviceLimi
  * Always answers 200 { released: n } (0 when there is nothing to release, no
  * session, or the migration is not applied): logout never waits on, or fails
  * because of, this call.
+ *
+ * Batch l19 (owner ٢٣٣): while the ACCOUNT device limit is on, signing out
+ * frees nothing (released: 0) — otherwise signing out on one phone and in on
+ * another would rotate devices freely; switching goes through the
+ * administration (the admin reset on the user's page).
  */
 export const dynamic = "force-dynamic";
 const NO_STORE = { "Cache-Control": "private, no-store" };
@@ -26,6 +31,7 @@ export async function POST() {
     // D6: a frozen account (a pending deletion) writes nothing — its sign-out
     // still goes on (this answer never fails it).
     if (frozenAccountResponse(user)) return NextResponse.json({ released: 0 }, { headers: NO_STORE });
+    if (await accountDeviceLimitOn()) return NextResponse.json({ released: 0 }, { headers: NO_STORE });
     const result = await revokeLibraryDevice(user.id, { deviceHash: hash }, "sign_out", user.id);
     return NextResponse.json({ released: result.ok ? result.count : 0 }, { headers: NO_STORE });
   } catch (err) {
