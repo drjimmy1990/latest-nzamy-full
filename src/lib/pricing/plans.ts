@@ -176,20 +176,24 @@ export const INDIVIDUALS_PYRAMID_PLANS: Record<string, PricingPlan> = {
     periodYearlyEn: "SAR / year",
     badgeAr: "ما يعادل ٢٠٫٧٥ ر.س شهرياً تُدفع سنوياً",
     badgeEn: "≈ SAR 20.75/month, billed yearly",
-    descAr: "مستشارك القانوني الذكي — إجابات نظامية وصياغة خطابات وإنذارات",
-    descEn: "Your AI legal assistant — statutory answers and draft notices",
+    descAr: "مستشارك القانوني الذكي — ٣٠ سؤالاً وعقدان مبسّطان شهرياً وفق سياسة الاستخدام العادل",
+    descEn: "Your AI legal assistant — 30 questions and 2 simplified contracts a month under the fair-use policy",
     featuresAr: [
       // LIVE-F11 (owner package 30 Oct 2026): no «غير محدود» claim.
-      "مساعد ذكاء اصطناعي قانوني ذاتي طوال الاشتراك",
+      // Owner ق٢٦-٦ (batch l19): the fair use counted on the server
+      // (20261209_70) — the same lines as pricing.individuals.ts.
+      "المجيب القانوني السريع: ٣٠ سؤالاً شهرياً",
+      "صائغ العقود المبسّط: عقدان مبسّطان شهرياً (قيد التفعيل)",
+      "لا يُرحَّل غير المستخدم إلى الشهر التالي، وما زاد يُدفع بالنقاط (شحن ١٠٠ أو ٢٥٠)",
       "استشهادات دقيقة بمواد الأنظمة واللوائح السعودية",
-      "توليد ومراجعة مسودات الإنذارات والخطابات الودية",
       "حاسبة الرسوم القضائية ومحدد مدد التقادم",
       "دعم فني عبر المنصة والبريد",
     ],
     featuresEn: [
-      "Self-service AI legal assistant for the whole subscription",
+      "Quick legal answer: 30 questions a month",
+      "Simplified contract drafter: 2 simplified contracts a month (coming soon)",
+      "Unused questions do not carry over; beyond them you pay in points (top-up 100 or 250)",
       "Direct citations from Saudi statutory laws",
-      "Draft generation for notices and official correspondence",
       "Court fees & statutory limitation period calculators",
       "Platform & email technical support",
     ],

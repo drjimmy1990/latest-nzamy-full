@@ -9233,3 +9233,31 @@ select 'l19 office: office_plan_level(uuid) answers ''none'' through office_feat
                         and has_function_privilege('authenticated', p.oid, 'EXECUTE')
                    from pg_catalog.pg_proc p where p.oid = to_regprocedure('public.my_office_plan_level()')), false) as ok;
 -- <<< verify:l19_office
+-- >>> verify:l19_ind_ai_fair_use — supabase/tests/rls/l19_ind_ai_fair_use.test.sql
+-- Batch l19 «plans» (owner ق٢٦-٦): the ind-ai fair use — 30 questions + 2 works a Riyadh month, counted on
+-- the server. 20261209_70 runs BEFORE the deploy. Before it runs, every check answers ok = false («run …»).
+select 'l19 plans: the ind-ai fair-use functions are SECURITY DEFINER with an empty search_path and service_role only (run 20261209_70)' as check,
+       coalesce((select count(*) = 3
+                        and bool_and(p.prosecdef
+                                     and p.proconfig @> array['search_path=""']
+                                     and not has_function_privilege('anon', p.oid, 'EXECUTE')
+                                     and not has_function_privilege('authenticated', p.oid, 'EXECUTE')
+                                     and has_function_privilege('service_role', p.oid, 'EXECUTE'))
+                   from pg_catalog.pg_proc p
+                  where p.oid in (to_regprocedure('public.ind_ai_plan_active(uuid)'),
+                                  to_regprocedure('public.ai_plan_allowance_status(uuid)'),
+                                  to_regprocedure('public.ai_start_plan_allowance_run(uuid,text,text,text,int,int,text,timestamptz,boolean,jsonb,text[],int,uuid,jsonb)'))), false) as ok;
+select 'l19 plans: the allowance matches plan id ind-ai and counts the Riyadh month, failed runs excluded (run 20261209_70)' as check,
+       coalesce(position('s.plan_id = ''ind-ai''' in pg_catalog.pg_get_functiondef(to_regprocedure('public.ind_ai_plan_active(uuid)'))) > 0
+                and position('Asia/Riyadh' in pg_catalog.pg_get_functiondef(to_regprocedure('public.ai_plan_allowance_status(uuid)'))) > 0
+                and position('r.status <> ''failed''' in pg_catalog.pg_get_functiondef(to_regprocedure('public.ai_plan_allowance_status(uuid)'))) > 0, false) as ok;
+select 'l19 plans: ai_plan_allowance_uses has RLS on, run_id as its key and no session access; the ind_ai_fair_use setting exists (run 20261209_70)' as check,
+       coalesce((select c.relrowsecurity from pg_catalog.pg_class c where c.oid = to_regclass('public.ai_plan_allowance_uses')), false)
+       and coalesce(exists (select 1 from pg_catalog.pg_constraint k
+                             where k.conrelid = to_regclass('public.ai_plan_allowance_uses') and k.contype = 'p'
+                               and k.conname = 'ai_plan_allowance_uses_pkey'), false)
+       and case when to_regclass('public.ai_plan_allowance_uses') is null then false
+                else not has_table_privilege('authenticated', 'public.ai_plan_allowance_uses', 'SELECT')
+                     and not has_table_privilege('anon', 'public.ai_plan_allowance_uses', 'SELECT') end
+       and coalesce(exists (select 1 from public.platform_settings where key = 'ind_ai_fair_use'), false) as ok;
+-- <<< verify:l19_ind_ai_fair_use

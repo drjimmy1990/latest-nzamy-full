@@ -88,7 +88,7 @@ export const plansIndividuals: { ar: Plan[]; en: Plan[] } = {
       badge: "ما يعادل ٢٠٫٧٥ ر.س شهرياً تُدفع سنوياً",
       periodMonthly: "ر.س / شهر",
       periodYearly: "ر.س / سنة",
-      desc: "مستشارك القانوني الذكي — إجابات نظامية وصياغة خطابات وإنذارات",
+      desc: "مستشارك القانوني الذكي — ٣٠ سؤالاً وعقدان مبسّطان شهرياً وفق سياسة الاستخدام العادل",
       target: "الأفراد والمستقلون والموظفون",
       cta: "اشترك في الباقة الذكية",
       ctaHref: "/register/client?type=individual&plan=ind-ai",
@@ -96,11 +96,16 @@ export const plansIndividuals: { ar: Plan[]; en: Plan[] } = {
       color: "border-emerald-300",
       features: {
         ai: [
-          // LIVE-F11: no «غير محدود» claim, and no «٣ عقود شخصية سنوياً»
-          // (conflict ٧: the contract check stays hidden until it is wired).
-          "مساعد قانوني ذكي ذاتي طوال الاشتراك",
+          // LIVE-F11: no «غير محدود» claim. Owner ق٢٦-٦ (batch l19): the fair
+          // use is counted on the server (SQL 20261209_70, planAllowance.ts) —
+          // 30 questions on the quick answer + 2 works on the simplified
+          // contract drafter a Riyadh calendar month, no carry-over. «خطابان»
+          // is not promised: «صائغ الخطابات» is a template, no AI run to count.
+          // «قيد التفعيل» follows the simplified drafter's own sidebar badge.
+          "المجيب القانوني السريع: ٣٠ سؤالاً شهرياً",
+          "صائغ العقود المبسّط: عقدان مبسّطان شهرياً (قيد التفعيل)",
+          "لا يُرحَّل غير المستخدم إلى الشهر التالي، وما زاد يُدفع بالنقاط (شحن ١٠٠ أو ٢٥٠)",
           "استشهاد مباشر وفوري بمواد الأنظمة واللوائح السعودية",
-          "توليد ومراجعة مسودات الخطابات والإنذارات الرسمية",
           "حاسبة الرسوم القضائية ومحدد مدد التقادم النظامية",
         ],
         platform: [
@@ -176,7 +181,7 @@ export const plansIndividuals: { ar: Plan[]; en: Plan[] } = {
       badge: "≈ SAR 20.75/month, billed yearly",
       periodMonthly: "SAR / month",
       periodYearly: "SAR / year",
-      desc: "Your AI legal assistant — statutory answers and draft notices",
+      desc: "Your AI legal assistant — 30 questions and 2 simplified contracts a month under the fair-use policy",
       target: "Individuals, Employees & Freelancers",
       cta: "Subscribe to Smart AI",
       ctaHref: "/register/client?type=individual&plan=ind-ai",
@@ -184,9 +189,10 @@ export const plansIndividuals: { ar: Plan[]; en: Plan[] } = {
       color: "border-emerald-300",
       features: {
         ai: [
-          "Self-service AI legal assistant for the whole subscription",
+          "Quick legal answer: 30 questions a month",
+          "Simplified contract drafter: 2 simplified contracts a month (coming soon)",
+          "Unused questions do not carry over; beyond them you pay in points (top-up 100 or 250)",
           "Direct citations from Saudi statutory laws",
-          "Draft generation for notices and official correspondence",
           "Court fees & limitation period calculators",
         ],
         platform: [
@@ -232,7 +238,7 @@ export const comparisonIndividuals: { ar: ComparisonCategory[]; en: ComparisonCa
       category: "الذكاء الاصطناعي والوقاية",
       icon: Brain,
       rows: [
-        { feature: "الذكاء الاصطناعي القانوني",   "pay-per-piece": "محدود",          "ind-ai": "مساعد ذاتي" },
+        { feature: "الذكاء الاصطناعي القانوني",   "pay-per-piece": "محدود",          "ind-ai": "٣٠ سؤالاً + عقدان مبسّطان شهرياً" },
         { feature: "الاستشهاد بالمواد النظامية",  "pay-per-piece": true,            "ind-ai": true },
         { feature: "فحص وتدقيق العقود",          "pay-per-piece": "حسب قائمة الخدمات", "ind-ai": "خصم ١٠٪" },
         { feature: "صياغة الخطابات والإنذارات",   "pay-per-piece": "حسب الخدمة",     "ind-ai": true },
@@ -270,7 +276,7 @@ export const comparisonIndividuals: { ar: ComparisonCategory[]; en: ComparisonCa
       category: "AI & Preventive Law",
       icon: Brain,
       rows: [
-        { feature: "Legal AI Queries",            "pay-per-piece": "Limited",       "ind-ai": "Self-service" },
+        { feature: "Legal AI Queries",            "pay-per-piece": "Limited",       "ind-ai": "30 questions + 2 simplified contracts a month" },
         { feature: "Statutory Article Citations", "pay-per-piece": true,            "ind-ai": true },
         { feature: "Contract Audit & Review",     "pay-per-piece": "Per the service list","ind-ai": "10% off" },
         { feature: "Notice & Letter Drafting",    "pay-per-piece": "Per service",   "ind-ai": true },

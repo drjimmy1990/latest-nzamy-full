@@ -224,7 +224,8 @@ test("each library tool's screen maps the gate's refusal to its own words", () =
   assert.deepEqual(library, ["assistant", "canvas-card", "floating", "legal-drafter", "legal-opinion-consult", "library-assistant", "quick-answer"]);
   // Q181 (l13): the floating window says the gate's refusal in its own name.
   assert.match(src("components/chatbot/SiteAssistantWidget.tsx"), /libraryToolRefusal\(code, NAME_AR, "individual"\)/);
-  assert.match(src("app/ai/quick-answer/page.tsx"), /libraryToolRefusal\(run\.code, "سؤال قانوني سريع", user\.userType\)/);
+  // l19 (ق٢٦-٦): the quick answer also names the individual's smart plan, which opens it.
+  assert.match(src("app/ai/quick-answer/page.tsx"), /libraryToolRefusal\(run\.code, "سؤال قانوني سريع", user\.userType, true\)/);
   assert.match(src("app/ai/assistant/_assistant-client.ts"), /libraryToolRefusal\(code, "المساعد المتقدم", input\.userType \?\? null\)/);
   assert.match(src("app/ai/assistant/page.tsx"), /askAssistant\(\{ message: content, context, conversationId, userType, mode, caseId: context === "case" \? caseId \|\| null : null \}\)/);
   assert.match(src("app/dashboard/business/kanban/_graph-ai-card.ts"), /libraryToolRefusal\([^)]*"اقترح سنداً نظامياً", userType\)/);

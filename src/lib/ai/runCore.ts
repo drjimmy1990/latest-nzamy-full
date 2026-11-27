@@ -77,6 +77,14 @@ import {
   type SectionEditCounts,
 } from "./sectionEdits.ts";
 import { FREE_QUESTION_COPY, freeQuestionFallsBack, freeQuestionToolFor } from "./freeQuestion.ts";
+import {
+  PLAN_ALLOWANCE_COPY,
+  PLAN_ALLOWANCE_TOPUP_HREF,
+  planAllowanceKindFor,
+  planAllowanceRefused,
+  type PlanAllowanceKind,
+  type PlanAllowanceState,
+} from "./planAllowance.ts";
 import { textPages } from "./textExtract.ts";
 import { readDraftPrices } from "./draftKinds.ts";
 import {
@@ -173,6 +181,17 @@ export interface StartRunDeps {
    * false or a throw → the normal path.
    */
   freeQuestions?: (userId: string) => Promise<boolean>;
+  /**
+   * Owner ق٢٦-٦ (batch l19, SQL 20261209_70): the ind-ai fair use of this
+   * month (planAllowance.planAllowanceStateWith). Asked only for a non-admin
+   * INDIVIDUAL's priced run of a counted tool (quick-answer = a question,
+   * simple-contract = a work) that no free question, credit or section edit
+   * pays for. `left` → ai_start_plan_allowance_run (price 0, counted under
+   * the lock); `used` → the normal price; `degraded` (a subscriber whose
+   * counter could not answer) → price 0, uncounted, logged (fail open). No
+   * dep, `none` or a throw → the normal path.
+   */
+  planAllowance?: (userId: string, kind: PlanAllowanceKind) => Promise<PlanAllowanceState>;
   /** Library tools only: the searches → the texts (retrieval.retrieveLibrary). */
   retrieve?: (
     queries: string[],
@@ -354,6 +373,24 @@ async function founderLibraryCreditSafe(read: (userId: string) => Promise<boolea
     return false;
   }
 }
+
+/** deps.planAllowance, never throwing: a failed or malformed read goes the normal way (`none`). */
+async function planAllowanceSafe(
+  read: (userId: string, kind: PlanAllowanceKind) => Promise<PlanAllowanceState>,
+  userId: string,
+  kind: PlanAllowanceKind,
+): Promise<PlanAllowanceState> {
+  try {
+    const got = await read(userId, kind);
+    return got && typeof got === "object" && typeof got.state === "string" ? got : { state: "none" };
+  } catch (err) {
+    console.error("[ai] plan allowance read threw:", errorName(err));
+    return { state: "none" };
+  }
+}
+
+/** ai_start_run's own refusals, which the plan start passes through: never a reason to fail open. */
+const START_RUN_REFUSALS: ReadonlySet<string> = new Set(["daily_limit", "insufficient_points"]);
 
 /** deps.freeQuestions, never throwing: a failed read goes the normal way. */
 async function freeQuestionsLeftSafe(read: (userId: string) => Promise<boolean>, userId: string): Promise<boolean> {
@@ -923,12 +960,31 @@ export async function startRunWith(
   let libraryCredit =
     !creditKind && !isAdmin && !sectionEdit && !freeQuestion && price > 0 && spec.id === FOUNDER_LIBRARY_TOOL &&
     !!deps.founderLibraryCredit && (await founderLibraryCreditSafe(deps.founderLibraryCredit, actor.userId));
+  // Owner ق٢٦-٦ (batch l19, 20261209_70): an individual's ind-ai fair use — 30
+  // questions (quick-answer) + 2 works (simple-contract) a Riyadh month, at
+  // price 0, counted by ai_start_plan_allowance_run under the start lock. Asked
+  // only when nothing else pays for the run (planAllowance.ts).
+  const planKind =
+    !isAdmin && !creditKind && !sectionEdit && price > 0 && actor.userType === "individual" && !!deps.planAllowance
+      ? planAllowanceKindFor(spec.id)
+      : null;
+  let planState: PlanAllowanceState = { state: "none" };
+  if (planKind && !freeQuestion && !libraryCredit) planState = await planAllowanceSafe(deps.planAllowance!, actor.userId, planKind);
   // A section edit starts through ai_start_section_edit (20261108_40): it takes
   // ai_start_run's lock, counts the memo's edits again and refuses a price that
   // is no longer right, so two edits at once cannot both take the last free one.
   let startFn = freeQuestion
     ? "ai_start_free_question"
-    : sectionEdit ? "ai_start_section_edit" : creditKind || libraryCredit ? "ai_start_run_with_credit" : "ai_start_run";
+    : sectionEdit
+      ? "ai_start_section_edit"
+      : creditKind || libraryCredit
+        ? "ai_start_run_with_credit"
+        : planState.state === "left" ? "ai_start_plan_allowance_run" : "ai_start_run";
+  // Fail open (owner ق٢٦-٦): a subscriber whose counter could not answer is
+  // never refused for it — price 0, uncounted, logged.
+  if (planState.state === "degraded") {
+    console.error("[ai] plan allowance unavailable — started uncounted at price 0:", spec.id);
+  }
 
   const startArgs = {
     p_user: actor.userId,
@@ -948,6 +1004,7 @@ export async function startRunWith(
   };
   let { data, error } = await admin.rpc(startFn, {
     ...startArgs,
+    ...(planState.state === "degraded" && startFn === "ai_start_run" ? { p_price: 0 } : {}),
     ...(creditKind ? { p_credit_kind: creditKind } : libraryCredit ? { p_credit_kind: FOUNDER_LIBRARY_CREDIT_KIND } : {}),
     ...(sectionEdit
       ? {
@@ -972,8 +1029,37 @@ export async function startRunWith(
     libraryCredit =
       !creditKind && !isAdmin && spec.id === FOUNDER_LIBRARY_TOOL &&
       !!deps.founderLibraryCredit && (await founderLibraryCreditSafe(deps.founderLibraryCredit, actor.userId));
-    startFn = libraryCredit ? "ai_start_run_with_credit" : "ai_start_run";
-    ({ data, error } = await admin.rpc(startFn, libraryCredit ? { ...startArgs, p_credit_kind: FOUNDER_LIBRARY_CREDIT_KIND } : startArgs));
+    // ق٢٦-٦: an individual whose free questions sit on a counted tool (an
+    // admin's setting) goes to his plan's allowance next.
+    if (planKind && !libraryCredit) planState = await planAllowanceSafe(deps.planAllowance!, actor.userId, planKind);
+    startFn = libraryCredit ? "ai_start_run_with_credit" : planState.state === "left" ? "ai_start_plan_allowance_run" : "ai_start_run";
+    ({ data, error } = await admin.rpc(
+      startFn,
+      libraryCredit
+        ? { ...startArgs, p_credit_kind: FOUNDER_LIBRARY_CREDIT_KIND }
+        : planState.state === "degraded" ? { ...startArgs, p_price: 0 } : startArgs,
+    ));
+  }
+  // ق٢٦-٦: the allowance start refused or failed.
+  //   * its own refusal (the month's last use taken meanwhile, or no plan):
+  //     nothing was written, so the same request goes the normal way (points);
+  //   * ai_start_run's refusal passed through (daily_limit) or a bad argument:
+  //     answered below like any start;
+  //   * anything else (the SQL not run yet, a broken counter) for an account
+  //     the counter itself called a subscriber: fail open — price 0,
+  //     uncounted, logged.
+  if (error && startFn === "ai_start_plan_allowance_run") {
+    const refusedAs = planAllowanceRefused(error);
+    if (refusedAs) {
+      planState = refusedAs === "used" ? { state: "used", limit: planState.state === "left" ? planState.limit : 0 } : { state: "none" };
+      startFn = "ai_start_run";
+      ({ data, error } = await admin.rpc(startFn, startArgs));
+    } else if (!START_RUN_REFUSALS.has(error.message ?? "") && error.code !== "22023") {
+      console.error("[ai] ai_start_plan_allowance_run failed — started uncounted at price 0:", spec.id, error.code);
+      planState = { state: "degraded" };
+      startFn = "ai_start_run";
+      ({ data, error } = await admin.rpc(startFn, { ...startArgs, p_price: 0 }));
+    }
   }
   // The library points ran out between the check and the start (another
   // question took the last one), or 20261124_10 has not run yet: the credit
@@ -995,6 +1081,19 @@ export async function startRunWith(
       return { status: 400, body: { error: AI_COPY.creditNotEligible, code: "credit_not_eligible" } };
     }
     if (error.message === "insufficient_points") {
+      // ق٢٦-٦: the subscriber's month is used and his points do not cover the
+      // run — told so, with the top-up (100 / 250).
+      if (planKind && planState.state === "used") {
+        return {
+          status: 402,
+          body: {
+            error: PLAN_ALLOWANCE_COPY.refused(planKind, planState.limit),
+            code: "plan_allowance_used",
+            price,
+            topupHref: PLAN_ALLOWANCE_TOPUP_HREF,
+          },
+        };
+      }
       return { status: 402, body: { error: AI_COPY.points, code: "insufficient_points", price } };
     }
     if (error.message === "daily_limit") {
