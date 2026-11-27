@@ -8,7 +8,8 @@
  *     PROTECTED page (dashboards, settings, the AI tools, onboarding …);
  *   - src/lib/library/deviceLimitServer.ts enforceLibraryDevice — the library
  *     full-text routes (the library pages are public, the proxy hook never
- *     sees them).
+ *     sees them), and (l19 review B2) the AI run route, the free-question
+ *     status and the signed-in site assistant (aiDeviceCheck.routes.test.ts).
  *
  * A REQUEST WITHOUT A DEVICE COOKIE gets a freshly minted id, asked about at
  * once: refused when another CONFIRMED device holds its class (so deleting the

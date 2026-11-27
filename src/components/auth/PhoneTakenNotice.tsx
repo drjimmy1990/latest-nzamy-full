@@ -14,6 +14,11 @@
  * 403 of any /api/v1 call). So all three links sign this browser out first
  * (this device only) and then open the page. Never used on /login or
  * /forgot-password: their answers stay neutral.
+ *
+ * l19 review (S1): `signOutFirst={false}` from Settings — an established
+ * account that mistyped a number someone else holds is not held by the phone
+ * gate, so /contact opens for it and nothing is gained by signing it out of
+ * its own account. Plain links then.
  */
 
 import { useState } from "react";
@@ -22,7 +27,16 @@ import { WarningCircle } from "@phosphor-icons/react";
 import { createClient } from "@/lib/supabase/client";
 import { PHONE_TAKEN_AR, PHONE_TAKEN_EN, PHONE_TAKEN_LINKS } from "@/lib/phoneOtp/confirmedPhone";
 
-export function PhoneTakenNotice({ isAr, className = "" }: { isAr: boolean; className?: string }) {
+export function PhoneTakenNotice({
+  isAr,
+  className = "",
+  signOutFirst = true,
+}: {
+  isAr: boolean;
+  className?: string;
+  /** false: plain links (Settings — an established account is not bounced). */
+  signOutFirst?: boolean;
+}) {
   const [leaving, setLeaving] = useState(false);
 
   async function leaveTo(href: string) {
@@ -51,7 +65,7 @@ export function PhoneTakenNotice({ isAr, className = "" }: { isAr: boolean; clas
       </p>
       <p className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 ps-6">
         {PHONE_TAKEN_LINKS.map((link) =>
-          link.signOutFirst ? (
+          signOutFirst && link.signOutFirst ? (
             <button key={link.href} type="button" className={linkCls} disabled={leaving} onClick={() => void leaveTo(link.href)}>
               {isAr ? link.ar : link.en}
             </button>

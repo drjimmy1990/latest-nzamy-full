@@ -556,7 +556,7 @@ export function ProfileTab() {
 
       {/* Server errors, action alerts and the Save button */}
       {/* Owner ٢٣٥ (batch l19): a number used on another account — his sentence and its three links. */}
-      {error && isPhoneTakenText(error) && <PhoneTakenNotice isAr={lang !== "en"} />}
+      {error && isPhoneTakenText(error) && <PhoneTakenNotice isAr={lang !== "en"} signOutFirst={false} />}
       {error && !isPhoneTakenText(error) && (
         <div className="flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300">
           <WarningCircle size={15} weight="fill" />

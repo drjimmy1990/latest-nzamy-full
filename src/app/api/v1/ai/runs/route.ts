@@ -25,6 +25,7 @@ import { assistantGuardState } from "@/lib/ai/assistantGuard";
 import { loadAssistantCase, type CaseReader } from "@/lib/ai/assistantCase";
 import { verifiedProviderDecision } from "@/lib/auth/verifiedProvider";
 import { readVerifiedProviderFacts } from "@/lib/auth/verifiedProviderRead";
+import { enforceLibraryDevice } from "@/lib/library/deviceLimitServer";
 
 /**
  * /api/v1/ai/runs — the AI tools (docs/plans/2026-10-26-ai-services-n8n-plan.md
@@ -44,6 +45,12 @@ import { readVerifiedProviderFacts } from "@/lib/auth/verifiedProviderRead";
  * freeze check: both happen here. Nor does the proxy's library lock reach
  * this path (one path, every tool): a run of the library's own AI checks the
  * lock here, before the charge (libraryAccessFor).
+ *
+ * l19 review (B2, owner ٢٣٣ «أدوات AI»): a run is device-checked right after
+ * the user is known, before anything is read or charged — the account-wide
+ * rule of the library (enforceLibraryDevice → account_device_gate). Switch
+ * off = no effect; any failure lets the run through (fail-open as designed);
+ * a Bearer caller with no cookie jar is not checked (question ٢٠٧).
  */
 
 export const dynamic = "force-dynamic";
@@ -139,6 +146,8 @@ export async function POST(request: NextRequest) {
     const auth = await requireApiUser(supabase, SIGN_IN);
     if (auth instanceof NextResponse) return auth;
     const { user } = auth;
+    const deviceRefusal = await enforceLibraryDevice(user.id, true);
+    if (deviceRefusal) return deviceRefusal;
 
     let body: unknown;
     try {

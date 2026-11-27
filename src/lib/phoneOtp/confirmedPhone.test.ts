@@ -61,7 +61,9 @@ test("l19: PhoneTakenNotice draws the sentence, signs out before /login and /for
   const notice = read("src/components/auth/PhoneTakenNotice.tsx");
   assert.match(notice, /isAr \? PHONE_TAKEN_AR : PHONE_TAKEN_EN/);
   assert.match(notice, /PHONE_TAKEN_LINKS\.map/);
-  assert.match(notice, /link\.signOutFirst \?/);
+  assert.match(notice, /signOutFirst && link\.signOutFirst \?/);
+  // l19 review S1: the prop defaults to signing out (new, held accounts); Settings opts out.
+  assert.match(notice, /signOutFirst = true,/);
   const leave = notice.slice(notice.indexOf("async function leaveTo"), notice.indexOf("const linkCls"));
   assert.ok(leave.indexOf('signOut({ scope: "local" })') > 0 && leave.indexOf("window.location.assign(href)") > leave.indexOf("signOut("), "sign out first, then a full load");
   assert.match(notice, /<Link key=\{link\.href\} href=\{link\.href\}/);
@@ -139,7 +141,7 @@ test("the verify screen opens the number field on a taken number and shows the o
 
 test("l19: settings and the onboarding phone step show the notice for the sentence, other errors as before", () => {
   const tab = read("src/app/settings/components/tabs/ProfileTab.tsx");
-  assert.match(tab, /\{error && isPhoneTakenText\(error\) && <PhoneTakenNotice isAr=\{lang !== "en"\} \/>\}/);
+  assert.match(tab, /\{error && isPhoneTakenText\(error\) && <PhoneTakenNotice isAr=\{lang !== "en"\} signOutFirst=\{false\} \/>\}/);
   assert.match(tab, /\{error && !isPhoneTakenText\(error\) && \(/);
   const ob = read("src/app/onboarding/page.tsx");
   assert.match(ob, /\{saveError && isPhoneTakenText\(saveError\) && <PhoneTakenNotice isAr=\{isAr\} className="mb-4" \/>\}/);

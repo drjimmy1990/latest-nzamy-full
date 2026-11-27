@@ -190,6 +190,15 @@ export const DEVICE_CODE_REQUIRED_AR =
   "هذا جهاز جديد على حسابك. أرسلنا — أو نرسل عند طلبك — رمز تحقق إلى بريدك الإلكتروني المسجّل؛ أدخله لتفتح المكتبة من هذا الجهاز. " +
   "حد الأجهزة خاص بالمكتبة وحدها، ولا يُسجَّل خروجك من أي جهاز آخر.";
 
+/**
+ * l19 review B3: the e-mail code of a new device is retired (owner ٢٣٣ — one
+ * mobile and one computer, registered silently). /api/v1/library/devices/code
+ * and /verify answer 410 with this line and call nothing.
+ */
+export const RETIRED_DEVICE_CODE = "device_code_retired";
+export const RETIRED_DEVICE_CODE_AR =
+  "لم يعد تأكيد الجهاز برمز البريد مستخدمًا. يُسجَّل جوالك وحاسوبك تلقائيًا عند أول استعمال، وإن ظهر لك أن هذا الجهاز غير مسجّل لحسابك فتواصل مع الإدارة.";
+
 export interface DeviceLimitRefusalBody {
   error: string;
   code:

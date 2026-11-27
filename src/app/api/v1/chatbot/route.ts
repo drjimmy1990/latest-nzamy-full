@@ -4,6 +4,7 @@ import { clientIpFrom, rateLimit } from "@/lib/rateLimit";
 import { isFeatureOn } from "@/lib/featureFlags/featureFlagsServer";
 import { ASSISTANT_MAX_MESSAGE, answerMessage, classify, feedNeeds } from "@/lib/siteAssistant/answer";
 import { loadAssistantFeed, type FeedViewer } from "@/lib/siteAssistant/feedServer";
+import { enforceLibraryDevice } from "@/lib/library/deviceLimitServer";
 
 /**
  * «مساعد نظامي» — the site help assistant (O20 / A21, batch l11-misc; owner
@@ -27,6 +28,10 @@ import { loadAssistantFeed, type FeedViewer } from "@/lib/siteAssistant/feedServ
  * Abuse friction: per address, 12 messages a minute and 120 an hour (the
  * process-local limiter, src/lib/rateLimit.ts), on top of the proxy's general
  * write bucket; a message is at most 400 characters.
+ *
+ * l19 review (B2, owner ٢٣٣ «المساعد الذكي»): a SIGNED-IN viewer is
+ * device-checked before the answer (the account rule; switch off = no
+ * effect, fail-open). A guest is never checked.
  */
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -75,17 +80,20 @@ export async function POST(request: NextRequest) {
   try {
     const needs = feedNeeds(classify(message).intent);
     let viewer: FeedViewer | null = null;
-    if (needs.sale || needs.offers) {
-      try {
-        const supabase = await createClient();
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
-        viewer = user ? { id: user.id, last_sign_in_at: user.last_sign_in_at ?? null } : null;
-      } catch {
-        viewer = null; // a guest answer: sale for the public, offers after sign-in
-      }
+    try {
+      const supabase = await createClient();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      viewer = user ? { id: user.id, last_sign_in_at: user.last_sign_in_at ?? null } : null;
+    } catch {
+      viewer = null; // a guest answer: sale for the public, offers after sign-in
     }
+    if (viewer) {
+      const deviceRefusal = await enforceLibraryDevice(viewer.id, true);
+      if (deviceRefusal) return deviceRefusal;
+    }
+    if (!needs.sale && !needs.offers) viewer = null; // the feed reads the viewer only for these two
     const feed = await loadAssistantFeed(viewer, needs);
     const reply = answerMessage(message, feed);
     return NextResponse.json(

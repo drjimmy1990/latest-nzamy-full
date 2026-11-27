@@ -10,6 +10,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, existsSync } from "node:fs";
 import {
+  PRIVATE_CACHE_CONTROL,
   PRIVATE_PATH_PREFIXES,
   PRIVATE_ROBOTS,
   PRIVATE_ROBOTS_HEADER,
@@ -41,6 +42,58 @@ test("every sign-in page of src/proxy.ts's PROTECTED list is private", () => {
   for (const p of protectedPaths) assert.ok(isPrivatePath(p), `${p} is PROTECTED but indexable`);
 });
 
+/** The PROTECTED list of src/proxy.ts, read from the file (a new prefix is picked up by itself). */
+function proxyProtectedPaths(): string[] {
+  const proxy = read("../../proxy.ts");
+  const at = proxy.indexOf("const PROTECTED = [");
+  const block = proxy.slice(at, proxy.indexOf("];", at));
+  return [...stripComments(block).matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+}
+
+/** next.config.ts's header rules as Next applies them: every matching rule in order, the later one wins per key. */
+async function configHeadersFor(path: string): Promise<Map<string, string>> {
+  const cfg = (await import("../../../next.config.ts")).default as { headers: () => Promise<Array<{ source: string; headers: Array<{ key: string; value: string }> }>> };
+  const rules = await cfg.headers();
+  const out = new Map<string, string>();
+  for (const rule of rules) {
+    const re = new RegExp(
+      "^" +
+        rule.source
+          .replace(/\./g, "[.]")
+          .replace(/\/:path\*/g, "(?:/.*)?")
+          .replace(/\/:[a-z]+/gi, "/[^/]+") +
+        "$",
+    );
+    if (re.test(path)) for (const h of rule.headers) out.set(h.key.toLowerCase(), h.value);
+  }
+  return out;
+}
+
+test("l19 review B1: every PROTECTED page of src/proxy.ts (and everything under it) answers private, no-store", async () => {
+  const protectedPaths = proxyProtectedPaths();
+  assert.ok(protectedPaths.length > 20, `read only ${protectedPaths.length}`);
+  for (const p of protectedPaths) {
+    for (const path of [p, `${p}/x`]) {
+      const cc = (await configHeadersFor(path)).get("cache-control") ?? "";
+      assert.match(cc, /no-store/, `${path}: Cache-Control is «${cc}»`);
+      assert.ok(cc === PRIVATE_CACHE_CONTROL || /no-store/.test(cc), path);
+    }
+  }
+  // the prerendered sign-in pages the review found (prerender-manifest × PROTECTED)
+  for (const path of ["/ai/legal-opinion", "/ai/draft", "/ai/assistant", "/ai/corp/compliance", "/notifications", "/onboarding", "/academy/my-courses", "/academy/certificates", "/marketplace/post", "/marketplace/collaborate", "/dashboard/lawyer"]) {
+    assert.equal((await configHeadersFor(path)).get("cache-control"), PRIVATE_CACHE_CONTROL, path);
+  }
+  // the stricter rules further down still win on their own paths
+  assert.equal((await configHeadersFor("/ai/wargaming")).get("cache-control"), "no-store, must-revalidate");
+  assert.equal((await configHeadersFor("/track/abc")).get("cache-control"), "private, no-store, max-age=0");
+});
+
+test("l19 review B1: the public pages get no Cache-Control from the config (their SEO caching is unchanged)", async () => {
+  for (const path of ["/", "/laws", "/laws/companies-law", "/pricing", "/blog/x", "/services/lawyers", "/ai", "/ai/legal-translate", "/ai/analyze", "/academy", "/marketplace", "/faq", "/founder"]) {
+    assert.equal((await configHeadersFor(path)).get("cache-control"), undefined, path);
+  }
+});
+
 test("the X-Robots-Tag rules: noindex, follow on each prefix and everything under it", () => {
   assert.equal(PRIVATE_ROBOTS_HEADER, "noindex, follow");
   assert.deepEqual({ ...PRIVATE_ROBOTS }, { index: false, follow: true });
@@ -50,7 +103,10 @@ test("the X-Robots-Tag rules: noindex, follow on each prefix and everything unde
     for (const source of [prefix, `${prefix}/:path*`]) {
       const rule = rules.find((r) => r.source === source);
       assert.ok(rule, source);
-      assert.deepEqual(rule.headers, [{ key: "X-Robots-Tag", value: "noindex, follow" }]);
+      assert.deepEqual(rule.headers, [
+        { key: "X-Robots-Tag", value: "noindex, follow" },
+        { key: "Cache-Control", value: "private, no-store" },
+      ]);
     }
   }
 });
