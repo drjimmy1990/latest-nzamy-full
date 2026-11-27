@@ -42,6 +42,10 @@ interface ListReply {
   data?: OpenRequestItem[];
   hasMore?: boolean;
   verified?: boolean | null;
+  /** l18 review: asking to take a request is a verified LAWYER's act (a firm account reads only). */
+  canAsk?: boolean;
+  /** l18 review: the caller owns a firm (the firm account's page). */
+  firm?: boolean;
   market?: MarketInfo;
   error?: string;
 }
@@ -69,7 +73,7 @@ interface AssignedRow {
 type State =
   | { kind: "loading" }
   | { kind: "error"; message: string }
-  | { kind: "ready"; items: OpenRequestItem[]; hasMore: boolean; verified: boolean | null; market: MarketInfo | null };
+  | { kind: "ready"; items: OpenRequestItem[]; hasMore: boolean; verified: boolean | null; canAsk: boolean; firm: boolean; market: MarketInfo | null };
 
 type Mine =
   | { kind: "loading" }
@@ -105,6 +109,8 @@ export default function OpenRequestsList() {
         items: Array.isArray(body.data) ? body.data : [],
         hasMore: body.hasMore === true,
         verified: typeof body.verified === "boolean" ? body.verified : null,
+        canAsk: body.canAsk !== false,
+        firm: body.firm === true,
         market: body.market ?? null,
       });
     } catch {
@@ -181,7 +187,9 @@ export default function OpenRequestsList() {
     mine.kind === "ready" ? mine.asks.filter((a) => a.status === "pending").map((a) => a.requestId) : [],
   );
   const market = state.kind === "ready" ? state.market : null;
-  const canAsk = state.kind === "ready" && state.verified === true && market?.installed === true;
+  const canAsk = state.kind === "ready" && state.verified === true && state.canAsk && market?.installed === true;
+  // l18 review: a verified firm reads the list; a verified lawyer of the firm asks from his own account
+  const firmReadsOnly = state.kind === "ready" && state.firm && state.verified === true && !state.canAsk;
 
   return (
     <section className="max-w-3xl mx-auto px-4 pb-16" dir="rtl" aria-labelledby="open-requests-heading">
@@ -204,6 +212,11 @@ export default function OpenRequestsList() {
         يظهر النص الكامل ولا اسم العميل إلا للمحامي الذي يُسند إليه الطلب. {acceptHintAr(market)}
       </p>
       <IntermediaryNotice withPayment className="mb-4" />
+      {firmReadsOnly && (
+        <p className={`text-xs leading-relaxed mb-4 ${ts}`}>
+          يعرض حساب المكتب الطلبات المفتوحة للاطلاع، ويطلب قبولَ الطلب محامٍ موثَّق من أعضاء المكتب من حسابه.
+        </p>
+      )}
 
       {state.kind === "loading" && <p className={`text-sm ${ts}`}>جارٍ التحميل…</p>}
 
@@ -216,7 +229,9 @@ export default function OpenRequestsList() {
       {state.kind === "ready" && state.items.length === 0 && (
         <p className={`text-sm ${ts}`}>
           {state.verified === false
-            ? "تظهر الطلبات المفتوحة للمحامين الموثَّقين فقط، بعد اعتماد ترخيصك."
+            ? state.firm
+              ? "تظهر الطلبات المفتوحة لحساب المكتب بعد اعتماد توثيق مكتبك."
+              : "تظهر الطلبات المفتوحة للمحامين الموثَّقين فقط، بعد اعتماد ترخيصك."
             : "لا توجد طلبات مفتوحة الآن."}
         </p>
       )}

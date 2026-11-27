@@ -143,6 +143,16 @@ export const MICRO_SIDEBAR: SidebarGroup[] = [
       { label: "لوحة التحكم", labelEn: "Dashboard", href: "/dashboard/micro", icon: "SquaresFour" },
     ],
   },
+  // Owner ٢٣٨ (l18 review): the market in every role's menu — a small business
+  // orders through the shared intake (routeAccess CLIENT_INTAKE_PREFIXES,
+  // E-108), which works while the beta switch redirects /marketplace.
+  {
+    title: "سوق الخدمات", titleEn: "Services Market",
+    items: [
+      { label: "اطلب خدمة", labelEn: "Request a Service", href: "/dashboard/client/services", icon: "Storefront" },
+      { label: "طلباتي",    labelEn: "My Requests",       href: "/dashboard/client/requests", icon: "ListChecks" },
+    ],
+  },
   {
     title: "اشتراطات نشاطي", titleEn: "Business Requirements",
     items: [

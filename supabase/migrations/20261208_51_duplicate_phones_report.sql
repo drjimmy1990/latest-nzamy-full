@@ -19,6 +19,11 @@
 --                  (super_admin / operations / auditor) — owner red line:
 --                  NEVER delete or change these accounts
 --   is_test_account    test_accounts row or profiles.is_demo
+--   blocks_unique_index  (l18 review) the account is confirmed AND another
+--                  confirmed account stores the number in the SAME spelling —
+--                  exactly what 20261208_50 counts in its NOTICE and what
+--                  stops its unique index. The other rows (another spelling,
+--                  or unconfirmed) share a number too but do not block it.
 --
 -- The owner's rule (answer ٢٣٥ §3): test / duplicate accounts may be removed
 -- BY HAND after review; admin / super_admin / staff accounts never. The
@@ -40,7 +45,10 @@ with folded as (
            when pg_catalog.btrim(p.phone) ~ '^05[0-9]{8}$'     then '+966' || pg_catalog.substr(pg_catalog.btrim(p.phone), 2)
            else pg_catalog.btrim(p.phone)
          end as number,
-         (pg_catalog.to_jsonb(p.*) ->> 'is_demo') = 'true' as is_demo
+         (pg_catalog.to_jsonb(p.*) ->> 'is_demo') = 'true' as is_demo,
+         -- 20261208_50's own count: confirmed rows grouped by the stored value
+         p.phone_verified_at is not null
+           and pg_catalog.count(*) filter (where p.phone_verified_at is not null) over (partition by p.phone) > 1 as blocks_unique_index
     from public.profiles p
    where coalesce(pg_catalog.btrim(p.phone), '') <> ''
 ),
@@ -64,7 +72,8 @@ select '…' || pg_catalog.right(f.number, 3)                         as number_
        (f.user_type = 'admin'
         or exists (select 1 from public.platform_staff ps where ps.user_id = f.id)) as is_staff_or_admin,
        (f.is_demo
-        or exists (select 1 from public.test_accounts t where t.user_id = f.id))    as is_test_account
+        or exists (select 1 from public.test_accounts t where t.user_id = f.id))    as is_test_account,
+       f.blocks_unique_index
   from folded f
   join shared s on s.number = f.number
   left join auth.users u on u.id = f.id

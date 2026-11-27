@@ -175,7 +175,8 @@ export const FIRM_SIDEBAR: SidebarGroup[] = [
     items: [
       { label: "جميع القضايا",   labelEn: "All Cases",    href: "/dashboard/firm/cases",         icon: "Gavel" },
       { label: "خريطة قضايا المكتب", labelEn: "Cases Map", href: "/dashboard/firm/graph",        icon: "TreeStructure" },
-      { label: "الجلسات",         labelEn: "Hearings",     href: "/dashboard/firm/hearings", badge: "قريباً",      icon: "CalendarCheck" },
+      // l18 review: built (l12 N13, /api/v1/firm/hearings) — the «قريباً» badge was stale
+      { label: "الجلسات",         labelEn: "Hearings",     href: "/dashboard/firm/hearings",      icon: "CalendarCheck" },
       { label: "توزيع القضايا",   labelEn: "Assignments",  href: "/dashboard/firm/cases/assign", badge: "قريباً",  icon: "ArrowsSplit" },
       { label: "مهام الفريق",     labelEn: "Team Tasks",   href: "/dashboard/firm/tasks", badge: "قريباً",         icon: "CheckSquare" },
       { label: "سجل النشاط",       labelEn: "Activity Log", href: "/dashboard/firm/activity",      icon: "ClockCounterClockwise" },
@@ -233,7 +234,8 @@ export const FIRM_SIDEBAR: SidebarGroup[] = [
   {
     title: "الماليات والتقارير", titleEn: "Finance & Reports",
     items: [
-      { label: "الإيرادات",       labelEn: "Revenue",    href: "/dashboard/firm/finance", badge: "قريباً",           icon: "Money", gateKey: "firm-finance" },
+      // l18 review: built (FirmFinancePageLive: members' points usage + the ledger) — the badge was stale
+      { label: "الإيرادات",       labelEn: "Revenue",    href: "/dashboard/firm/finance",           icon: "Money", gateKey: "firm-finance" },
       { label: "الأتعاب",          labelEn: "Fees",       href: "/dashboard/firm/fees",              icon: "Receipt", gateKey: "firm-finance" },
       { label: "التقارير المالية", labelEn: "Reports",    href: "/dashboard/firm/finance/reports",   icon: "ChartBar", gateKey: "firm-finance", badge: "قريباً" },
       { label: "لوحة التحليلات",  labelEn: "Analytics",  href: "/dashboard/firm/analytics",         icon: "ChartLine", gateKey: "firm-analytics", badge: "قريباً" },

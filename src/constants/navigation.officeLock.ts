@@ -47,6 +47,7 @@ export const LAWYER_OFFICE_HREFS: readonly string[] = Object.freeze([
 export const FIRM_OFFICE_HREFS: readonly string[] = Object.freeze([
   "/dashboard/firm/cases",
   "/dashboard/firm/graph",
+  "/dashboard/firm/hearings",
   "/dashboard/firm/activity",
   "/dashboard/firm/contracts",
   "/dashboard/firm/vault?tab=branding",
@@ -55,6 +56,7 @@ export const FIRM_OFFICE_HREFS: readonly string[] = Object.freeze([
   "/dashboard/firm/team/roles",
   "/dashboard/firm/departments/permissions",
   "/dashboard/firm/governance?tab=matrix",
+  "/dashboard/firm/finance",
   "/dashboard/firm/fees",
   "/dashboard/firm/secondment/new",
 ]);

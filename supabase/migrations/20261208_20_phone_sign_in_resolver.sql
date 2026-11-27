@@ -76,8 +76,17 @@ end
 $pre$;
 
 -- ── 1. the confirmed numbers ────────────────────────────────────────────────
-create index if not exists profiles_confirmed_phone_idx
-  on public.profiles (phone) where phone_verified_at is not null;
+-- l18 review: only while 20261208_50's UNIQUE index on the same column and
+-- predicate is absent (that one serves the same lookups; _50 drops this one
+-- once it exists), so the two are never both kept.
+do $ix$
+begin
+  if to_regclass('public.profiles_confirmed_phone_unique') is null then
+    create index if not exists profiles_confirmed_phone_idx
+      on public.profiles (phone) where phone_verified_at is not null;
+  end if;
+end
+$ix$;
 
 -- ── 2a. a confirmed mobile → its one account ────────────────────────────────
 create or replace function public.phone_sign_in_target(p_phone text)
@@ -209,8 +218,8 @@ begin
   if position('public.pw_reset_target(' in pg_catalog.pg_get_functiondef('public.pw_reset_target_by_phone(text)'::regprocedure)) = 0 then
     missing := missing || ' pw_reset_target_by_phone does not apply pw_reset_target;';
   end if;
-  if to_regclass('public.profiles_confirmed_phone_idx') is null then
-    missing := missing || ' profiles_confirmed_phone_idx is missing;';
+  if to_regclass('public.profiles_confirmed_phone_idx') is null and to_regclass('public.profiles_confirmed_phone_unique') is null then
+    missing := missing || ' no index on the confirmed numbers (profiles_confirmed_phone_idx or profiles_confirmed_phone_unique);';
   end if;
 
   if missing <> '' then

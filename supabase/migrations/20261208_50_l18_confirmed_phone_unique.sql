@@ -167,6 +167,8 @@ declare
 begin
   if to_regclass('public.profiles_confirmed_phone_unique') is not null then
     raise notice 'l18_confirmed_phone_unique: the unique index profiles_confirmed_phone_unique is already there';
+    -- l18 review: 20261208_20's plain index on the same column and predicate is redundant now
+    drop index if exists public.profiles_confirmed_phone_idx;
     return;
   end if;
   select pg_catalog.count(*)::integer into v_shared
@@ -174,13 +176,15 @@ begin
            where p.phone_verified_at is not null and p.phone is not null
            group by p.phone having pg_catalog.count(*) > 1) d;
   if v_shared > 0 then
-    raise notice 'l18_confirmed_phone_unique: % number(s) are confirmed on more than one account — the unique index was NOT created. Run supabase/migrations/20261208_51_duplicate_phones_report.sql (read only), clean up by hand (never an admin / super_admin / staff account), then re-run this file. New confirmations are already refused by trg_phone_verified_unique.', v_shared;
+    raise notice 'l18_confirmed_phone_unique: % number(s) are confirmed on more than one account under the same stored spelling — the unique index was NOT created. Run supabase/migrations/20261208_51_duplicate_phones_report.sql (read only): its rows with blocks_unique_index = true are exactly these; it also lists numbers shared under another spelling (+9665… / 9665… / 05…) or by an unconfirmed account, which do not block the index but share a number all the same. Clean up by hand (never an admin / super_admin / staff account), then re-run this file. New confirmations are already refused by trg_phone_verified_unique.', v_shared;
     return;
   end if;
   begin
     create unique index profiles_confirmed_phone_unique
       on public.profiles (phone) where phone_verified_at is not null;
-    raise notice 'l18_confirmed_phone_unique: the unique index profiles_confirmed_phone_unique was created (no shared confirmed number)';
+    -- l18 review: 20261208_20's plain index on the same column and predicate is redundant now
+    drop index if exists public.profiles_confirmed_phone_idx;
+    raise notice 'l18_confirmed_phone_unique: the unique index profiles_confirmed_phone_unique was created (no shared confirmed number); the plain profiles_confirmed_phone_idx was dropped';
   exception when unique_violation then
     raise notice 'l18_confirmed_phone_unique: a shared confirmed number appeared while the index was built — NOT created. Run 20261208_51, clean up, re-run this file.';
   end;

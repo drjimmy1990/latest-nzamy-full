@@ -9130,3 +9130,17 @@ select 'l18 pay held: my_licence_held_orders() is SECURITY DEFINER with an empty
                         and has_function_privilege('authenticated', p.oid, 'EXECUTE')
                    from pg_catalog.pg_proc p where p.oid = to_regprocedure('public.my_licence_held_orders()')), false) as ok;
 -- <<< verify:l18_pay_held
+-- >>> verify:l18_review — supabase/tests/rls/l18_firm_open_requests.test.sql, l18_review_indexes.test.sql
+-- Batch l18 review fixes. 20261208_90 runs any time (before the deploy is best). Before a file runs,
+-- its check answers ok = false («run …»). The index check reads f until 20261208_20 has run.
+select 'l18 review: the owner of a verified firm reads the open requests, with every 20261206_40 filter kept (run 20261208_90)' as check,
+       coalesce(pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.marketplace_open_requests(integer, integer)')),
+                                  'fp.verification_status = ''verified''') > 0
+                and pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.marketplace_open_requests(integer, integer)')),
+                                      'marketplace_release_at') > 0
+                and pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.marketplace_open_requests(integer, integer)')),
+                                      'test_accounts') > 0
+                and not has_function_privilege('anon', 'public.marketplace_open_requests(integer, integer)', 'EXECUTE'), false) as ok;
+select 'l18 review: exactly one index on the confirmed mobiles — the plain one of 20261208_20 until 20261208_50''s unique index exists, then only the unique one (run 20261208_20, then 20261208_50)' as check,
+       (to_regclass('public.profiles_confirmed_phone_idx') is not null) <> (to_regclass('public.profiles_confirmed_phone_unique') is not null) as ok;
+-- <<< verify:l18_review

@@ -210,7 +210,8 @@ test("the firm's paid rows lock with the firm plan; the market, wallet, profile,
   const firm = getSidebarByUserType("firm", "full", null, [], null, null, "managing_partner", false, "SA", null, null, null, false, false);
   const locked = withOfficeLocks(firm, true, "firm");
   const marked = new Set(flat(locked).filter((i) => i.officeLocked === "firm").map((i) => i.href));
-  for (const h of ["/dashboard/firm/cases", "/dashboard/firm/clients", "/dashboard/firm/team", "/dashboard/firm/contracts"]) assert.ok(marked.has(h), h);
+  // l18 review: hearings and finance are built — back in the menu (no stale «قريباً»), locked with the plan
+  for (const h of ["/dashboard/firm/cases", "/dashboard/firm/clients", "/dashboard/firm/team", "/dashboard/firm/contracts", "/dashboard/firm/hearings", "/dashboard/firm/finance"]) assert.ok(marked.has(h), h);
   for (const h of marked) assert.ok(FIRM_OFFICE_HREFS.includes(h), h);
   for (const h of ["/dashboard/firm", "/dashboard/firm/consultations", "/dashboard/firm/reviews", "/laws", "/settings"]) assert.equal(marked.has(h), false, h);
   assert.equal(officeLockAudience("lawyer"), "lawyer");

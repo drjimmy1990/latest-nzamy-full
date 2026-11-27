@@ -42,6 +42,15 @@ try {
   // betaConfig deleted
 }
 
+/**
+ * l18 review: `node --test` cannot resolve the "@/" alias above, so the switch
+ * always read false there and the beta-on menus were never tested. Tests set
+ * it here; nothing else calls this.
+ */
+export function setBetaMonopolyModeForTests(on: boolean): void {
+  BETA_MONOPOLY_MODE = on;
+}
+
 // ── Government Reviewer / Bailiff Sidebar (مراجع حكومي / معقّب) ──────────────
 // provider مع subRole = "bailiff" يحصل على هذا الـ sidebar
 export const GOV_REVIEWER_SIDEBAR: SidebarGroup[] = [
